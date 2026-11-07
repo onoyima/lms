@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'">
+<title>Secure Exam — set up</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0b0d10; color: #e8eaed; display: grid; place-items: center; height: 100vh; }
+  main { width: 440px; display: grid; gap: 14px; }
+  h1 { font-size: 20px; margin: 0; } p { margin: 0; color: #9aa0a6; font-size: 13px; }
+  input { padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #15181c; color: inherit; font: inherit; }
+  button { padding: 10px 14px; border: 0; border-radius: 10px; background: #10b981; color: #04130d; font-weight: 600; cursor: pointer; }
+  .msg { color: #f59e0b; } .ok { color: #10b981; } code { font-size: 12px; color: #9aa0a6; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Set up this computer for exams</h1>
+  <p>Enter the address of your institution's exam platform. This computer will be sent to the ICT office for approval.</p>
+  <input id="url" type="url" placeholder="https://exams.your-institution.edu.ng" autofocus>
+  <button id="go">Connect</button>
+  <p id="msg" class="msg"></p>
+  <p>Computer ID: <code id="device"></code></p>
+  <button id="cont" hidden>Open exams</button>
+</main>
+<script src="setup.js"></script>
+</body>
+</html>

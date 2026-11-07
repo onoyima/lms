@@ -1,0 +1,8 @@
+# Egress writes recordings (MP4) to /recordings inside the container.
+api_key: ${LIVEKIT_API_KEY}
+api_secret: ${LIVEKIT_API_SECRET}
+ws_url: ws://127.0.0.1:7880
+redis:
+  address: 127.0.0.1:6379
+  password: ${REDIS_PASSWORD}
+health_port: 8080

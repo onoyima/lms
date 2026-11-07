@@ -1,0 +1,8 @@
+[mysqld]
+server_id = 2
+read_only = ON
+relay_log = relay-bin
+log_slave_updates = ON
+innodb_buffer_pool_size = 2G
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_ci

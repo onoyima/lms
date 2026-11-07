@@ -1,0 +1,34 @@
+# Self-hosted LiveKit media server + Egress (recordings) + Redis for live proctoring.
+# Run on a server with a public IP (or on campus), then set LIVEKIT_* in the platform's .env.
+#   docker compose up -d
+# Ports: 7880 (API/WebSocket, put behind TLS as wss://media.<your-domain>), 7881/tcp and 50000-60000/udp (media).
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    volumes: [redis:/data]
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:v1.8
+    command: ["--config", "/etc/livekit.yaml"]
+    network_mode: host
+    volumes: ["./livekit.yaml:/etc/livekit.yaml:ro"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?}: ${LIVEKIT_API_SECRET:?}"
+    depends_on: [redis]
+    restart: unless-stopped
+
+  egress:
+    image: livekit/egress:v1.9
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - "./egress.yaml:/etc/egress.yaml:ro"
+      - "${RECORDINGS_DIR:-./recordings}:/recordings"   # mount the same folder on the web server to keep recordings with evidence
+    cap_add: [SYS_ADMIN]
+    depends_on: [livekit]
+    restart: unless-stopped
+
+volumes:
+  redis:

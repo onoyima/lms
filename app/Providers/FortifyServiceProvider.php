@@ -1,0 +1,132 @@
+<?php
+
+namespace App\Providers;
+
+use App\Actions\Fortify\CreateNewUser;
+use App\Actions\Fortify\ResetUserPassword;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
+use Laravel\Fortify\Features;
+use Laravel\Fortify\Fortify;
+
+class FortifyServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        $this->app->singleton(\Laravel\Fortify\Contracts\LoginResponse::class, \App\Http\Responses\LoginResponse::class);
+        $this->app->singleton(\Laravel\Fortify\Contracts\TwoFactorLoginResponse::class, \App\Http\Responses\LoginResponse::class);
+        // the two-factor step looks the person up like the password step (platform administrators included)
+        $this->app->bind(\Laravel\Fortify\Http\Requests\TwoFactorLoginRequest::class, \App\Http\Requests\Auth\TwoFactorLoginRequest::class);
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        $this->configureActions();
+        $this->configureViews();
+        $this->configureRateLimiting();
+    }
+
+    /**
+     * Configure Fortify actions.
+     */
+    private function configureActions(): void
+    {
+        Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
+        Fortify::createUsersUsing(CreateNewUser::class);
+
+        // Sign in with an email address or a matric / staff number (as on the old portal).
+        // The User global scope keeps the lookup inside the current institution.
+        Fortify::authenticateUsing(function (Request $request) {
+            $login = trim((string) $request->input(Fortify::username()));
+            $user = \App\Models\User::forSignIn()
+                ->where(fn ($q) => $q->where('email', mb_strtolower($login))->orWhere('identifier', $login)->orWhere('identifier', mb_strtoupper($login)))
+                ->orderByRaw('users.tenant_id IS NULL') // the institution's own account first
+                ->first();
+
+            // examiners made for one panel exam sign in with their username (only in their institution)
+            if (! $user && $login !== '' && ! str_contains($login, '@') && tenant()) {
+                $account = \App\Models\ExamPanelAccount::where('username', mb_strtolower($login))->first();
+                $user = $account ? \App\Models\User::forSignIn()->whereKey($account->user_id)->first() : null;
+            }
+
+            if ($user && $user->status === 'active' && \Illuminate\Support\Facades\Hash::check((string) $request->input('password'), $user->password)) {
+                if ($user->user_type === \App\Models\ExamPanelAccount::USER_TYPE) {
+                    \App\Support\Exams\ExamExaminers::checkSignIn($user);
+                }
+
+                return $user;
+            }
+
+            // institutions connected to their university portal: portal ID and password work here too
+            $portal = app(\App\Services\Directory\PortalSignIn::class);
+            if ($login !== '' && $portal->appliesTo($user)) {
+                return $portal->attempt($login, (string) $request->input('password'), Fortify::username());
+            }
+
+            return null;
+        });
+    }
+
+    /**
+     * Configure Fortify views.
+     */
+    private function configureViews(): void
+    {
+        Fortify::loginView(fn (Request $request) => Inertia::render('auth/login', [
+            'canResetPassword' => Features::enabled(Features::resetPasswords()),
+            'canRegister' => Features::enabled(Features::registration()),
+            'status' => $request->session()->get('status'),
+            // the portal connection signs people in on this form; it never adds a separate button
+            'sso' => \App\Models\SsoProvider::where('enabled', true)->where('slug', '!=', 'portal')->orderBy('name')->get(['name', 'slug']),
+        ]));
+
+        Fortify::resetPasswordView(fn (Request $request) => Inertia::render('auth/reset-password', [
+            'email' => $request->email,
+            'token' => $request->route('token'),
+            'passwordRules' => Password::defaults()->toPasswordRulesString(),
+        ]));
+
+        Fortify::requestPasswordResetLinkView(fn (Request $request) => Inertia::render('auth/forgot-password', [
+            'status' => $request->session()->get('status'),
+        ]));
+
+        Fortify::verifyEmailView(fn (Request $request) => Inertia::render('auth/verify-email', [
+            'status' => $request->session()->get('status'),
+        ]));
+
+        Fortify::registerView(fn () => Inertia::render('auth/register', [
+            'passwordRules' => Password::defaults()->toPasswordRulesString(),
+        ]));
+
+        Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/two-factor-challenge'));
+
+        Fortify::confirmPasswordView(fn () => Inertia::render('auth/confirm-password'));
+    }
+
+    /**
+     * Configure rate limiting.
+     */
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('two-factor', function (Request $request) {
+            return Limit::perMinute(5)->by($request->session()->get('login.id'));
+        });
+
+        RateLimiter::for('login', function (Request $request) {
+            $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
+
+            return Limit::perMinute(5)->by($throttleKey);
+        });
+    }
+}

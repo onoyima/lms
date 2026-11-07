@@ -1,0 +1,69 @@
+# Exams & LMS platform — high-availability layout (Target 94, 186; LMS 138, 141).
+#
+#   nginx (TLS, load balancer) ─┬─ app1 (php-fpm) ─┐   The replica is a hot standby (and the place to take backups from):
+#                               │                  │   exam traffic always uses the primary, so nobody reads a lagging copy.
+#                               └─ app2 (php-fpm) ─┼─ MariaDB primary ──(replication)── MariaDB replica
+#   worker (queues) · scheduler ┘                  └─ Redis (sessions, cache, queues, locks)
+#
+# App servers keep no state (sessions, cache and queues live in Redis; files on the shared volume),
+# so either can stop without candidates noticing: exam answers are saved on the device and resent.
+#
+#   cp .env.example .env  (fill the secrets)   docker compose up -d --build
+#   docker compose exec app1 php artisan migrate --force
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./nginx/platform.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${TLS_DIR:-./tls}:/etc/nginx/tls:ro
+      - app_public:/var/www/platform/public:ro
+    depends_on: [app1, app2]
+    restart: unless-stopped
+
+  app1: &app
+    build: { context: ../.., dockerfile: deploy/ha/php/Dockerfile }
+    env_file: .env
+    environment: { DB_HOST: mariadb-primary, REDIS_HOST: redis, SESSION_DRIVER: redis, CACHE_STORE: redis, QUEUE_CONNECTION: redis }
+    volumes: [app_storage:/var/www/platform/storage, app_public:/var/www/platform/public]
+    depends_on: [mariadb-primary, redis]
+    restart: unless-stopped
+  app2: *app
+
+  worker:
+    <<: *app
+    command: ["php", "artisan", "queue:work", "--sleep=1", "--tries=3", "--max-time=3600"]
+  scheduler:
+    <<: *app
+    command: ["php", "artisan", "schedule:work"]
+
+  mariadb-primary:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      MARIADB_DATABASE: ${DB_DATABASE:-exams_platform}
+      MARIADB_USER: ${DB_USERNAME:-platform}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?}
+      MARIADB_REPLICATION_USER: replicator
+      MARIADB_REPLICATION_PASSWORD: ${DB_REPLICATION_PASSWORD:?}
+    volumes: [db_primary:/var/lib/mysql, ./mariadb/primary.cnf:/etc/mysql/conf.d/platform.cnf:ro]
+    restart: unless-stopped
+
+  mariadb-replica:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      MARIADB_MASTER_HOST: mariadb-primary
+      MARIADB_REPLICATION_USER: replicator
+      MARIADB_REPLICATION_PASSWORD: ${DB_REPLICATION_PASSWORD:?}
+    volumes: [db_replica:/var/lib/mysql, ./mariadb/replica.cnf:/etc/mysql/conf.d/platform.cnf:ro]
+    depends_on: [mariadb-primary]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?}", "--maxmemory-policy", "noeviction"]
+    volumes: [redis:/data]
+    restart: unless-stopped
+
+volumes: { app_storage: {}, app_public: {}, db_primary: {}, db_replica: {}, redis: {} }

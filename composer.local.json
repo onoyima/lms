@@ -1,0 +1,1355 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "exams-lms/platform",
+    "type": "project",
+    "description": "Multi-institution examination and learning platform",
+    "keywords": [
+        "laravel",
+        "framework"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "inertiajs/inertia-laravel": "^3.0",
+        "laravel/fortify": "~1.36.2",
+        "laravel/framework": "^13.7",
+        "laravel/tinker": "^3.0",
+        "laravel/wayfinder": "^0.1.14",
+        "spatie/laravel-permission": "^8.0",
+        "symfony/html-sanitizer": "^7.4",
+        "dompdf/dompdf": "^3.1",
+        "onelogin/php-saml": "^4.2"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.24",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.9.3",
+        "phpunit/phpunit": "^12.5.23"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        },
+        "files": [
+            "app/Support/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "setup": [
+            "composer install",
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+            "@php artisan key:generate",
+            "@php artisan migrate --force",
+            "npm install",
+            "npm run build"
+        ],
+        "dev": [
+            "Composer\\Config::disableProcessTimeout",
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"npm run dev\" --names=server,queue,vite --kill-others"
+        ],
+        "ci:check": [
+            "Composer\\Config::disableProcessTimeout",
+            "npm run types:check",
+            "@test"
+        ],
+        "test": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test"
+        ],
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi"
+        ],
+        "post-update-cmd": [
+            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
+        ],
+        "post-root-package-install": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+        ],
+        "post-create-project-cmd": [
+            "@php artisan key:generate --ansi",
+            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+            "@php artisan migrate --graceful --ansi"
+        ],
+        "pre-package-uninstall": [
+            "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/inertiajs__inertia-laravel@v3.6.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "inertiajs/inertia-laravel": "3.6.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/laravel__fortify@v1.36.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "laravel/fortify": "1.36.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/laravel__framework@v13.39.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "laravel/framework": "13.39.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/laravel__tinker@v3.0.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "laravel/tinker": "3.0.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/laravel__wayfinder@v0.1.23",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "laravel/wayfinder": "0.1.23"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/spatie__laravel-permission@8.3.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "spatie/laravel-permission": "8.3.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__html-sanitizer@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/html-sanitizer": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/dompdf__dompdf@v3.1.6",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "dompdf/dompdf": "3.1.6"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/onelogin__php-saml@4.3.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "onelogin/php-saml": "4.3.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/fakerphp__faker@v1.24.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "fakerphp/faker": "1.24.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/mockery__mockery@1.6.15",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "mockery/mockery": "1.6.15"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/nunomaduro__collision@v8.9.5",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "nunomaduro/collision": "8.9.5"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpunit__phpunit@12.5.42",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpunit/phpunit": "12.5.42"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/bacon__bacon-qr-code@v3.1.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "bacon/bacon-qr-code": "3.1.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/pragmarx__google2fa@v9.1.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "pragmarx/google2fa": "9.1.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/brick__math@1.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "brick/math": "1.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/doctrine__inflector@2.1.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "doctrine/inflector": "2.1.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/dragonmantank__cron-expression@v3.6.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "dragonmantank/cron-expression": "3.6.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/egulias__email-validator@4.0.4",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "egulias/email-validator": "4.0.4"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/fruitcake__php-cors@v1.4.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "fruitcake/php-cors": "1.4.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/guzzlehttp__guzzle@8.3.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "guzzlehttp/guzzle": "8.3.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/guzzlehttp__promises@3.1.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "guzzlehttp/promises": "3.1.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/guzzlehttp__psr7@3.2.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "guzzlehttp/psr7": "3.2.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/guzzlehttp__uri-template@v2.0.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "guzzlehttp/uri-template": "2.0.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/laravel__prompts@v0.3.26",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "laravel/prompts": "0.3.26"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/laravel__serializable-closure@v2.1.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "laravel/serializable-closure": "2.1.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/league__commonmark@2.10.7",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "league/commonmark": "2.10.7"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/league__flysystem@3.36.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "league/flysystem": "3.36.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/league__flysystem-local@3.35.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "league/flysystem-local": "3.35.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/league__uri@7.9.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "league/uri": "7.9.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/monolog__monolog@3.12.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "monolog/monolog": "3.12.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/nesbot__carbon@3.15.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "nesbot/carbon": "3.15.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/nunomaduro__termwind@v2.4.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "nunomaduro/termwind": "2.4.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__container@2.0.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/container": "2.0.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__http-message@2.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/http-message": "2.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__log@3.0.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/log": "3.0.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__simple-cache@3.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/simple-cache": "3.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/ramsey__uuid@4.9.4",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "ramsey/uuid": "4.9.4"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-php84@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-php84": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-php85@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-php85": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-php86@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-php86": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/tijsverkoyen__css-to-inline-styles@v2.4.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "tijsverkoyen/css-to-inline-styles": "2.4.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/vlucas__phpdotenv@v5.8.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "vlucas/phpdotenv": "5.8.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/voku__portable-ascii@2.1.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "voku/portable-ascii": "2.1.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psy__psysh@v0.12.24",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psy/psysh": "0.12.24"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpstan__phpdoc-parser@2.4.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpstan/phpdoc-parser": "2.4.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/spatie__laravel-package-tools@1.93.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "spatie/laravel-package-tools": "1.93.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/masterminds__html5@2.12.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "masterminds/html5": "2.12.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__deprecation-contracts@v3.7.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/deprecation-contracts": "3.7.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/dompdf__php-font-lib@1.0.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "dompdf/php-font-lib": "1.0.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/dompdf__php-svg-lib@1.0.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "dompdf/php-svg-lib": "1.0.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/robrichards__xmlseclibs@3.1.5",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "robrichards/xmlseclibs": "3.1.5"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/hamcrest__hamcrest-php@v3.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "hamcrest/hamcrest-php": "3.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/filp__whoops@2.18.7",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "filp/whoops": "2.18.7"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/myclabs__deep-copy@1.14.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "myclabs/deep-copy": "1.14.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phar-io__manifest@2.0.4",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phar-io/manifest": "2.0.4"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phar-io__version@3.2.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phar-io/version": "3.2.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpunit__php-code-coverage@12.5.8",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpunit/php-code-coverage": "12.5.8"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpunit__php-file-iterator@6.0.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpunit/php-file-iterator": "6.0.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpunit__php-invoker@6.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpunit/php-invoker": "6.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpunit__php-text-template@5.0.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpunit/php-text-template": "5.0.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpunit__php-timer@8.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpunit/php-timer": "8.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__cli-parser@4.2.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/cli-parser": "4.2.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__comparator@7.1.8",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/comparator": "7.1.8"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__diff@7.0.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/diff": "7.0.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__environment@8.1.2",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/environment": "8.1.2"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__exporter@7.0.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/exporter": "7.0.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__global-state@8.0.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/global-state": "8.0.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__object-enumerator@7.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/object-enumerator": "7.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__recursion-context@7.0.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/recursion-context": "7.0.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__type@6.0.4",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/type": "6.0.4"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__version@6.0.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/version": "6.0.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/staabm__side-effects-detector@1.0.5",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "staabm/side-effects-detector": "1.0.5"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/dasprid__enum@1.0.7",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "dasprid/enum": "1.0.7"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/paragonie__constant_time_encoding@v3.1.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "paragonie/constant_time_encoding": "3.1.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/doctrine__lexer@3.0.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "doctrine/lexer": "3.0.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-intl-idn@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-intl-idn": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__http-client@1.0.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/http-client": "1.0.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__http-factory@1.1.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/http-factory": "1.1.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-php80@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-php80": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-php82@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-php82": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/league__config@v1.2.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "league/config": "1.2.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__event-dispatcher@1.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/event-dispatcher": "1.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/league__mime-type-detection@1.17.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "league/mime-type-detection": "1.17.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/league__uri-interfaces@7.9.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "league/uri-interfaces": "7.9.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/carbonphp__carbon-doctrine-types@3.2.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "carbonphp/carbon-doctrine-types": "3.2.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/psr__clock@1.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "psr/clock": "1.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-mbstring@v1.43.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-mbstring": "1.43.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-time@v1.42.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-time": "1.42.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/ramsey__collection@2.1.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "ramsey/collection": "2.1.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/graham-campbell__result-type@v1.2.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "graham-campbell/result-type": "1.2.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/phpoption__phpoption@1.10.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "phpoption/phpoption": "1.10.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-ctype@v1.37.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-ctype": "1.37.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/nikic__php-parser@v5.9.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "nikic/php-parser": "5.9.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sabberworm__php-css-parser@v9.5.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sabberworm/php-css-parser": "9.5.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__complexity@5.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/complexity": "5.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__lines-of-code@4.0.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/lines-of-code": "4.0.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/theseer__tokenizer@2.0.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "theseer/tokenizer": "2.0.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/sebastian__object-reflector@5.0.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "sebastian/object-reflector": "5.0.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-intl-normalizer@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-intl-normalizer": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/dflydev__dot-access-data@v3.0.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "dflydev/dot-access-data": "3.0.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/nette__schema@v1.4.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "nette/schema": "1.4.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/nette__utils@v4.1.6",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "nette/utils": "4.1.6"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__clock@v7.4.21",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/clock": "7.4.21"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-php83@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-php83": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__console@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/console": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__uid@v7.4.21",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/uid": "7.4.21"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__css-selector@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/css-selector": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__error-handler@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/error-handler": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__process@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/process": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__service-contracts@v3.7.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/service-contracts": "3.7.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-uuid@v1.43.0",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-uuid": "1.43.0"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__finder@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/finder": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__mailer@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/mailer": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__translation@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/translation": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__var-dumper@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/var-dumper": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__translation-contracts@v3.7.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/translation-contracts": "3.7.1"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__mime@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/mime": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__routing@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/routing": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__http-foundation@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/http-foundation": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__string@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/string": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__polyfill-intl-grapheme@v1.43.3",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/polyfill-intl-grapheme": "1.43.3"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__http-kernel@v7.4.22",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/http-kernel": "7.4.22"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__event-dispatcher@v7.4.17",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/event-dispatcher": "7.4.17"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "/tmp/claude-0/pkgs/symfony__event-dispatcher-contracts@v3.7.1",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/event-dispatcher-contracts": "3.7.1"
+                }
+            }
+        },
+        {
+            "packagist.org": false
+        }
+    ]
+}

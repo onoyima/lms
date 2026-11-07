@@ -1,0 +1,20 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Termination extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+    ];
+
+    public function appointment_terminations()
+    {
+        return $this->hasMany(AppointmentTermination::class);
+    }
+}

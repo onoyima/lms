@@ -1,0 +1,223 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/source-serif-4';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+@import 'tw-animate-css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+    --font-sans:
+        'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-mono:
+        'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    --font-display:
+        'Source Serif 4 Variable', 'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+    --color-brand: var(--brand);
+    --color-brand-foreground: var(--brand-foreground);
+    --color-brand-soft: var(--brand-soft);
+    --color-brand-2: var(--brand-2);
+    --color-brand-2-foreground: var(--brand-2-foreground);
+    --color-status-good: var(--status-good);
+    --color-status-warning: var(--status-warning);
+    --color-status-critical: var(--status-critical);
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/*
+ * Platform design tokens.
+ * An office-software look rather than a marketing look: warm paper background, white working
+ * surfaces, ink text, one institutional colour (set per institution in app.blade.php; default is
+ * a deep academic blue), hairline rules, small radii, a serif for page titles only.
+ * Status colours (good / warning / critical) are reserved for states and alerts.
+ */
+:root {
+    --brand: #1d3557;
+    --brand-foreground: #ffffff;
+    --brand-soft: color-mix(in oklab, var(--brand) 8%, transparent);
+    --second: #9a6b2f;
+    --brand-2: var(--second);
+    --brand-2-foreground: #ffffff;
+
+    --background: #f7f6f2;
+    --foreground: #1b1d21;
+    --card: #ffffff;
+    --card-foreground: #1b1d21;
+    --popover: #ffffff;
+    --popover-foreground: #1b1d21;
+    --primary: var(--brand);
+    --primary-foreground: var(--brand-foreground);
+    --secondary: #efede7;
+    --secondary-foreground: #1b1d21;
+    --muted: #efede7;
+    --muted-foreground: #5b5f66;
+    --accent: var(--brand-soft);
+    --accent-foreground: #1b1d21;
+    --destructive: #b42318;
+    --destructive-foreground: #b42318;
+    --border: rgb(27 29 33 / 0.12);
+    --input: rgb(27 29 33 / 0.2);
+    --ring: var(--brand);
+    --chart-1: var(--brand);
+    --chart-2: var(--second);
+    --chart-3: #4d7c5b;
+    --chart-4: #7a8796;
+    --chart-5: #a14d4d;
+    --status-good: #2f6f4f;
+    --status-warning: #a15c07;
+    --status-critical: #b42318;
+    --radius: 0.5rem;
+    --sidebar: #efede7;
+    --sidebar-foreground: #1b1d21;
+    --sidebar-primary: var(--brand);
+    --sidebar-primary-foreground: var(--brand-foreground);
+    --sidebar-accent: rgb(27 29 33 / 0.06);
+    --sidebar-accent-foreground: #1b1d21;
+    --sidebar-border: rgb(27 29 33 / 0.1);
+    --sidebar-ring: var(--brand);
+}
+
+.dark {
+    --background: #0b0d10;
+    --foreground: #f5f7fa;
+    --card: #14171c;
+    --card-foreground: #f5f7fa;
+    --popover: #14171c;
+    --popover-foreground: #f5f7fa;
+    --secondary: #1b1f26;
+    --secondary-foreground: #f5f7fa;
+    --muted: #1b1f26;
+    --muted-foreground: #a1a8b3;
+    --accent: var(--brand-soft);
+    --accent-foreground: #f5f7fa;
+    --destructive: #ef4444;
+    --destructive-foreground: #f87171;
+    --border: rgb(255 255 255 / 0.08);
+    --input: rgb(255 255 255 / 0.12);
+    --status-good: #22c55e;
+    --status-warning: #f59e0b;
+    --status-critical: #ef4444;
+    --sidebar: #0f1216;
+    --sidebar-foreground: #f5f7fa;
+    --sidebar-accent: var(--brand-soft);
+    --sidebar-accent-foreground: #f5f7fa;
+    --sidebar-border: rgb(255 255 255 / 0.07);
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+@layer components {
+    /* Small plain label (sentence case, no tracking) */
+    .eyebrow {
+        @apply text-xs font-medium text-muted-foreground;
+    }
+    .surface {
+        @apply rounded-lg border border-border bg-card;
+    }
+    h1,
+    .font-display {
+        font-family: var(--font-display);
+        font-optical-sizing: auto;
+    }
+    /* Exam-taking surface: light, large, calm (see design system) */
+    .exam-surface {
+        @apply bg-white text-[18px] leading-relaxed text-[#0b0d10];
+    }
+}
+
+/* MathJax output inside question content. Tailwind's reset makes every <svg> a block,
+   which would push inline equations onto their own line. */
+.rich-content mjx-container svg {
+    display: inline;
+}
+.rich-content mjx-container[display='true'] {
+    display: block;
+    margin: 0.75em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+.rich-content p + p {
+    margin-top: 0.6em;
+}
+.rich-content table {
+    margin: 0.75em 0;
+    border-collapse: collapse;
+}
+.rich-content td,
+.rich-content th {
+    border: 1px solid var(--border);
+    padding: 0.35em 0.6em;
+}
+.rich-content img {
+    display: inline-block;
+    max-width: 100%;
+}
+
+/* Exam paper: always light, print-like, regardless of theme, so equations and diagrams read identically for everyone */
+@layer components {
+    .exam-surface {
+        background: #fbfaf7;
+        color: #0b0d10;
+    }
+}

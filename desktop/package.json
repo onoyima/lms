@@ -1,0 +1,31 @@
+{
+    "name": "secure-exam",
+    "productName": "Secure Exam",
+    "version": "1.0.0",
+    "description": "Secure exam app: locked-down exam window, device approval, signed requests and hardware checks.",
+    "main": "src/main.js",
+    "private": true,
+    "license": "UNLICENSED",
+    "scripts": {
+        "start": "electron .",
+        "check": "node --check src/main.js && node --check src/preload.js && node --check src/monitor.js && node --check src/identity.js && node --test test/*.test.js",
+        "dist:win": "electron-builder --win nsis",
+        "dist:mac": "electron-builder --mac dmg",
+        "dist:linux": "electron-builder --linux AppImage"
+    },
+    "devDependencies": {
+        "electron": "^33.2.0",
+        "electron-builder": "^25.1.8"
+    },
+    "build": {
+        "appId": "app.secureexam.desktop",
+        "productName": "Secure Exam",
+        "directories": { "output": "dist" },
+        "files": ["src/**/*", "package.json"],
+        "asar": true,
+        "win": { "target": "nsis", "requestedExecutionLevel": "asInvoker" },
+        "nsis": { "oneClick": false, "perMachine": true, "allowToChangeInstallationDirectory": false },
+        "mac": { "target": "dmg", "category": "public.app-category.education", "hardenedRuntime": true, "entitlementsInherit": "build/entitlements.mac.plist", "extendInfo": { "NSCameraUsageDescription": "Your camera is used for exam proctoring.", "NSMicrophoneUsageDescription": "Your microphone is used for exam proctoring." } },
+        "linux": { "target": "AppImage", "category": "Education" }
+    }
+}

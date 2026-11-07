@@ -1,0 +1,20 @@
+# MariaDB data-at-rest encryption for the platform (Target 86)
+# 1. php artisan db:encryption-key --path="C:\xampp\mysql\keys\platform.key"   (or /etc/mysql/keys/platform.key)
+# 2. Copy this file's [mariadb] section into my.ini (XAMPP: C:\xampp\mysql\bin\my.ini) or /etc/mysql/mariadb.conf.d/,
+#    set the two paths, and restart MariaDB.
+# 3. php artisan db:encrypt-tables      (encrypts every existing platform table; new tables are encrypted automatically)
+# 4. php artisan security:check         ("Database files are encrypted" must pass)
+# Keep the key file OUT of the database backups and the web folder, readable only by the MariaDB service account.
+# Back the key file up separately (e.g. sealed USB in the registry safe): without it the data cannot be read.
+
+[mariadb]
+plugin_load_add = file_key_management
+file_key_management_filename = /etc/mysql/keys/platform.key
+file_key_management_encryption_algorithm = AES_CTR
+innodb_encrypt_tables = FORCE
+innodb_encrypt_log = ON
+innodb_encrypt_temporary_tables = ON
+encrypt_tmp_files = ON
+encrypt_binlog = ON
+aria_encrypt_tables = ON
+innodb_encryption_threads = 4

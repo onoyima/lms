@@ -1,0 +1,11 @@
+[mysqld]
+server_id = 1
+log_bin = mariadb-bin
+binlog_format = ROW
+expire_logs_days = 7
+sync_binlog = 1
+innodb_flush_log_at_trx_commit = 1
+innodb_buffer_pool_size = 2G          # about 60% of the database server's memory
+max_connections = 500
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_ci
