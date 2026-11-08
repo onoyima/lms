@@ -1,5 +1,6 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { Copy } from 'lucide-react';
+import { Copy, Eye, EyeOff } from 'lucide-react';
+import { useState } from 'react';
 import { Field, Flash, formatDateTime, inputClass, PageHeader, Status, Table, Td } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
 
@@ -111,6 +112,8 @@ function ConnectorForm({ name, title, conn, help }: { name: 'plagiarism' | 'anal
 
 /** The institution's records system through its directory bridge: people, courses, registrations and sign-in. */
 function DirectoryForm({ conn, runs, test }: { conn: DirConn; runs: DirRun[]; test: DirTest | null }) {
+    const [secretVisible, setSecretVisible] = useState(false);
+    const [secretEdited, setSecretEdited] = useState(false);
     const f = useForm({ enabled: conn.enabled, url: conn.url, client_id: conn.client_id, secret: '', include_applicants: conn.include_applicants,
         deactivate_missing: conn.deactivate_missing, follow_current_semester: conn.follow_current_semester, sso: conn.sso });
     const last = runs[0]?.summary ?? null;
@@ -121,6 +124,8 @@ function DirectoryForm({ conn, runs, test }: { conn: DirConn; runs: DirRun[]; te
             <span>{label}{hint && <span className="block text-xs text-muted-foreground">{hint}</span>}</span>
         </label>
     );
+
+    const displaySecret = secretEdited ? f.data.secret : (conn.has_secret ? '••••••••••••••••' : '');
 
     return (
         <section className="surface grid gap-5 p-6" aria-labelledby="directory-title">
@@ -135,7 +140,7 @@ function DirectoryForm({ conn, runs, test }: { conn: DirConn; runs: DirRun[]; te
                 <Status value={conn.enabled ? 'active' : 'inactive'} />
             </div>
             <form className="grid gap-4" onSubmit={(e) => {
-                e.preventDefault(); f.put('/admin/integrations/directory', { preserveScroll: true, onSuccess: () => f.setData('secret', '') });
+                e.preventDefault(); f.put('/admin/integrations/directory', { preserveScroll: true, onSuccess: () => { f.setData('secret', ''); setSecretEdited(false); } });
             }}>
                 <div className="grid gap-3 md:grid-cols-3">
                     <Field label="Bridge address" hint="e.g. https://portal.university.edu.ng/bridge/vuna" error={f.errors.url}>
@@ -143,7 +148,33 @@ function DirectoryForm({ conn, runs, test }: { conn: DirConn; runs: DirRun[]; te
                     </Field>
                     <Field label="Client ID" error={f.errors.client_id}><input className={inputClass} value={f.data.client_id} onChange={(e) => f.setData('client_id', e.target.value)} autoComplete="off" /></Field>
                     <Field label="Client secret" hint={conn.has_secret ? 'Leave empty to keep the current secret' : 'Issued by the bridge (at least 16 characters)'} error={f.errors.secret}>
-                        <input type="password" autoComplete="new-password" className={inputClass} value={f.data.secret} onChange={(e) => f.setData('secret', e.target.value)} />
+                        <div className="relative">
+                            <input
+                                type={secretVisible ? 'text' : 'password'}
+                                autoComplete="new-password"
+                                className={inputClass}
+                                value={displaySecret}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    setSecretEdited(true);
+                                    f.setData('secret', v);
+                                }}
+                                onFocus={() => {
+                                    if (conn.has_secret && !secretEdited) {
+                                        setSecretEdited(true);
+                                        f.setData('secret', '');
+                                    }
+                                }}
+                            />
+                            <button
+                                type="button"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                onClick={() => setSecretVisible(!secretVisible)}
+                                aria-label={secretVisible ? 'Hide secret' : 'Show secret'}
+                            >
+                                {secretVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                            </button>
+                        </div>
                     </Field>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">
