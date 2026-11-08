@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\Audit\AuditLogger;
+use App\Services\Media\ImageCompressor;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,17 +22,17 @@ class BrandingController extends Controller
         ]);
     }
 
-    public function update(Request $request, TenantContext $context, AuditLogger $audit): RedirectResponse
+    public function update(Request $request, TenantContext $context, AuditLogger $audit, ImageCompressor $images): RedirectResponse
     {
         $tenant = $context->get();
         $data = $request->validate([
             'name' => ['required', 'string', 'max:190'],
             'short_name' => ['nullable', 'string', 'max:60'],
             'brand_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp'],
             // the rest of the white-label look
             'secondary_color' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'favicon' => ['nullable', 'file', 'mimes:png,ico', 'max:256'],
+            'favicon' => ['nullable', 'file', 'mimes:png,ico'],
             'remove_favicon' => ['boolean'],
             'login_title' => ['nullable', 'string', 'max:120'],
             'login_message' => ['nullable', 'string', 'max:500'],
@@ -42,7 +43,7 @@ class BrandingController extends Controller
         ]);
 
         if ($request->hasFile('logo')) {
-            $data['logo_path'] = $request->file('logo')->store("tenants/{$tenant->id}", 'public');
+            $data['logo_path'] = $images->store($request->file('logo'), "tenants/{$tenant->id}", 'public', ['max_width' => 1024, 'max_height' => 1024]);
         }
         $settings = (array) ($tenant->settings ?? []);
         $branding = (array) ($settings['branding'] ?? []);
@@ -50,7 +51,7 @@ class BrandingController extends Controller
             $branding[$k] = isset($data[$k]) && $data[$k] !== '' ? strip_tags((string) $data[$k]) : null;
         }
         if ($request->hasFile('favicon')) {
-            $branding['favicon_path'] = $request->file('favicon')->store("tenants/{$tenant->id}", 'public');
+            $branding['favicon_path'] = $images->storeAsFavicon($request->file('favicon'), "tenants/{$tenant->id}", 'public');
         } elseif ($request->boolean('remove_favicon')) {
             $branding['favicon_path'] = null;
         }

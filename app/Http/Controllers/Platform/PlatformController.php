@@ -18,6 +18,7 @@ use App\Models\Coupon;
 use App\Models\SubscriptionEvent;
 use App\Models\TenantAddon;
 use App\Support\Platform\PlatformSettings;
+use App\Services\Media\ImageCompressor;
 use App\Services\Modules\ModuleRegistry;
 use App\Services\Tenancy\TenantProvisioner;
 use App\Support\Tenancy\TenantContext;
@@ -512,18 +513,20 @@ class PlatformController extends Controller
             array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email']))]);
     }
 
-    public function saveBranding(Request $request): RedirectResponse
+    public function saveBranding(Request $request, ImageCompressor $images): RedirectResponse
     {
         $data = $request->validate([
             'brand_name' => ['required', 'string', 'max:120'], 'brand_short_name' => ['nullable', 'string', 'max:40'], 'brand_tagline' => ['nullable', 'string', 'max:80'],
             'brand_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'], 'support_email' => ['nullable', 'email', 'max:190'],
-            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'], 'favicon' => ['nullable', 'file', 'mimes:png,ico', 'max:256'],
+            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp'], 'favicon' => ['nullable', 'file', 'mimes:png,ico'],
             'remove_logo' => ['boolean'], 'remove_favicon' => ['boolean'],
         ]);
         $values = array_map(fn ($v) => strip_tags((string) ($v ?? '')), array_intersect_key($data, array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email'])));
         foreach (['logo' => 'brand_logo_path', 'favicon' => 'brand_favicon_path'] as $field => $key) {
             if ($request->hasFile($field)) {
-                $values[$key] = $request->file($field)->store('platform', 'public');
+                $values[$key] = $field === 'favicon'
+                    ? $images->storeAsFavicon($request->file($field), 'platform', 'public')
+                    : $images->store($request->file($field), 'platform', 'public', ['max_width' => 1024, 'max_height' => 1024]);
             } elseif ($request->boolean('remove_'.$field)) {
                 $values[$key] = '';
             }

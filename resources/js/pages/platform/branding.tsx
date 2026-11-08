@@ -1,6 +1,7 @@
 import { Head, useForm } from '@inertiajs/react';
 import { Field, Flash, inputClass, PageHeader } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
+import { compressImage } from '@/lib/compress-image';
 import type { PlatformBrand } from '@/types/platform';
 
 type Settings = { brand_name: string; brand_short_name: string; brand_tagline: string; brand_color: string; support_email: string };
@@ -33,11 +34,17 @@ export default function PlatformBranding({ brand, settings }: { brand: PlatformB
                     </Field>
                     <div />
                     <Field label="Logo (PNG, JPG or WebP)" error={form.errors.logo}>
-                        <input type="file" accept="image/png,image/jpeg,image/webp" className="text-sm" onChange={(e) => form.setData('logo', e.target.files?.[0] ?? null)} />
+                        <input type="file" accept="image/png,image/jpeg,image/webp" className="text-sm" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            form.setData('logo', file ? await compressImage(file, { maxWidth: 1024, maxHeight: 1024 }) : null);
+                        }} />
                         {brand.logo_url && <span className="flex items-center gap-2 text-xs text-muted-foreground"><img src={brand.logo_url} alt="" className="size-6 rounded object-cover" /> current <label className="flex items-center gap-1"><input type="checkbox" checked={form.data.remove_logo} onChange={(e) => form.setData('remove_logo', e.target.checked)} /> remove</label></span>}
                     </Field>
                     <Field label="Browser tab icon (PNG or ICO)" error={form.errors.favicon}>
-                        <input type="file" accept="image/png,image/x-icon,.ico" className="text-sm" onChange={(e) => form.setData('favicon', e.target.files?.[0] ?? null)} />
+                        <input type="file" accept="image/png,image/x-icon,.ico" className="text-sm" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            form.setData('favicon', file ? await compressImage(file, { maxWidth: 256, maxHeight: 256 }) : null);
+                        }} />
                         {brand.favicon_url && <span className="flex items-center gap-2 text-xs text-muted-foreground"><img src={brand.favicon_url} alt="" className="size-4" /> current <label className="flex items-center gap-1"><input type="checkbox" checked={form.data.remove_favicon} onChange={(e) => form.setData('remove_favicon', e.target.checked)} /> remove</label></span>}
                     </Field>
                     <div className="md:col-span-2"><Button disabled={form.processing}>Save branding</Button></div>
