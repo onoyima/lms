@@ -534,30 +534,33 @@ export default function Room({ meeting, me, ice, endpoints, max, pollMs, csrf }:
     const ended = meetingStatus === 'ended';
     const gone = ['left', 'removed', 'refused'].includes(state);
 
-    if (ended || gone || state === 'waiting') {
+if (ended || gone || state === 'waiting') {
         const text = ended ? 'The meeting has ended.' : state === 'removed' ? 'The host removed you from the meeting.' : state === 'refused' ? 'The host did not let you in.'
             : state === 'left' ? 'You joined this meeting in another window, so this one was closed.' : 'Please wait: a host will let you in shortly.';
 
         return (
-            <div className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-[#0f1216] p-6 text-center text-white">
-                <Head title={meeting.title} />
-                <p className="text-sm uppercase tracking-wide text-white/50">{meeting.title}</p>
-                <p className="max-w-md text-xl font-semibold">{text}</p>
-                {state === 'waiting' && local && <div className="h-48 w-72"><Tile name={me.name} stream={local} muted mirror audio={mic} video={cam} hand={false} /></div>}
-                <button className="rounded-lg border border-white/20 px-4 py-2 text-sm hover:bg-white/10" onClick={() => (state === 'waiting' ? void leave() : (window.location.href = endpoints.exit))}>
-                    {state === 'waiting' ? 'Leave' : 'Back'}
-                </button>
-</div>
-        <Toaster />
-    );
-}
+            <>
+                <div className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-[#0f1216] p-6 text-center text-white">
+                    <Head title={meeting.title} />
+                    <p className="text-sm uppercase tracking-wide text-white/50">{meeting.title}</p>
+                    <p className="max-w-md text-xl font-semibold">{text}</p>
+                    {state === 'waiting' && local && <div className="h-48 w-72"><Tile name={me.name} stream={local} muted mirror audio={mic} video={cam} hand={false} /></div>}
+                    <button className="rounded-lg border border-white/20 px-4 py-2 text-sm hover:bg-white/10" onClick={() => (state === 'waiting' ? void leave() : (window.location.href = endpoints.exit))}>
+                        {state === 'waiting' ? 'Leave' : 'Back'}
+                    </button>
+                </div>
+                <Toaster />
+            </>
+        );
+    }
 
     const tiles = 1 + peers.length;
     const cols = tiles <= 1 ? 'grid-cols-1' : tiles <= 4 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 lg:grid-cols-3';
     const btn = (on: boolean) => `flex size-12 items-center justify-center rounded-full transition ${on ? 'bg-white/10 hover:bg-white/20' : 'bg-red-600 hover:bg-red-500'}`;
 
     return (
-        <div className="flex h-dvh flex-col bg-[#0f1216] text-white">
+        <>
+            <div className="flex h-dvh flex-col bg-[#0f1216] text-white">
             <Head title={meeting.title} />
             <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-2.5">
                 <div className="min-w-0">
@@ -680,5 +683,7 @@ export default function Room({ meeting, me, ice, endpoints, max, pollMs, csrf }:
                 {endpoints.end && <button className="h-12 rounded-full border border-red-500/60 px-4 text-sm text-red-300 hover:bg-red-500/10" onClick={() => void endForAll()}>End for everyone</button>}
             </footer>
         </div>
+        <Toaster />
+    </>
     );
 }

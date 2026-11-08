@@ -74,7 +74,7 @@ export default function Phone({ code, valid }: { code: string; valid: boolean })
                 {state === 'lost' && <p className="text-sm text-amber-400">Connection lost — reconnecting. If it does not come back, make a new code on the exam screen.</p>}
                 {state === 'error' && <p className="max-w-sm text-sm text-red-400">{message}</p>}
             </div>
+            <Toaster />
         </>
-        <Toaster />
     );
 }

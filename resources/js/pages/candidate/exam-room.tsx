@@ -41,6 +41,7 @@ export default function ExamRoom(props: Props) {
             {phase === 'check' && <SystemCheck {...props} onStarted={(t) => (setToken(t), setPhase('exam'))} />}
             {phase === 'exam' && token && <Exam {...props} token={token} onFinished={(r) => (setReceipt(r), setPhase('done'))} />}
             {phase === 'done' && <Done receipt={receipt} />}
+            <Toaster />
         </>
     );
 }
@@ -1286,7 +1287,6 @@ function QuestionInput({ q, value, onChange, contrast }: { q: PaperQuestion; val
                     {q.matching.right.map((r, i) => <div key={r.key} className="flex gap-2"><strong>{String.fromCharCode(65 + i)}.</strong><RichContent html={r.html} /></div>)}
 </div>
         </div>
-        <Toaster />
     );
 }
 

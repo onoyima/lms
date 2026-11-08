@@ -112,10 +112,10 @@ export default function Welcome({ plans = [] }: { plans: Plan[] }) {
                             <Link href={home} className="hover:text-[var(--ink)]">Sign in</Link>
                         </span>
                     </div>
-                </footer>
-</div>
-        </section>
-        <Toaster />
+</footer>
+            </div>
+            <Toaster />
+        </>
     );
 }
 
