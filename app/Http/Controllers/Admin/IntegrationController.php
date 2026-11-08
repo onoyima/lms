@@ -163,11 +163,11 @@ class IntegrationController extends Controller
         try {
             $result = $sync->test();
         } catch (\App\Services\Directory\DirectoryException $e) {
-            return back()->with('toast', ['type' => 'error', 'message' => $e->getMessage()]);
+            return back()->with('error', $e->getMessage());
         }
 
         return back()->with('directory_test', $result)
-            ->with('toast', ['type' => 'success', 'message' => 'The bridge answered.']);
+            ->with('success', 'The bridge answered.');
     }
 
     public function syncDirectory(Request $request): RedirectResponse
@@ -187,10 +187,10 @@ class IntegrationController extends Controller
         try {
             \Illuminate\Support\Facades\Mail::raw('This is a test from '.\App\Support\Platform\PlatformSettings::brand()['name'].'. If you can read it, e-mail from your institution is working.', fn ($m) => $m->to($request->user()->email)->subject(\App\Support\Platform\PlatformSettings::brand()['name'].' test e-mail'));
         } catch (\Throwable $e) {
-            return back()->with('toast', ['type' => 'error', 'message' => 'The mail server refused: '.\Illuminate\Support\Str::limit($e->getMessage(), 200)]);
+            return back()->with('error', 'The mail server refused: '.\Illuminate\Support\Str::limit($e->getMessage(), 200));
         }
 
-        return back()->with('toast', ['type' => 'success', 'message' => 'Test e-mail sent to '.$request->user()->email.'. Check E-mail delivery for its status.']);
+        return back()->with('success', 'Test e-mail sent to '.$request->user()->email.'. Check E-mail delivery for its status.');
     }
 
     public function pushAnalytics(AnalyticsFeed $feed): RedirectResponse
