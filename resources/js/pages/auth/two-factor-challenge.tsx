@@ -3,7 +3,9 @@ import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { useMemo, useState } from 'react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     InputOTP,
     InputOTPGroup,
@@ -103,6 +105,25 @@ export default function TwoFactorChallenge() {
                                     <InputError message={errors.code} />
                                 </div>
                             )}
+
+                            <div className="flex items-start space-x-3">
+                                <Checkbox
+                                    id="trust_device"
+                                    name="trust_device"
+                                    value="1"
+                                    defaultChecked
+                                />
+                                <div className="grid gap-1">
+                                    <Label htmlFor="trust_device">
+                                        Trust this device for 30 days
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        You will not be asked for a code on this
+                                        browser for 30 days. Only use this on a
+                                        device you trust.
+                                    </p>
+                                </div>
+                            </div>
 
                             <Button
                                 type="submit"

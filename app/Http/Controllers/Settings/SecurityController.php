@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\PasswordUpdateRequest;
+use App\Models\TrustedDevice;
 use App\Http\Requests\Settings\TwoFactorAuthenticationRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -55,7 +56,8 @@ class SecurityController extends Controller implements HasMiddleware
             'password' => $request->password,
         ]);
         app(\App\Services\Audit\AuditLogger::class)->record('security.password_changed', $request->user());
-        // other devices are signed out; this one carries on
+        // other devices are signed out and have to answer two-factor again; this one carries on
+        TrustedDevice::forget($request->user());
         \Illuminate\Support\Facades\Cache::forever(\App\Services\Security\SessionTerminator::cutoffKey($request->user()->id), microtime(true));
         $request->session()->put('auth_at', microtime(true) + 0.001);
         $request->user()->notify(new \App\Notifications\LmsNotice('Your password was changed', 'If this was not you, contact your administrator at once.', '/settings/security', true, category: 'security'));

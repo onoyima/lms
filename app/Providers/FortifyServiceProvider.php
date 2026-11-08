@@ -25,6 +25,8 @@ class FortifyServiceProvider extends ServiceProvider
         $this->app->singleton(\Laravel\Fortify\Contracts\TwoFactorLoginResponse::class, \App\Http\Responses\LoginResponse::class);
         // the two-factor step looks the person up like the password step (platform administrators included)
         $this->app->bind(\Laravel\Fortify\Http\Requests\TwoFactorLoginRequest::class, \App\Http\Requests\Auth\TwoFactorLoginRequest::class);
+        // browsers trusted after a correct code skip the challenge for a while
+        $this->app->scoped(\Laravel\Fortify\Contracts\RedirectsIfTwoFactorAuthenticatable::class, \App\Actions\Fortify\RedirectIfTwoFactorAuthenticatable::class);
     }
 
     /**
