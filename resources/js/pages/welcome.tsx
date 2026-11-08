@@ -3,6 +3,7 @@ import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { Check, ChevronDown, Laptop, MonitorSmartphone, Network, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
+import { Toaster } from '@/components/ui/sonner';
 
 type Plan = {
     id: number; key: string; name: string; tagline: string | null; description: string | null; monthly: string | null; yearly: string | null;
@@ -112,8 +113,9 @@ export default function Welcome({ plans = [] }: { plans: Plan[] }) {
                         </span>
                     </div>
                 </footer>
-            </div>
-        </>
+</div>
+        </section>
+        <Toaster />
     );
 }
 

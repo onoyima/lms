@@ -3,6 +3,7 @@ import { Video } from 'lucide-react';
 import { useEffect } from 'react';
 import { Field, formatDateTime, inputClass } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/sonner';
 
 type Props = {
     meeting: { title: string; starts_at: string; ends_at: string; status: string; timezone: string; description: string | null; institution: string | null };
@@ -65,5 +66,6 @@ export default function GuestJoin({ meeting, needsPasscode, known, open, notice,
                 )}
             </div>
         </div>
+        <Toaster />
     );
 }

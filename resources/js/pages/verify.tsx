@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { CheckCircle2, ShieldX } from 'lucide-react';
 import { formatDateTime } from '@/components/platform/ui';
+import { Toaster } from '@/components/ui/sonner';
 
 type Doc = { type: string; summary: string; holder: string; identifier: string | null; institution: string; issued_at: string; revoked: boolean; hash: string };
 
@@ -27,6 +28,7 @@ export default function Verify({ doc, code }: { doc: Doc | null; code: string })
                     <p className="mt-6 text-xs text-muted-foreground">Compare these details with the printed document. If anything differs, the document is not genuine.</p>
                 </div>
             </div>
+            <Toaster />
         </>
     );
 }

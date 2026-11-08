@@ -3,6 +3,7 @@ import { Camera, CheckCircle2, Loader2, SwitchCamera } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { sendJson } from '@/components/platform/ui';
 import { publish } from '@/lib/live';
+import { Toaster } from '@/components/ui/sonner';
 
 /**
  * The candidate's phone as a second camera. Opened from a one-time code on the exam screen;
@@ -74,5 +75,6 @@ export default function Phone({ code, valid }: { code: string; valid: boolean })
                 {state === 'error' && <p className="max-w-sm text-sm text-red-400">{message}</p>}
             </div>
         </>
+        <Toaster />
     );
 }

@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { Wrench } from 'lucide-react';
+import { Toaster } from '@/components/ui/sonner';
 
 /** Shown while the platform team has switched on maintenance mode. */
 export default function Maintenance({ message }: { message: string }) {
@@ -14,6 +15,7 @@ export default function Maintenance({ message }: { message: string }) {
                     <p className="mt-2 text-sm text-muted-foreground">Nothing has been lost. Refresh this page in a few minutes.</p>
                 </div>
             </main>
+            <Toaster />
         </>
     );
 }

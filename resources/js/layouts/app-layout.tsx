@@ -1,6 +1,7 @@
 import { router, usePage } from '@inertiajs/react';
 import { LifeBuoy, Megaphone, Wrench, X } from 'lucide-react';
 import AppLayoutTemplate from '@/layouts/app/app-sidebar-layout';
+import { Toaster } from '@/components/ui/sonner';
 import type { BreadcrumbItem } from '@/types';
 
 type Window = { id: number; starts_at: string; ends_at: string; message: string; blocks_exams: boolean };
@@ -75,6 +76,7 @@ export default function AppLayout({
             <AnnouncementBanner />
             <MaintenanceBanner />
             {children}
+            <Toaster />
         </AppLayoutTemplate>
     );
 }

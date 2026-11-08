@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { home } from '@/routes';
+import { Toaster } from '@/components/ui/sonner';
 import type { AuthLayoutProps } from '@/types';
 
 /** Sign-in pages carry the institution's own logo, name and words when an institution is in context. */
@@ -48,6 +49,7 @@ export default function AuthSimpleLayout({
                     )}
                 </div>
             </div>
+            <Toaster />
         </div>
     );
 }

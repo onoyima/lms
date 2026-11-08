@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { home } from '@/routes';
+import { Toaster } from '@/components/ui/sonner';
 import type { AuthLayoutProps } from '@/types';
 
 export default function AuthSplitLayout({
@@ -39,6 +40,7 @@ export default function AuthSplitLayout({
                     {children}
                 </div>
             </div>
+            <Toaster />
         </div>
     );
 }

@@ -5,6 +5,7 @@ import { formatClock, sendJson } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
 import { frameToJpeg, loadFace, readFace } from '@/lib/face';
 import { publish } from '@/lib/live';
+import { Toaster } from '@/components/ui/sonner';
 
 /* ─── Types ───────────────────────────────────────────────────────────── */
 type Option = { id: number; label: string; html: string };
@@ -1283,10 +1284,11 @@ function QuestionInput({ q, value, onChange, contrast }: { q: PaperQuestion; val
                 ))}
                 <div className="grid gap-1 rounded-xl bg-black/5 p-3 text-[0.85em]">
                     {q.matching.right.map((r, i) => <div key={r.key} className="flex gap-2"><strong>{String.fromCharCode(65 + i)}.</strong><RichContent html={r.html} /></div>)}
-                </div>
-            </div>
-        );
-    }
+</div>
+        </div>
+        <Toaster />
+    );
+}
 
     if (q.type === 'numeric') {
         return (

@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { ShieldOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/sonner';
 
 /** Shown to everyone at a suspended institution except its administrators (who are sent to billing). */
 export default function Suspended({ institution, reason, signedIn }: { institution: string | null; reason: string | null; signedIn: boolean }) {
@@ -20,6 +21,7 @@ export default function Suspended({ institution, reason, signedIn }: { instituti
                     </div>
                 </div>
             </main>
+            <Toaster />
         </>
     );
 }

@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { Hand, MessageSquare, Mic, MicOff, MonitorUp, PhoneOff, Users, Video, VideoOff, Volume2, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Toaster } from '@/components/ui/sonner';
 
 /**
  * Built-in meeting room. Each browser sends its camera and microphone straight to every other browser
@@ -546,9 +547,10 @@ export default function Room({ meeting, me, ice, endpoints, max, pollMs, csrf }:
                 <button className="rounded-lg border border-white/20 px-4 py-2 text-sm hover:bg-white/10" onClick={() => (state === 'waiting' ? void leave() : (window.location.href = endpoints.exit))}>
                     {state === 'waiting' ? 'Leave' : 'Back'}
                 </button>
-            </div>
-        );
-    }
+</div>
+        <Toaster />
+    );
+}
 
     const tiles = 1 + peers.length;
     const cols = tiles <= 1 ? 'grid-cols-1' : tiles <= 4 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 lg:grid-cols-3';
