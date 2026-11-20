@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import { ShieldCheck } from 'lucide-react';
 import AppLogoIcon from '@/components/app-logo-icon';
+import { Toaster } from '@/components/ui/sonner';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
 
@@ -47,6 +48,7 @@ export default function AuthSimpleLayout({ children, title, description }: AuthL
                     )}
                 </div>
             </main>
+            <Toaster />
         </div>
     );
 }

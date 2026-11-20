@@ -140,7 +140,9 @@ function DirectoryForm({ conn, runs, test }: { conn: DirConn; runs: DirRun[]; te
                 <Status value={conn.enabled ? 'active' : 'inactive'} />
             </div>
             <form className="grid gap-4" onSubmit={(e) => {
-                e.preventDefault(); f.put('/admin/integrations/directory', { preserveScroll: true, onSuccess: () => { f.setData('secret', ''); setSecretEdited(false); } });
+                e.preventDefault(); f.put('/admin/integrations/directory', { preserveScroll: true, onSuccess: () => {
+ f.setData('secret', ''); setSecretEdited(false); 
+} });
             }}>
                 <div className="grid gap-3 md:grid-cols-3">
                     <Field label="Bridge address" hint="e.g. https://portal.university.edu.ng/bridge/vuna" error={f.errors.url}>

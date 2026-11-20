@@ -1,7 +1,6 @@
 import { Link } from '@inertiajs/react';
 import type { PropsWithChildren } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
-import { Toaster } from '@/components/ui/sonner';
 import {
     Card,
     CardContent,
@@ -9,6 +8,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { Toaster } from '@/components/ui/sonner';
 import { home } from '@/routes';
 
 export default function AuthCardLayout({

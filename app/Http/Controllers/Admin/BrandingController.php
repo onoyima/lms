@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\Audit\AuditLogger;
+use App\Services\Media\ImageCompressor;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,7 +22,7 @@ class BrandingController extends Controller
         ]);
     }
 
-    public function update(Request $request, TenantContext $context, AuditLogger $audit): RedirectResponse
+    public function update(Request $request, TenantContext $context, AuditLogger $audit, ImageCompressor $images): RedirectResponse
     {
         $tenant = $context->get();
         $data = $request->validate([
@@ -29,14 +30,14 @@ class BrandingController extends Controller
             'short_name' => ['nullable', 'string', 'max:60'],
             'theme' => ['nullable', 'in:sapphire,forest,plum'],
             'brand_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp'],
             // the rest of the white-label look
             'secondary_color' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'favicon' => ['nullable', 'file', 'mimes:png,ico', 'max:256'],
+            'favicon' => ['nullable', 'file', 'mimes:png,ico'],
             'remove_favicon' => ['boolean'],
             // the picture behind the glass: the theme's own, the institution's own photo, or none
             'background_mode' => ['nullable', 'in:theme,own,none'],
-            'background' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096', 'dimensions:min_width=1200,min_height=500'],
+            'background' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'dimensions:min_width=1200,min_height=500'],
             'login_title' => ['nullable', 'string', 'max:120'],
             'login_message' => ['nullable', 'string', 'max:500'],
             'welcome_message' => ['nullable', 'string', 'max:500'],
@@ -46,7 +47,7 @@ class BrandingController extends Controller
         ]);
 
         if ($request->hasFile('logo')) {
-            $data['logo_path'] = $request->file('logo')->store("tenants/{$tenant->id}", 'public');
+            $data['logo_path'] = $images->store($request->file('logo'), "tenants/{$tenant->id}", 'public', ['max_width' => 1024, 'max_height' => 1024]);
         }
         $settings = (array) ($tenant->settings ?? []);
         $branding = (array) ($settings['branding'] ?? []);
@@ -57,12 +58,12 @@ class BrandingController extends Controller
             $branding['theme'] = $data['theme'];
         }
         if ($request->hasFile('favicon')) {
-            $branding['favicon_path'] = $request->file('favicon')->store("tenants/{$tenant->id}", 'public');
+            $branding['favicon_path'] = $images->storeAsFavicon($request->file('favicon'), "tenants/{$tenant->id}", 'public');
         } elseif ($request->boolean('remove_favicon')) {
             $branding['favicon_path'] = null;
         }
         if ($request->hasFile('background')) {
-            $branding['background_path'] = $request->file('background')->store("tenants/{$tenant->id}", 'public');
+            $branding['background_path'] = $images->store($request->file('background'), "tenants/{$tenant->id}", 'public', ['max_width' => 2400, 'max_height' => 1400, 'max_bytes' => 900 * 1024]);
             $branding['background_mode'] = 'own';
         } elseif (! empty($data['background_mode'])) {
             $branding['background_mode'] = $data['background_mode'] === 'own' && empty($branding['background_path']) ? 'theme' : $data['background_mode'];

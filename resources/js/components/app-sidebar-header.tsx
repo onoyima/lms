@@ -1,11 +1,17 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { Bell, CircleHelp, Search } from 'lucide-react';
+import { Bell, CircleHelp, Moon, Search, Sun } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { UserMenuContent } from '@/components/user-menu-content';
+import { useAppearance } from '@/hooks/use-appearance';
 import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
 
 type Hit = { title: string; meta: string; href: string };
+
+const initials = (name: string) => name.split(' ').filter(Boolean).map((n) => n[0]).slice(0, 2).join('').toUpperCase();
 
 /** Search across people, exams, courses and questions; Ctrl+K (or ⌘K) jumps here from anywhere. */
 function QuickSearch() {
@@ -122,7 +128,9 @@ function QuickSearch() {
 }
 
 export function AppSidebarHeader({ breadcrumbs = [] }: { breadcrumbs?: BreadcrumbItemType[] }) {
-    const { notificationsUnread = 0, auth } = usePage().props as { notificationsUnread?: number; auth?: { isPlatformAdmin?: boolean } };
+    const { notificationsUnread = 0, auth } = usePage().props as { notificationsUnread?: number; auth?: { user?: { name: string; avatar?: string | null; email: string } | null; isPlatformAdmin?: boolean } };
+    const { resolvedAppearance, updateAppearance } = useAppearance();
+    const icon = 'grid size-10 place-items-center rounded-xl text-foreground/80 transition-colors hover:bg-card hover:text-foreground';
 
     return (
         <header className="sticky top-0 z-30 px-4 pt-3 md:px-6">
@@ -144,6 +152,25 @@ export function AppSidebarHeader({ breadcrumbs = [] }: { breadcrumbs?: Breadcrum
                 <Link href={auth?.isPlatformAdmin ? '/platform/docs' : '/docs'} aria-label="Help" className="grid size-10 place-items-center rounded-xl text-foreground/80 transition-colors hover:bg-card hover:text-foreground">
                     <CircleHelp className="size-[18px]" />
                 </Link>
+                <button type="button" className={icon} onClick={() => updateAppearance(resolvedAppearance === 'dark' ? 'light' : 'dark')}
+                    aria-label={resolvedAppearance === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+                    {resolvedAppearance === 'dark' ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
+                </button>
+                {auth?.user && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button type="button" className="ml-0.5 grid size-10 place-items-center rounded-xl transition-colors hover:bg-card focus:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Your account">
+                                <Avatar className="size-8 overflow-hidden rounded-full">
+                                    <AvatarImage src={auth.user.avatar ?? undefined} alt={auth.user.name} />
+                                    <AvatarFallback className="rounded-full bg-brand text-[12px] font-semibold text-brand-foreground">{initials(auth.user.name)}</AvatarFallback>
+                                </Avatar>
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-56" align="end">
+                            <UserMenuContent user={auth.user as never} />
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
             </div>
         </header>
     );

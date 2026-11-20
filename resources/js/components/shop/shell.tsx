@@ -1,12 +1,13 @@
 import { Link, usePage } from '@inertiajs/react';
 import { ShoppingBag } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Toaster } from '@/components/ui/sonner';
 
-type Shared = { tenant?: { name?: string } | null; auth?: { user?: { name: string } | null }; flash?: { success?: string | null; error?: string | null } };
+type Shared = { tenant?: { name?: string } | null; auth?: { user?: { name: string } | null } };
 
 /** The public frame for the shop: institution name, cart count, sign-in or "My test series". */
 export function ShopShell({ children, cartCount }: { children: ReactNode; cartCount?: number }) {
-    const { tenant, auth, flash } = usePage<Shared>().props;
+    const { tenant, auth } = usePage<Shared>().props;
 
     return (
         <div className="min-h-screen bg-background">
@@ -22,10 +23,9 @@ export function ShopShell({ children, cartCount }: { children: ReactNode; cartCo
                 </div>
             </header>
             <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
-                {flash?.success && <p role="status" className="mb-4 rounded-xl border border-status-good/30 bg-status-good/10 px-4 py-3 text-sm">{flash.success}</p>}
-                {flash?.error && <p role="alert" className="mb-4 rounded-xl border border-status-critical/30 bg-status-critical/10 px-4 py-3 text-sm">{flash.error}</p>}
                 {children}
             </main>
+            <Toaster />
         </div>
     );
 }

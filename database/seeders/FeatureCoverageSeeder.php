@@ -59,6 +59,7 @@ class FeatureCoverageSeeder extends Seeder
             $this->support();
             $this->newerQuestions();
             $this->shop();
+            $this->trustedDevice();
 
             auth()->forgetUser();
         });
@@ -162,6 +163,14 @@ class FeatureCoverageSeeder extends Seeder
                 'tenant_id' => $tid, 'question_id' => (int) DB::table('attempt_questions')->where('attempt_id', $attempt)->value('question_id'),
                 'mime' => 'image/jpeg', 'size' => 9, 'path' => "attempt-files/$attempt/demo-circuit.txt", 'sha256' => hash('sha256', 'demo file')]);
         }
+    }
+
+    /** A browser the demo administrator chose to trust for two-factor sign-in (30 days). */
+    private function trustedDevice(): void
+    {
+        $this->once('trusted_devices', ['user_id' => $this->admin->id, 'token_hash' => hash('sha256', 'demo-device')], [
+            'secret_hash' => hash('sha256', 'demo-secret'), 'ip' => '127.0.0.1', 'user_agent' => 'Demo browser',
+            'last_used_at' => now()->subDay(), 'expires_at' => now()->addDays(29)]);
     }
 
     /** Test-series shop: a package of the first exams, two vouchers, and a paid order with access. */

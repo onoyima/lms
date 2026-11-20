@@ -4,6 +4,7 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { compressImage } from '@/lib/compress-image';
 import { readableTextOn } from '@/lib/contrast';
 
 type Branding = {
@@ -124,9 +125,10 @@ export default function BrandingPage({ branding }: { branding: Branding }) {
                         </div>
                         {form.data.background_mode === 'own' && (
                             <div className="grid gap-2">
-                                <Label htmlFor="background">Upload a wide photo (JPG, PNG or WebP, at least 1200 × 500, up to 4 MB)</Label>
-                                <Input id="background" type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => {
-                                    const f = e.target.files?.[0] ?? null;
+                                <Label htmlFor="background">Upload a wide photo (JPG, PNG or WebP, at least 1200 × 500; large photos are made smaller for you)</Label>
+                                <Input id="background" type="file" accept="image/jpeg,image/png,image/webp" onChange={async (e) => {
+                                    const picked = e.target.files?.[0];
+                                    const f = picked ? await compressImage(picked, { maxWidth: 2400, maxHeight: 1400 }) : null;
                                     form.setData('background', f);
                                     setPreview(f ? URL.createObjectURL(f) : null);
                                 }} />
@@ -161,7 +163,10 @@ export default function BrandingPage({ branding }: { branding: Branding }) {
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="logo">Logo (PNG/JPG, square works best)</Label>
-                        <Input id="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => form.setData('logo', e.target.files?.[0] ?? null)} />
+                        <Input id="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            form.setData('logo', file ? await compressImage(file, { maxWidth: 1024, maxHeight: 1024 }) : null);
+                        }} />
                         <InputError message={form.errors.logo} />
                     </div>
                     <div className="grid gap-2">
@@ -176,7 +181,10 @@ export default function BrandingPage({ branding }: { branding: Branding }) {
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="favicon">Browser tab icon (PNG or ICO, small square)</Label>
-                        <Input id="favicon" type="file" accept="image/png,image/x-icon,.ico" onChange={(e) => form.setData('favicon', e.target.files?.[0] ?? null)} />
+                        <Input id="favicon" type="file" accept="image/png,image/x-icon,.ico" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            form.setData('favicon', file ? await compressImage(file, { maxWidth: 256, maxHeight: 256 }) : null);
+                        }} />
                         {branding.favicon_url && (
                             <label className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <img src={branding.favicon_url} alt="" className="size-4" /> Current icon

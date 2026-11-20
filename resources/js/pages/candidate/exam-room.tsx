@@ -5,6 +5,7 @@ import { PreChecks, RoomScan } from '@/components/exam/pre-checks';
 import type { CheckKey } from '@/components/exam/pre-checks';
 import { formatClock, sendJson } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
+import { Toaster } from '@/components/ui/sonner';
 import { ExamStore, keepExamPageOffline } from '@/lib/exam-store';
 import type { Snapshot, StoredAnswer } from '@/lib/exam-store';
 import { frameToJpeg, loadFace, readFace } from '@/lib/face';
@@ -82,6 +83,7 @@ export default function ExamRoom(props: Props) {
                     onFinished={(r) => (setReceipt(r), setPhase('done'))} />
             )}
             {phase === 'done' && <Done receipt={receipt} waiting={waiting} />}
+            <Toaster />
         </>
     );
 }

@@ -4,6 +4,9 @@ return [
     // Staff in the roles listed in the institution policy must turn on two-factor sign-in
     'enforce_mfa' => (bool) env('ENFORCE_MFA', true),
 
+    // Days a browser that answered a two-factor code is trusted (0 = ask every time)
+    'trust_two_factor_days' => (int) env('TRUST_TWO_FACTOR_DAYS', 30),
+
     // Monitoring tools send this in X-Health-Token to see detailed health (empty = summary only)
     'health_token' => env('HEALTH_TOKEN', ''),
 

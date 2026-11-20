@@ -2,8 +2,8 @@ import { Head } from '@inertiajs/react';
 import { Camera, CheckCircle2, Loader2, SwitchCamera } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { sendJson } from '@/components/platform/ui';
-import { publish } from '@/lib/live';
 import { Toaster } from '@/components/ui/sonner';
+import { publish } from '@/lib/live';
 
 /**
  * The candidate's phone as a second camera. Opened from a one-time code on the exam screen;
