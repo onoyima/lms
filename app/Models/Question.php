@@ -12,10 +12,21 @@ class Question extends Model
 {
     use BelongsToTenant, SoftDeletes;
 
-    public const TYPES = ['single_choice', 'multiple_choice', 'true_false', 'matching', 'numeric', 'short_answer', 'essay'];
+    public const TYPES = ['single_choice', 'multiple_choice', 'true_false', 'multi_true_false', 'matching', 'ordering', 'fill_blank', 'numeric', 'short_answer', 'essay', 'file_upload'];
+
+    /** Kinds of file a candidate may hand in for a file-upload question. */
+    public const FILE_KINDS = ['image' => ['jpg', 'jpeg', 'png', 'webp', 'heic'], 'pdf' => ['pdf'], 'document' => ['doc', 'docx', 'odt', 'rtf', 'txt'], 'spreadsheet' => ['xls', 'xlsx', 'ods', 'csv'], 'slides' => ['ppt', 'pptx', 'odp'], 'code' => ['zip', 'py', 'java', 'c', 'cpp', 'js', 'ts', 'php', 'r', 'm', 'ipynb']];
+
+    /** Blanks in a fill-in question are written [[1]], [[2]]… in the text. */
+    public static function blankNumbers(string $html): array
+    {
+        preg_match_all('/\[\[(\d{1,2})\]\]/', $html, $m);
+
+        return array_values(array_unique(array_map('intval', $m[1])));
+    }
 
     protected $fillable = [
-        'course_id', 'question_import_id', 'created_by', 'type', 'stem_html', 'explanation_html',
+        'course_id', 'passage_id', 'question_import_id', 'created_by', 'type', 'stem_html', 'explanation_html',
         'topic', 'difficulty', 'mark', 'status', 'version', 'numeric_answer', 'matching', 'accepted_answers', 'outcome',
     ];
 
@@ -27,6 +38,11 @@ class Question extends Model
     public function options(): HasMany
     {
         return $this->hasMany(QuestionOption::class)->orderBy('position');
+    }
+
+    public function passage(): BelongsTo
+    {
+        return $this->belongsTo(QuestionPassage::class, 'passage_id');
     }
 
     public function course(): BelongsTo

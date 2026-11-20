@@ -79,4 +79,18 @@ class QuestionParserTest extends TestCase
         $this->assertSame('short_answer', $qs[1]['type']);
         $this->assertEqualsCanonicalizing(['Au', 'gold'], $qs[1]['accepted']);
     }
+
+    public function test_multiple_true_false_by_position_by_letter_or_by_star(): void
+    {
+        $qs = $this->parseText(
+            "1. Concerning the heart:\nA. It has four chambers\nB. The left ventricle pumps to the lungs\nC. The SA node is the pacemaker\nD. Valves stop backflow\nType: MTF\nAnswer: TFTT\n\n"
+            ."2. About insulin:\nA. It lowers blood glucose\nB. It is made by alpha cells\nC. It is a protein\nAnswer: A-T, B-F, C-T\n\n"
+            ."3. Respiration:\n*A. Oxygen is used\nB. It happens only in the lungs\n*C. Carbon dioxide is released\nType: multiple true false"
+        );
+        $this->assertSame(['multi_true_false', 'multi_true_false', 'multi_true_false'], array_column($qs, 'type'));
+        $this->assertSame([true, false, true, true], array_column($qs[0]['options'], 'correct'));
+        $this->assertSame([true, false, true], array_column($qs[1]['options'], 'correct'));
+        $this->assertSame([true, false, true], array_column($qs[2]['options'], 'correct'));
+        $this->assertSame([], $qs[0]['warnings']);
+    }
 }

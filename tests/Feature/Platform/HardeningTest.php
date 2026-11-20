@@ -20,7 +20,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -305,22 +304,20 @@ class HardeningTest extends TestCase
         $this->actingAs($this->admin)->post('/admin/branding', ['name' => 'V', 'brand_color' => 'red'])->assertSessionHasErrors('brand_color');
     }
 
-    public function test_an_oversized_logo_is_compressed_instead_of_refused(): void
+    public function test_each_institution_picks_its_design_and_the_picture_behind_the_glass(): void
     {
-        Storage::fake('public');
-
-        $this->actingAs($this->admin)->post('/admin/branding', [
-            'name' => 'Veritas University', 'brand_color' => '#123456',
-            'logo' => UploadedFile::fake()->image('huge-logo.png', 3000, 2000),
-        ])->assertSessionHasNoErrors();
-
-        $path = $this->tenant->fresh()->logo_path;
-        $this->assertNotNull($path);
-        Storage::disk('public')->assertExists($path);
-
-        [$width, $height] = getimagesize(Storage::disk('public')->path($path));
-        $this->assertLessThanOrEqual(1024, $width);
-        $this->assertLessThanOrEqual(1024, $height);
+        $this->actingAs($this->admin)->post('/admin/branding', ['name' => 'V', 'brand_color' => '#123456', 'theme' => 'forest'])->assertSessionHas('success');
+        $this->get('/dashboard')->assertSee('data-theme="forest"', false)->assertDontSee('--wash-image:', false); // the theme's own campus picture
+        $this->post('/admin/branding', ['name' => 'V', 'brand_color' => '#123456', 'background' => UploadedFile::fake()->image('campus.jpg', 400, 300)])->assertSessionHasErrors('background');
+        $this->post('/admin/branding', ['name' => 'V', 'brand_color' => '#123456', 'theme' => 'plum', 'background' => UploadedFile::fake()->image('campus.jpg', 1600, 700)])->assertSessionHas('success');
+        $b = $this->tenant->fresh()->brandPayload();
+        $this->assertSame(['own', 'plum'], [$b['background_mode'], $b['theme']]);
+        auth()->logout();
+        $this->get('/login')->assertSee('--wash-image: url(', false);
+        $this->actingAs($this->admin)->post('/admin/branding', ['name' => 'V', 'brand_color' => '#123456', 'background_mode' => 'none']);
+        $this->get('/dashboard')->assertSee('--wash-image: none', false);
+        $this->post('/admin/branding', ['name' => 'V', 'brand_color' => '#123456', 'theme' => 'sapphire', 'background_mode' => 'theme']);
+        $this->get('/dashboard')->assertSee('data-theme="sapphire"', false)->assertDontSee('--wash-image:', false);
     }
 
     // ---------- reported faults ----------

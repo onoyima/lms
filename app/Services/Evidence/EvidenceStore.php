@@ -18,7 +18,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class EvidenceStore
 {
-    public const KINDS = ['snapshot', 'webcam_video', 'second_camera', 'screen', 'audio', 'document'];
+    public const KINDS = ['snapshot', 'webcam_video', 'second_camera', 'screen', 'audio', 'document', 'room_scan'];
 
     public const MIMES = ['image/jpeg', 'image/png', 'image/webp', 'video/webm', 'audio/webm', 'video/mp4', 'application/pdf'];
 

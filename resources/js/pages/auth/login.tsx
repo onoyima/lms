@@ -104,6 +104,10 @@ export default function Login({
                 )}
             </Form>
 
+            <p className="mt-4 text-center text-sm">
+                <a href="/login/code" className="font-medium text-brand underline-offset-4 hover:underline">Sign in with a one-time code instead</a>
+            </p>
+
             {sso.length > 0 && (
                 <div className="mt-6 grid gap-2">
                     <p className="text-center text-xs tracking-wide text-muted-foreground uppercase">or</p>

@@ -31,6 +31,7 @@ export default function ExamResults({ exam, results, stats, changes, appeals, ca
                             <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=xlsx`}><Download className="size-4" /> Excel</a></Button>
                             <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=pdf`}>PDF</a></Button>
                             <Button variant="outline" asChild><a href={`/results/${exam.id}/export`}>CSV</a></Button>
+                            <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=json`}>JSON</a></Button>
                             <Button variant="outline" asChild><Link href={`/results/${exam.id}/analytics`}><BarChart3 className="size-4" /> Analysis</Link></Button>
                         </>
                     }

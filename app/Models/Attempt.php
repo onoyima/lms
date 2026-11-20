@@ -12,7 +12,7 @@ class Attempt extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['exam_id', 'exam_session_id', 'exam_candidate_id', 'user_id', 'attempt_no', 'status', 'channel', 'started_at', 'deadline_at', 'submitted_at', 'submit_reason', 'paused_at', 'paused_seconds', 'token_hash', 'device_hash', 'ip', 'user_agent', 'last_seen_at', 'client_status', 'answered_count', 'violation_count', 'risk_score', 'score_raw', 'score_max', 'needs_marking', 'submission_hash'];
+    protected $fillable = ['exam_id', 'exam_session_id', 'exam_candidate_id', 'user_id', 'attempt_no', 'status', 'channel', 'started_at', 'deadline_at', 'submitted_at', 'submit_reason', 'paused_at', 'paused_seconds', 'device_off_seconds', 'device_off_until', 'token_hash', 'device_hash', 'ip', 'user_agent', 'last_seen_at', 'client_status', 'answered_count', 'violation_count', 'risk_score', 'score_raw', 'score_max', 'needs_marking', 'submission_hash'];
 
     protected $hidden = ['token_hash', 'device_hash'];
 
@@ -24,6 +24,7 @@ class Attempt extends Model
             'submitted_at' => 'datetime',
             'paused_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'device_off_until' => 'datetime',
             'needs_marking' => 'boolean',
             'score_raw' => 'float',
             'score_max' => 'float',

@@ -121,7 +121,7 @@ return new class extends Migration
             $table->unsignedBigInteger('received')->default(0);
             $table->string('path');
             $table->string('status', 10)->default('open'); // open, complete, used
-            $table->timestamp('expires_at');
+            $table->dateTime('expires_at');
             $table->timestamps();
             $table->index(['user_id', 'status']);
         });

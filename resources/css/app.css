@@ -1,6 +1,4 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/source-serif-4';
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/500.css';
 
@@ -13,12 +11,12 @@
 
 @theme {
     --font-sans:
-        'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif,
+        'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji';
     --font-mono:
         'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
     --font-display:
-        'Source Serif 4 Variable', 'Source Serif 4', Georgia, 'Times New Roman', serif;
+        'Bricolage Grotesque', 'Figtree', ui-sans-serif, system-ui, sans-serif;
 
     --color-brand: var(--brand);
     --color-brand-foreground: var(--brand-foreground);
@@ -28,6 +26,12 @@
     --color-status-good: var(--status-good);
     --color-status-warning: var(--status-warning);
     --color-status-critical: var(--status-critical);
+    --color-status-info: var(--status-info);
+    --color-brand-ink: var(--brand-ink);
+    --color-deep: var(--deep);
+    --color-deep-2: var(--deep-2);
+    --color-glow: var(--glow);
+    --color-side: var(--side);
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -79,82 +83,172 @@
 
 /*
  * Platform design tokens.
- * An office-software look rather than a marketing look: warm paper background, white working
- * surfaces, ink text, one institutional colour (set per institution in app.blade.php; default is
- * a deep academic blue), hairline rules, small radii, a serif for page titles only.
- * Status colours (good / warning / critical) are reserved for states and alerts.
+ * Three themes an institution can choose (Branding > Theme): sapphire (default), forest, plum.
+ * Each theme has a deep colour for the menu and the exam-day board, a bright primary for actions,
+ * a glow for highlights, and three wash colours behind the glass at the top of each page.
+ * Status colours are the same in every theme and are kept for meaning: green = live / good,
+ * amber = needs action, red = problem, blue = information. The institution's own colour (--inst)
+ * is used for its crest.
  */
-:root {
-    --brand: #1d3557;
+:root,
+[data-theme='sapphire'] {
+    --wash-image: url('/images/backgrounds/sapphire.webp');
+    --deep: #0b1f4b;
+    --deep-2: #132e6b;
+    --brand: #3d7bff;
     --brand-foreground: #ffffff;
-    --brand-soft: color-mix(in oklab, var(--brand) 8%, transparent);
-    --second: #9a6b2f;
+    --brand-ink: #2459d6;
+    --glow: #7cc4ff;
+    --side: #afc0e6;
+    --mesh-1: #3d7bff;
+    --mesh-2: #22c3a6;
+    --mesh-3: #8b5cf6;
+    --background: #f2f5fb;
+    --foreground: #101a33;
+    --muted-foreground: #5e6b85;
+    --secondary: #e7ecf6;
+    --muted: #edf1f8;
+}
+[data-theme='forest'] {
+    --wash-image: url('/images/backgrounds/forest.webp');
+    --deep: #08362b;
+    --deep-2: #0e4a3b;
+    --brand: #d9a43a;
+    --brand-foreground: #1b1405;
+    --brand-ink: #8a6416;
+    --glow: #f3d58a;
+    --side: #b5d3c6;
+    --mesh-1: #1f9d6b;
+    --mesh-2: #d9a43a;
+    --mesh-3: #3e8ed0;
+    --background: #f1f5f2;
+    --foreground: #0f241d;
+    --muted-foreground: #55695f;
+    --secondary: #e4ece6;
+    --muted: #eaf1ec;
+}
+[data-theme='plum'] {
+    --wash-image: url('/images/backgrounds/plum.webp');
+    --deep: #1e1240;
+    --deep-2: #2e1d5e;
+    --brand: #8b6cff;
+    --brand-foreground: #ffffff;
+    --brand-ink: #6a4be6;
+    --glow: #c4b5ff;
+    --side: #c9bfee;
+    --mesh-1: #8b6cff;
+    --mesh-2: #4cc3ff;
+    --mesh-3: #ff7aa8;
+    --background: #f4f2fb;
+    --foreground: #1a1236;
+    --muted-foreground: #685f86;
+    --secondary: #ebe7f7;
+    --muted: #f0edf9;
+}
+:root {
+    --inst: var(--brand);
+    --brand-soft: color-mix(in oklab, var(--brand) 12%, transparent);
+    --second: var(--brand-ink);
     --brand-2: var(--second);
     --brand-2-foreground: #ffffff;
 
-    --background: #f7f6f2;
-    --foreground: #1b1d21;
     --card: #ffffff;
-    --card-foreground: #1b1d21;
+    --card-foreground: var(--foreground);
     --popover: #ffffff;
-    --popover-foreground: #1b1d21;
+    --popover-foreground: var(--foreground);
     --primary: var(--brand);
     --primary-foreground: var(--brand-foreground);
-    --secondary: #efede7;
-    --secondary-foreground: #1b1d21;
-    --muted: #efede7;
-    --muted-foreground: #5b5f66;
+    --secondary-foreground: var(--foreground);
     --accent: var(--brand-soft);
-    --accent-foreground: #1b1d21;
-    --destructive: #b42318;
-    --destructive-foreground: #b42318;
-    --border: rgb(27 29 33 / 0.12);
-    --input: rgb(27 29 33 / 0.2);
+    --accent-foreground: var(--foreground);
+    --destructive: #e03157;
+    --destructive-foreground: #c41f45;
+    --border: color-mix(in oklab, var(--foreground) 9%, transparent);
+    --input: color-mix(in oklab, var(--foreground) 16%, transparent);
     --ring: var(--brand);
     --chart-1: var(--brand);
-    --chart-2: var(--second);
-    --chart-3: #4d7c5b;
-    --chart-4: #7a8796;
-    --chart-5: #a14d4d;
-    --status-good: #2f6f4f;
-    --status-warning: #a15c07;
-    --status-critical: #b42318;
-    --radius: 0.5rem;
-    --sidebar: #efede7;
-    --sidebar-foreground: #1b1d21;
+    --chart-2: #12b886;
+    --chart-3: #f59f00;
+    --chart-4: #4c8dff;
+    --chart-5: #f0476a;
+    --status-good: #0a8f63;
+    --status-warning: #b86e00;
+    --status-critical: #d6294f;
+    --status-info: #2f6fe0;
+    --live: #12b886;
+    --radius: 0.875rem;
+    --sidebar: var(--deep);
+    --sidebar-foreground: var(--side);
     --sidebar-primary: var(--brand);
     --sidebar-primary-foreground: var(--brand-foreground);
-    --sidebar-accent: rgb(27 29 33 / 0.06);
-    --sidebar-accent-foreground: #1b1d21;
-    --sidebar-border: rgb(27 29 33 / 0.1);
-    --sidebar-ring: var(--brand);
+    --sidebar-accent: rgb(255 255 255 / 0.07);
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: rgb(255 255 255 / 0.08);
+    --sidebar-ring: var(--glow);
+    --glass: rgb(255 255 255 / 0.66);
+    --glass-border: rgb(255 255 255 / 0.75);
+    --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 12px 32px -20px color-mix(in oklab, var(--foreground) 45%, transparent);
 }
 
 .dark {
-    --background: #0b0d10;
-    --foreground: #f5f7fa;
-    --card: #14171c;
-    --card-foreground: #f5f7fa;
-    --popover: #14171c;
-    --popover-foreground: #f5f7fa;
-    --secondary: #1b1f26;
-    --secondary-foreground: #f5f7fa;
-    --muted: #1b1f26;
-    --muted-foreground: #a1a8b3;
-    --accent: var(--brand-soft);
-    --accent-foreground: #f5f7fa;
-    --destructive: #ef4444;
-    --destructive-foreground: #f87171;
+    --background: #0a0f1e;
+    --foreground: #eef2fb;
+    --card: #121a2e;
+    --card-foreground: #eef2fb;
+    --popover: #121a2e;
+    --popover-foreground: #eef2fb;
+    --secondary: #18223a;
+    --secondary-foreground: #eef2fb;
+    --muted: #161f35;
+    --muted-foreground: #9aa6c2;
+    --brand-ink: var(--glow);
+    --destructive: #ff5c7c;
+    --destructive-foreground: #ff7d96;
     --border: rgb(255 255 255 / 0.08);
-    --input: rgb(255 255 255 / 0.12);
-    --status-good: #22c55e;
-    --status-warning: #f59e0b;
-    --status-critical: #ef4444;
-    --sidebar: #0f1216;
-    --sidebar-foreground: #f5f7fa;
-    --sidebar-accent: var(--brand-soft);
-    --sidebar-accent-foreground: #f5f7fa;
-    --sidebar-border: rgb(255 255 255 / 0.07);
+    --input: rgb(255 255 255 / 0.14);
+    --status-good: #34d399;
+    --status-warning: #fbbf24;
+    --status-critical: #ff6b8a;
+    --status-info: #7cb2ff;
+    --glass: rgb(18 26 46 / 0.66);
+    --glass-border: rgb(255 255 255 / 0.08);
+    --shadow-soft: 0 12px 32px -20px rgb(0 0 0 / 0.8);
+}
+
+@font-face {
+    font-family: 'Figtree';
+    src: url('../fonts/figtree-latin-wght-normal.woff2') format('woff2');
+    font-weight: 300 900;
+    font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Figtree';
+    src: url('../fonts/figtree-latin-ext-wght-normal.woff2') format('woff2');
+    font-weight: 300 900;
+    font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: 'Figtree';
+    src: url('../fonts/figtree-latin-wght-italic.woff2') format('woff2');
+    font-weight: 300 900;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Bricolage Grotesque';
+    src: url('../fonts/bricolage-grotesque-latin-opsz-normal.woff2') format('woff2');
+    font-weight: 200 800;
+    font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Bricolage Grotesque';
+    src: url('../fonts/bricolage-grotesque-latin-ext-opsz-normal.woff2') format('woff2');
+    font-weight: 200 800;
+    font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
 @layer base {
@@ -164,22 +258,298 @@
 
     body {
         @apply bg-background text-foreground;
+        -webkit-font-smoothing: antialiased;
+    }
+    h1,
+    h2,
+    h3 {
+        font-family: var(--font-display);
+        letter-spacing: -0.015em;
+    }
+    :focus-visible {
+        outline: 2px solid var(--brand);
+        outline-offset: 2px;
+    }
+    /* Responsive by default: grid cells may shrink below their content (a long select option or a
+       file input no longer widens the page), form controls never outgrow their box, and long words
+       and links wrap instead of pushing the page sideways. */
+    .grid > * {
+        min-width: 0;
+    }
+    input,
+    select,
+    textarea {
+        max-width: 100%;
+    }
+    p,
+    h1,
+    h2,
+    h3,
+    li,
+    dd {
+        overflow-wrap: break-word;
+    }
+    pre {
+        max-width: 100%;
     }
 }
 
 @layer components {
+    /* A numbered gap in a fill-in-the-blanks question */
+    .blank-chip {
+        display: inline-block;
+        min-width: 4.5em;
+        margin: 0 0.2em;
+        border-bottom: 2px solid currentColor;
+        text-align: center;
+        font-size: 0.85em;
+        font-weight: 600;
+        opacity: 0.75;
+    }
     /* Small plain label (sentence case, no tracking) */
     .eyebrow {
         @apply text-xs font-medium text-muted-foreground;
     }
+    /* Working surfaces: frosted white over the page's colour wash */
     .surface {
-        @apply rounded-lg border border-border bg-card;
+        border-radius: 1.125rem;
+        border: 1px solid var(--glass-border);
+        background: color-mix(in oklab, var(--card) 82%, transparent);
+        backdrop-filter: blur(14px) saturate(1.3);
+        -webkit-backdrop-filter: blur(14px) saturate(1.3);
+        box-shadow: var(--shadow-soft);
+    }
+    .glass {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        backdrop-filter: blur(18px) saturate(1.4);
+        -webkit-backdrop-filter: blur(18px) saturate(1.4);
+        box-shadow: var(--shadow-soft);
+    }
+    /* The soft colour wash at the top of every page (what the glass shows through) */
+    .page-wash {
+        position: relative;
+        isolation: isolate;
+    }
+    .page-wash::before {
+        content: '';
+        position: absolute;
+        inset: -180px -80px auto -80px;
+        height: 560px;
+        z-index: -1;
+        pointer-events: none;
+        background:
+            radial-gradient(420px 300px at 15% 30%, color-mix(in oklab, var(--mesh-1) 28%, transparent), transparent 70%),
+            radial-gradient(380px 280px at 60% 8%, color-mix(in oklab, var(--mesh-2) 22%, transparent), transparent 70%),
+            radial-gradient(360px 260px at 92% 42%, color-mix(in oklab, var(--mesh-3) 20%, transparent), transparent 70%);
+    }
+    .dark .page-wash::before {
+        opacity: 0.45;
+    }
+    /* The picture behind the glass (theme's own, the institution's photo, or none), fading into the page */
+    .page-wash::after {
+        content: '';
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 440px;
+        z-index: -2;
+        pointer-events: none;
+        background-image: linear-gradient(to bottom, color-mix(in oklab, var(--background) 30%, transparent), var(--background) 96%), var(--wash-image);
+        background-size: cover;
+        background-position: center 72%;
+        -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+        mask-image: linear-gradient(to bottom, #000 55%, transparent);
+    }
+    .dark .page-wash::after {
+        background-image: linear-gradient(to bottom, color-mix(in oklab, var(--background) 45%, transparent), var(--background) 96%), var(--wash-image);
     }
     h1,
     .font-display {
         font-family: var(--font-display);
         font-optical-sizing: auto;
     }
+    /* Sign-in pages: the theme's deep colour with soft glows */
+    .auth-deep {
+        isolation: isolate;
+        background:
+            linear-gradient(160deg, color-mix(in oklab, var(--deep) 88%, transparent) 0%, color-mix(in oklab, var(--deep-2) 55%, transparent) 60%, color-mix(in oklab, var(--deep) 35%, transparent) 100%),
+            var(--wash-image) center 75% / cover,
+            linear-gradient(150deg, var(--deep) 0%, var(--deep-2) 100%);
+    }
+    .auth-deep::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background:
+            radial-gradient(420px 320px at 10% 10%, color-mix(in oklab, var(--mesh-1) 40%, transparent), transparent 70%),
+            radial-gradient(380px 300px at 90% 60%, color-mix(in oklab, var(--mesh-3) 30%, transparent), transparent 70%),
+            radial-gradient(420px 320px at 30% 100%, color-mix(in oklab, var(--mesh-2) 26%, transparent), transparent 70%);
+    }
+    /* Deep board (exam day): theme's deep colour with a glow */
+    .deep-board {
+        position: relative;
+        overflow: hidden;
+        border-radius: 1.5rem;
+        color: #ffffff;
+        background: linear-gradient(135deg, var(--deep) 0%, var(--deep-2) 100%);
+        box-shadow: 0 30px 60px -36px var(--deep);
+    }
+    .deep-board::after {
+        content: '';
+        position: absolute;
+        right: -120px;
+        top: -160px;
+        width: 420px;
+        height: 420px;
+        border-radius: 50%;
+        background: radial-gradient(circle, color-mix(in oklab, var(--glow) 28%, transparent), transparent 65%);
+        pointer-events: none;
+    }
+    /* Live dot that pulses */
+    .live-dot {
+        position: relative;
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--live);
+    }
+    .live-dot::after {
+        content: '';
+        position: absolute;
+        inset: -4px;
+        border-radius: 999px;
+        border: 2px solid var(--live);
+        animation: live-ping 1.8s ease-out infinite;
+    }
+    /* Progress shimmer on things happening now */
+    .shimmer {
+        position: relative;
+        overflow: hidden;
+    }
+    .shimmer::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+        transform: translateX(-100%);
+        animation: sheen 2.4s linear infinite;
+    }
+    /* Icons on buttons: the + turns, arrows nudge, send flies (in a loop), refresh spins once */
+    :is(a, button) > svg {
+        transition: transform 0.25s ease;
+    }
+    :is(a, button):hover > svg.lucide-plus {
+        transform: rotate(90deg);
+    }
+    :is(a, button):hover > :is(svg.lucide-arrow-right, svg.lucide-arrow-up-right, svg.lucide-chevron-right, svg.lucide-external-link) {
+        transform: translateX(3px);
+    }
+    :is(a, button):hover > :is(svg.lucide-refresh-cw, svg.lucide-rotate-cw) {
+        transform: rotate(180deg);
+    }
+    :is(a, button):hover > :is(svg.lucide-download, svg.lucide-file-down) {
+        transform: translateY(2px);
+    }
+    :is(a, button):hover > :is(svg.lucide-copy, svg.lucide-pencil, svg.lucide-pen-line) {
+        transform: rotate(-8deg) scale(1.08);
+    }
+    svg.lucide-send,
+    svg.lucide-send-horizontal {
+        animation: send-fly 2.4s ease-in-out infinite;
+    }
+    svg.lucide-radio {
+        animation: radio-pulse 2s ease-in-out infinite;
+    }
+}
+
+@keyframes live-ping {
+    0% {
+        transform: scale(0.5);
+        opacity: 0.9;
+    }
+    100% {
+        transform: scale(1.6);
+        opacity: 0;
+    }
+}
+@keyframes sheen {
+    to {
+        transform: translateX(100%);
+    }
+}
+@keyframes send-fly {
+    0%,
+    100% {
+        transform: translate(0, 0);
+        opacity: 1;
+    }
+    40% {
+        transform: translate(2px, -2px);
+    }
+    55% {
+        transform: translate(6px, -6px);
+        opacity: 0;
+    }
+    56% {
+        transform: translate(-5px, 5px);
+        opacity: 0;
+    }
+    75% {
+        transform: translate(0, 0);
+        opacity: 1;
+    }
+}
+@keyframes radio-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.55;
+    }
+}
+@keyframes rise-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* Hand-made primary buttons and links (bg-brand) get the same depth and lift as <Button> */
+:is(a, button).bg-brand {
+    background-image: linear-gradient(180deg, color-mix(in oklab, var(--brand) 86%, white), var(--brand));
+    box-shadow: 0 8px 20px -10px var(--brand), inset 0 1px 0 rgb(255 255 255 / 0.3);
+    transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+:is(a, button).bg-brand:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px -12px var(--brand), inset 0 1px 0 rgb(255 255 255 / 0.3);
+}
+:is(a, button).bg-brand:active {
+    transform: scale(0.98);
+}
+
+/* Brand-coloured text uses the theme's darker ink so it stays readable (e.g. gold in Forest) */
+.text-brand {
+    color: var(--brand-ink);
+}
+
+@layer components {
     /* Exam-taking surface: light, large, calm (see design system) */
     .exam-surface {
         @apply bg-white text-[18px] leading-relaxed text-[#0b0d10];
@@ -220,4 +590,19 @@
         background: #fbfaf7;
         color: #0b0d10;
     }
+}
+
+/* The menu: the theme's deep colour, a little darker towards the bottom */
+[data-slot='sidebar-wrapper'] {
+    background: linear-gradient(180deg, var(--deep) 0%, color-mix(in oklab, var(--deep) 82%, black) 100%);
+}
+[data-sidebar='sidebar']:not([data-mobile='true']) {
+    background: transparent;
+}
+[data-sidebar='sidebar'][data-mobile='true'] {
+    background: linear-gradient(180deg, var(--deep) 0%, color-mix(in oklab, var(--deep) 82%, black) 100%);
+}
+[data-sidebar='sidebar'] [data-sidebar='menu-button'] > svg {
+    width: 18px;
+    height: 18px;
 }

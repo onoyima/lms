@@ -1,33 +1,75 @@
-@import '@fontsource-variable/schibsted-grotesk';
-
 /* Public website only. Paper, ink, the product green, and the pink "drop-out" ink of a printed answer sheet. */
+/*
+ * Public website. Uses the same design as the app: the chosen theme (Sapphire, Forest & gold or Plum,
+ * set under Branding) gives the deep colour, the action colour and the colour wash; Bricolage
+ * Grotesque for headings and Figtree for text.
+ */
 .landing {
-    --paper: #f5f7f6;
-    --paper-2: #e9eeec;
-    --ink: #102027;
-    --ink-2: #44525a;
-    --green: #0f9d6b;
-    --green-deep: #0a7a53;
-    --sheet: #d9727d;
-    --sheet-soft: #fbeced;
+    --paper: var(--background);
+    --paper-2: color-mix(in oklab, var(--foreground) 9%, transparent);
+    --ink: var(--foreground);
+    --ink-2: var(--muted-foreground);
+    --green: var(--brand);
+    --green-deep: var(--brand-ink);
+    --on-green: var(--brand-foreground);
+    --sheet: var(--brand-ink);
+    --sheet-soft: color-mix(in oklab, var(--brand) 8%, var(--background));
     background: var(--paper);
     color: var(--ink);
-    font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-sans);
 }
 
 .landing .display {
-    font-family: 'Schibsted Grotesk Variable', 'Inter Variable', sans-serif;
-    font-weight: 800;
-    letter-spacing: -0.025em;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.03em;
     line-height: 1.02;
 }
 
 .landing .h2 {
-    font-family: 'Schibsted Grotesk Variable', 'Inter Variable', sans-serif;
-    font-weight: 750;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.08;
     font-size: clamp(1.75rem, 3.2vw, 2.6rem);
+}
+
+/* The deep hero and bands: theme's deep colour with soft glows of the theme's wash colours */
+.landing .deep {
+    position: relative;
+    isolation: isolate;
+    color: #fff;
+    background: linear-gradient(140deg, var(--deep) 0%, var(--deep-2) 100%);
+}
+/* The hero also shows the theme's picture under the deep colour */
+.landing .deep.with-picture {
+    background:
+        linear-gradient(90deg, color-mix(in oklab, var(--deep) 78%, transparent) 0%, transparent 55%),
+        linear-gradient(170deg, color-mix(in oklab, var(--deep) 92%, transparent) 0%, color-mix(in oklab, var(--deep-2) 62%, transparent) 55%, color-mix(in oklab, var(--deep) 40%, transparent) 100%),
+        var(--wash-image) center bottom / cover,
+        linear-gradient(140deg, var(--deep) 0%, var(--deep-2) 100%);
+}
+.landing .deep::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(520px 360px at 12% 18%, color-mix(in oklab, var(--mesh-1) 38%, transparent), transparent 70%),
+        radial-gradient(460px 320px at 78% 12%, color-mix(in oklab, var(--mesh-3) 30%, transparent), transparent 70%),
+        radial-gradient(520px 360px at 70% 100%, color-mix(in oklab, var(--mesh-2) 26%, transparent), transparent 70%);
+}
+.landing .card {
+    border-radius: 1.25rem;
+    border: 1px solid var(--glass-border);
+    background: var(--card);
+    box-shadow: var(--shadow-soft);
+}
+.landing .board-tile {
+    border-radius: 0.9rem;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.06);
 }
 
 .landing a:focus-visible,
@@ -36,7 +78,7 @@
 .landing select:focus-visible,
 .landing textarea:focus-visible,
 .landing summary:focus-visible {
-    outline: 3px solid var(--green);
+    outline: 3px solid var(--glow);
     outline-offset: 2px;
 }
 
@@ -81,6 +123,19 @@
     }
 }
 
+/* Hero board: the live bars grow once on load */
+.bar-grow {
+    transform-origin: left;
+    transform: scaleX(0);
+    animation: bar-grow 900ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    animation-delay: var(--d, 0ms);
+}
+@keyframes bar-grow {
+    to {
+        transform: scaleX(1);
+    }
+}
+
 /* Product tour: the screenshot changes when a role is chosen. */
 .tour-shot {
     animation: tour-in 320ms ease-out;
@@ -95,6 +150,7 @@
 @media (prefers-reduced-motion: reduce) {
     .omr-bubble.is-marked::after,
     .omr-stamp,
+    .bar-grow,
     .tour-shot {
         animation: none;
         transform: none;

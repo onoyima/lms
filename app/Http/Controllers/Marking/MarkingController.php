@@ -50,19 +50,25 @@ class MarkingController extends Controller
             ->join('attempt_questions as aq', fn ($j) => $j->on('aq.attempt_id', '=', 'aa.attempt_id')->on('aq.question_id', '=', 'aa.question_id'))
             ->join('questions as q', 'q.id', '=', 'aa.question_id')
             ->where('a.exam_id', $exam->id)->whereIn('a.status', Attempt::CLOSED)
-            ->whereIn('q.type', ['essay', 'short_answer'])
+            ->whereIn('q.type', ['essay', 'short_answer', 'file_upload'])
             ->when(! $request->boolean('all'), fn ($q) => $q->whereNull('aa.marked_at'))
             ->whereNotNull('aa.response')
             ->orderBy('aa.question_id')->orderBy('aa.attempt_id')->limit(50)
             ->get(['aa.attempt_id', 'aa.question_id', 'aa.response', 'aa.score', 'aa.feedback', 'aq.mark', 'q.stem_html', 'q.explanation_html']);
 
+        $suggested = DB::table('ai_mark_suggestions')->whereIn('attempt_id', $rows->pluck('attempt_id')->unique())->get()
+            ->keyBy(fn ($s) => $s->attempt_id.'-'.$s->question_id);
+
         return Inertia::render('marking/essays', [
             'exam' => $exam->only(['id', 'title']),
+            'ai' => \App\Services\Ai\AiSettings::enabled('suggest_marks'),
             'answers' => $rows->map(fn ($r) => [
+                'suggestion' => ($s = $suggested->get($r->attempt_id.'-'.$r->question_id)) ? ['score' => (float) $s->score, 'reasons' => $s->reasons, 'points' => json_decode((string) $s->points, true) ?: []] : null,
                 'attempt_id' => $r->attempt_id, 'question_id' => $r->question_id,
                 'candidate_code' => strtoupper(substr(hash('sha256', $r->attempt_id.config('app.key')), 0, 6)), // anonymous marking
                 'stem_html' => $r->stem_html, 'guide_html' => $r->explanation_html, 'mark' => (float) $r->mark,
-                'text' => json_decode($r->response, true)['text'] ?? '', 'score' => $r->score !== null ? (float) $r->score : null, 'feedback' => $r->feedback,
+                'text' => json_decode($r->response, true)['text'] ?? '',
+                'file' => ($f = json_decode($r->response, true)['file'] ?? null) ? ['id' => (int) $f['id'], 'name' => (string) ($f['name'] ?? 'file'), 'url' => "/marking/{$exam->id}/files/".(int) $f['id']] : null, 'score' => $r->score !== null ? (float) $r->score : null, 'feedback' => $r->feedback,
             ]),
             'remaining' => Attempt::where('exam_id', $exam->id)->where('needs_marking', true)->count(),
         ]);
@@ -78,6 +84,34 @@ class MarkingController extends Controller
         $this->audit->record('answer.marked', $attempt, ['question' => $data['question_id'], 'score' => $data['score']]);
 
         return back();
+    }
+
+    /** A candidate's handed-in file, for the examiner. */
+    public function file(Request $request, Exam $exam, int $file): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $this->authorizeExaminer($request, $exam);
+        $f = DB::table('attempt_files as f')->join('attempts as a', 'a.id', '=', 'f.attempt_id')->where('a.exam_id', $exam->id)->where('f.id', $file)->first(['f.*']);
+        abort_unless($f, 404);
+        $this->audit->record('answer.file_viewed', $exam, ['file' => $file]);
+
+        return \Illuminate\Support\Facades\Storage::disk('local')->download($f->path, $f->name);
+    }
+
+    /** AI suggests a mark for one answer; the examiner still decides and saves the mark. */
+    public function suggest(Request $request, Exam $exam, \App\Services\Ai\MarkSuggester $suggester): \Illuminate\Http\JsonResponse
+    {
+        $this->authorizeExaminer($request, $exam);
+        abort_unless(\App\Services\Ai\AiSettings::enabled('suggest_marks'), 422, 'AI marking suggestions are not switched on.');
+        $data = $request->validate(['attempt_id' => ['required', 'integer'], 'question_id' => ['required', 'integer']]);
+        Attempt::where('exam_id', $exam->id)->findOrFail($data['attempt_id']);
+        try {
+            $s = $suggester->suggest((int) $data['attempt_id'], (int) $data['question_id'], $request->user()->id);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        $this->audit->record('answer.ai_suggested', $exam, ['attempt' => $data['attempt_id'], 'question' => $data['question_id'], 'score' => $s['score']]);
+
+        return response()->json($s);
     }
 
     /** Practical / viva marking sheet (legacy assess.php). */

@@ -52,10 +52,13 @@ class FeatureCoverageSeeder extends Seeder
             $this->people();
             $this->lms();
             $this->exams();
+            $this->examWithPapers();
             $this->proctoring();
             $this->results();
             $this->conferencing();
             $this->support();
+            $this->newerQuestions();
+            $this->shop();
 
             auth()->forgetUser();
         });
@@ -63,7 +66,122 @@ class FeatureCoverageSeeder extends Seeder
         $this->command?->info('Every feature has demo data.');
     }
 
+    /**
+     * "Nursing Professional Exam" with its four papers on one day: the objective paper done this
+     * morning, the theory paper being written now, the practical this afternoon and the viva on
+     * Monday (still waiting for approval) — so the dashboard and the exam's overview show a real day.
+     */
+    private function examWithPapers(): void
+    {
+        if (\App\Models\ExamGroup::where('title', 'Nursing Professional Exam')->exists()) {
+            return;
+        }
+        $students = User::where('user_type', 'student')->where('status', 'active')->orderBy('id')->limit(12)->get();
+        $bank = \App\Models\Question::where('status', 'approved')->whereIn('type', ['single_choice', 'multiple_choice', 'true_false', 'numeric'])->pluck('id');
+        $essays = \App\Models\Question::where('status', 'approved')->where('type', 'essay')->pluck('id');
+        $group = \App\Models\ExamGroup::create(['title' => 'Nursing Professional Exam', 'code' => 'NUR 401', 'description' => 'Final professional examination.', 'created_by' => $this->admin->id]);
+        $day = now()->startOfDay();
+        $papers = [
+            ['cbt', 'Objective', 60, $day->copy()->setTime(9, 0), 'scheduled', 'done'],
+            ['essay', 'Theory', 120, now()->subMinutes(40), 'scheduled', 'writing'],
+            ['practical', 'Practical', 90, $day->copy()->setTime(15, 0)->max(now()->addHours(2)), 'scheduled', null],
+            ['viva', 'Viva', 30, $day->copy()->addDays(3)->setTime(10, 0), 'submitted', null],
+        ];
+        foreach ($papers as [$type, $label, $minutes, $start, $status, $state]) {
+            $exam = Exam::create(['exam_group_id' => $group->id, 'title' => 'Nursing Professional Exam · '.$label, 'code' => 'NUR401-'.strtoupper(substr($type, 0, 3)),
+                'type' => $type, 'category' => 'exam', 'status' => $status, 'version' => 1, 'duration_minutes' => $minutes, 'total_mark' => 100, 'max_attempts' => 1,
+                'created_by' => $status === 'submitted' ? $this->lecturer->id : $this->admin->id, 'approved_by' => $status === 'scheduled' ? $this->admin->id : null, 'approved_at' => $status === 'scheduled' ? now()->subDay() : null,
+                'settings' => array_replace(\App\Support\Exams\ExamSettings::SETTINGS, ['require_check_in' => false]),
+                'proctoring' => \App\Support\Exams\ExamSettings::proctoring(['webcam' => true, 'face_detection' => true]), 'channels' => ['web', 'desktop', 'seb']]);
+            if ($exam->isOnScreen()) {
+                $section = $exam->sections()->create(['title' => 'Section A', 'position' => 0]);
+                foreach (($type === 'essay' ? $essays : $bank)->take(6)->values() as $i => $qid) {
+                    $section->questions()->attach($qid, ['position' => $i]);
+                }
+            } else {
+                $exam->criteria()->create(['text' => $type === 'viva' ? 'General viva performance' : 'Overall practical performance', 'max_score' => 100, 'position' => 0]);
+                $exam->examiners()->syncWithoutDetaching([$this->lecturer->id => ['role' => 'examiner']]);
+            }
+            $session = $exam->sessions()->create(['name' => $label, 'mode' => $type === 'cbt' ? 'remote' : 'hall', 'starts_at' => $start, 'ends_at' => $start->copy()->addMinutes($minutes + 30),
+                'late_entry_minutes' => $minutes, 'grace_seconds' => 30, 'status' => 'scheduled']);
+            foreach ($students as $n => $u) {
+                $c = ExamCandidate::create(['exam_session_id' => $session->id, 'user_id' => $u->id, 'eligibility' => 'eligible']);
+                if ($state === null || $u->id === $this->student->id) {
+                    continue;
+                }
+                $done = $state === 'done' || $n < 2;
+                $a = Attempt::create(['exam_id' => $exam->id, 'exam_session_id' => $session->id, 'exam_candidate_id' => $c->id, 'user_id' => $u->id, 'attempt_no' => 1,
+                    'status' => $done ? 'submitted' : 'in_progress', 'channel' => 'web', 'started_at' => $start->copy()->addMinutes(2),
+                    'deadline_at' => $start->copy()->addMinutes($minutes + 2), 'submitted_at' => $done ? $start->copy()->addMinutes($minutes - 5) : null, 'last_seen_at' => now(), 'ip' => '10.10.5.'.(20 + $n)]);
+                app(\App\Services\Exams\PaperBuilder::class)->build($a);
+            }
+        }
+        // the same students belong to the whole category (later exams in it include them)
+        \Illuminate\Support\Facades\DB::table('exam_group_students')->insertOrIgnore($students->map(fn ($u) => [
+            'tenant_id' => $group->tenant_id, 'exam_group_id' => $group->id, 'user_id' => $u->id, 'created_at' => now(), 'updated_at' => now(),
+        ])->all());
+    }
+
     /** Insert one row into a table unless the "unique" columns already match. */
+    /** Newer features: a case study shared by questions, a file handed in, an AI marking suggestion, a sign-in code and a text message. */
+    private function newerQuestions(): void
+    {
+        $tid = $this->tenant->id;
+        $this->once('login_codes', ['user_id' => $this->student->id, 'channel' => 'email'], ['tenant_id' => $tid, 'code_hash' => hash('sha256', 'demo'), 'expires_at' => now()->subDay(), 'used_at' => now()->subDay()]);
+        $tpl = $this->once('certificate_templates', ['tenant_id' => $tid, 'name' => 'Pass certificate'], ['kind' => 'certificate', 'heading' => 'Certificate of achievement',
+            'body' => 'has passed {exam} with a score of {score} (grade {grade}) on {date}.', 'signatory_name' => 'Prof. A. Bello', 'signatory_title' => 'Registrar', 'colour' => '#1d3557',
+            'badge_icon' => 'award', 'min_percent' => 50, 'auto_award' => true, 'created_by' => $this->admin->id]);
+        if (! DB::table('certificate_awards')->where('user_id', $this->student->id)->exists()) {
+            $examTitle = (string) DB::table('exams')->where('tenant_id', $tid)->orderBy('id')->value('title');
+            $code = app(\App\Services\Documents\AcademicRecord::class)->issue($this->student, 'certificate', 'Certificate · Pass certificate · '.$examTitle, ['demo' => true], $this->admin);
+            $this->once('certificate_awards', ['code' => $code], ['tenant_id' => $tid, 'certificate_template_id' => $tpl, 'user_id' => $this->student->id, 'subject_type' => 'exam',
+                'subject_id' => (int) DB::table('exams')->where('tenant_id', $tid)->orderBy('id')->value('id'), 'subject_title' => $examTitle, 'percent' => 72, 'grade' => 'A']);
+        }
+        $this->once('sms_messages', ['tenant_id' => $tid, 'purpose' => 'ExamScheduled'], ['user_id' => $this->student->id, 'to' => '+234803111****', 'status' => 'sent', 'provider' => 'termii', 'parts' => 1]);
+        $passage = $this->once('question_passages', ['tenant_id' => $tid, 'title' => 'Case study: Mr B, 58'], [
+            'body_html' => '<p>Mr B, 58, has had central chest pain for two hours, sweating and nausea. BP 150/95, pulse 104.</p>', 'created_by' => $this->admin->id]);
+        foreach ([['What is the most likely diagnosis?', 'essay'], ['List three immediate nursing actions.', 'essay']] as [$stem, $type]) {
+            $this->once('questions', ['tenant_id' => $tid, 'stem_html' => "<p>$stem</p>"], ['type' => $type, 'mark' => 5, 'status' => 'approved', 'passage_id' => $passage, 'created_by' => $this->admin->id, 'version' => 1]);
+        }
+        $this->once('questions', ['tenant_id' => $tid, 'stem_html' => '<p>The [[1]] pumps blood to the lungs; normal resting heart rate is about [[2]] beats per minute.</p>'],
+            ['type' => 'fill_blank', 'mark' => 2, 'status' => 'approved', 'created_by' => $this->admin->id, 'version' => 1,
+                'accepted_answers' => json_encode(['blanks' => [['answers' => ['right ventricle']], ['value' => 72, 'tolerance' => 12, 'answers' => []]]])]);
+
+        $answer = DB::table('attempt_answers as aa')->join('attempts as a', 'a.id', '=', 'aa.attempt_id')->join('questions as q', 'q.id', '=', 'aa.question_id')
+            ->where('a.tenant_id', $tid)->where('q.type', 'essay')->whereNotNull('aa.response')->first(['aa.attempt_id', 'aa.question_id']);
+        $attempt = $answer?->attempt_id ?? DB::table('attempts')->where('tenant_id', $tid)->value('id');
+        if ($answer) {
+            $this->once('ai_mark_suggestions', ['attempt_id' => $answer->attempt_id, 'question_id' => $answer->question_id], [
+                'tenant_id' => $tid, 'score' => 3.5, 'out_of' => 5, 'reasons' => 'Explains the main idea; misses the role of the concentration gradient.',
+                'points' => json_encode([['point' => 'Movement of water', 'credit' => 2], ['point' => 'Across a semi-permeable membrane', 'credit' => 1.5], ['point' => 'Down a concentration gradient', 'credit' => 0]]),
+                'model' => 'demo', 'requested_by' => $this->lecturer->id]);
+        }
+        if ($attempt) {
+            \Illuminate\Support\Facades\Storage::disk('local')->put("attempt-files/$attempt/demo-circuit.txt", 'demo file');
+            $this->once('attempt_files', ['attempt_id' => $attempt, 'name' => 'circuit-drawing.jpg'], [
+                'tenant_id' => $tid, 'question_id' => (int) DB::table('attempt_questions')->where('attempt_id', $attempt)->value('question_id'),
+                'mime' => 'image/jpeg', 'size' => 9, 'path' => "attempt-files/$attempt/demo-circuit.txt", 'sha256' => hash('sha256', 'demo file')]);
+        }
+    }
+
+    /** Test-series shop: a package of the first exams, two vouchers, and a paid order with access. */
+    private function shop(): void
+    {
+        $tid = $this->tenant->id;
+        $pkg = $this->once('test_packages', ['tenant_id' => $tid, 'title' => 'Mock exam series'], ['description' => 'Timed mock exams with instant scores.',
+            'price' => 250000, 'currency' => 'NGN', 'access_days' => 90, 'active' => true, 'position' => 0, 'created_by' => $this->admin->id]);
+        foreach (DB::table('exams')->where('tenant_id', $tid)->orderBy('id')->limit(2)->pluck('id') as $examId) {
+            $this->once('test_package_exams', ['test_package_id' => $pkg, 'exam_id' => $examId]);
+        }
+        $voucher = $this->once('vouchers', ['tenant_id' => $tid, 'code' => 'WELCOME20'], ['kind' => 'percent', 'value' => 20, 'max_uses' => 100, 'used' => 1, 'active' => true]);
+        $this->once('vouchers', ['tenant_id' => $tid, 'code' => 'SCHOLAR'], ['kind' => 'free', 'value' => 0, 'test_package_id' => $pkg, 'max_uses' => 10, 'active' => true]);
+        $order = $this->once('shop_orders', ['number' => 'TS-DEMO-0001'], ['tenant_id' => $tid, 'user_id' => $this->student->id, 'subtotal' => 250000, 'discount' => 50000,
+            'total' => 200000, 'currency' => 'NGN', 'status' => 'paid', 'provider' => 'paystack', 'reference' => 'TS-DEMO-REF-0001', 'voucher_id' => $voucher, 'paid_at' => now()->subDays(3)]);
+        $this->once('shop_order_items', ['shop_order_id' => $order, 'test_package_id' => $pkg], ['title' => 'Mock exam series', 'price' => 250000]);
+        $this->once('package_access', ['user_id' => $this->student->id, 'test_package_id' => $pkg], ['tenant_id' => $tid, 'shop_order_id' => $order,
+            'starts_at' => now()->subDays(3), 'expires_at' => now()->addDays(87)]);
+    }
+
     private function once(string $table, array $unique, array $values = []): int
     {
         $row = DB::table($table)->where($unique)->first();
@@ -317,6 +435,28 @@ class FeatureCoverageSeeder extends Seeder
                         'location' => "/recordings/t{$this->tenant->id}/a{$attempt->id}/camera-$part.mp4", 'size' => 9_000_000, 'duration_seconds' => $part === 1 ? 1500 : 2100,
                         'started_at' => $attempt->started_at->copy()->addMinutes($part === 1 ? 0 : 26), 'ended_at' => $attempt->started_at->copy()->addMinutes($part === 1 ? 25 : 61)]);
                 }
+                // a screen recording made in the browser (no media server) whose first piece never arrived
+                $rec = $this->once('media_recordings', ['tenant_id' => $this->tenant->id, 'attempt_id' => $attempt->id, 'egress_id' => "web:demo{$attempt->id}screen0000"], ['kind' => 'screen', 'status' => 'complete',
+                    'location' => 'web/video/webm', 'size' => 4, 'duration_seconds' => 20, 'started_at' => $attempt->started_at, 'ended_at' => $attempt->started_at->copy()->addSeconds(20)]);
+                if (! DB::table('recording_chunks')->where('media_recording_id', $rec)->exists()) {
+                    $path = "recordings/{$this->tenant->id}/{$attempt->id}/$rec/000001.bin";
+                    \Illuminate\Support\Facades\Storage::disk('local')->put($path, app(\App\Services\Media\BrowserRecordings::class)->seal('demo'));
+                    $this->once('recording_chunks', ['media_recording_id' => $rec, 'seq' => 1], ['tenant_id' => $this->tenant->id, 'disk' => 'local', 'path' => $path, 'size' => 4, 'sha256' => hash('sha256', 'demo'), 'offset_ms' => 20000]);
+                }
+            }
+            // the sitting's shareable link, with one student who came in through it and one guest
+            $link = $this->once('exam_links', ['exam_session_id' => $session->id], ['tenant_id' => $this->tenant->id, 'token' => Str::random(32), 'audience' => 'institution', 'enabled' => true, 'created_by' => $this->admin->id]);
+            $mine = ExamCandidate::where('exam_session_id', $session->id)->where('user_id', $this->student->id)->first();
+            if ($mine) {
+                $this->once('exam_link_entries', ['exam_link_id' => $link, 'user_id' => $this->student->id], ['tenant_id' => $this->tenant->id, 'exam_candidate_id' => $mine->id, 'guest' => false,
+                    'name' => $this->student->name, 'email' => $this->student->email, 'identifier' => $this->student->identifier, 'ip' => '10.10.4.21']);
+            }
+            if (! DB::table('exam_link_entries')->where('exam_link_id', $link)->where('guest', true)->exists()) {
+                $guest = \App\Models\User::create(['name' => 'Ngozi Eze', 'email' => 'guest-demo'.$link.'@exam-guest.invalid', 'password' => \Illuminate\Support\Facades\Hash::make(Str::random(40)), 'identifier' => 'G'.$link.'-DEMO']);
+                $guest->forceFill(['tenant_id' => $this->tenant->id, 'user_type' => \App\Models\ExamLink::GUEST_TYPE, 'status' => 'active'])->save();
+                $gc = ExamCandidate::create(['exam_session_id' => $session->id, 'user_id' => $guest->id, 'eligibility' => 'eligible']);
+                $this->once('exam_link_entries', ['exam_link_id' => $link, 'user_id' => $guest->id], ['tenant_id' => $this->tenant->id, 'exam_candidate_id' => $gc->id, 'guest' => true,
+                    'name' => 'Ngozi Eze', 'identifier' => 'JAMB-2026-0042', 'ip' => '102.89.4.17']);
             }
         }
         $this->once('proctor_availability', ['tenant_id' => $this->tenant->id, 'user_id' => $proctor->id, 'date' => now()->addWeek()->toDateString()], ['from_time' => '08:00:00', 'to_time' => '14:00:00', 'available' => true, 'note' => 'Morning only']);

@@ -12,6 +12,10 @@ class Policy
         'grading_scale' => ['A' => 70, 'B' => 60, 'C' => 50, 'D' => 45, 'E' => 40, 'F' => 0],
         'grade_points' => ['A' => 5, 'B' => 4, 'C' => 3, 'D' => 2, 'E' => 1, 'F' => 0],
         'pass_grade_min' => 'E',
+        // other grading scales an exam can use instead (e.g. postgraduate, pass/fail, percentage bands):
+        // name => {grades: {A: 70, …}, points: {A: 5, …}, pass: "C"}
+        'grading_scales' => [],
+        'otp_login' => true,                   // sign in with a one-time code by email or text message
         'email_domains' => [],                 // e.g. ["example.edu.ng"]; empty = any
         'severity_overrides' => [],            // event type => 1..5
         'faculty_exam_defaults' => [],         // faculty id => proctoring settings
@@ -65,9 +69,19 @@ class Policy
         return self::all()[$key] ?? $default;
     }
 
-    public static function grade(float $percent): string
+    /** The scale an exam uses: one of the institution's other scales by name, or the main one. */
+    public static function scale(?string $name = null): array
     {
-        $scale = self::get('grading_scale');
+        $other = $name ? (self::get('grading_scales')[$name] ?? null) : null;
+
+        return $other && ! empty($other['grades'])
+            ? ['grades' => array_map('floatval', (array) $other['grades']), 'points' => array_map('floatval', (array) ($other['points'] ?? [])), 'pass' => (string) ($other['pass'] ?? array_key_first((array) $other['grades']))]
+            : ['grades' => self::get('grading_scale'), 'points' => self::get('grade_points'), 'pass' => (string) self::get('pass_grade_min')];
+    }
+
+    public static function grade(float $percent, ?string $scaleName = null): string
+    {
+        $scale = self::scale($scaleName)['grades'];
         arsort($scale);
         foreach ($scale as $grade => $min) {
             if ($percent >= $min) {

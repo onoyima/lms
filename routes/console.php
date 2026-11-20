@@ -130,6 +130,10 @@ if (config('queue.default') !== 'sync' && config('platform.queue_via_scheduler')
     Schedule::command('queue:work --stop-when-empty --max-time=50 --tries=3 --sleep=1')->everyMinute()->withoutOverlapping(5)->name('queue-from-scheduler');
 }
 Schedule::command('evidence:purge')->dailyAt('02:30');
+// Browser-made recordings: finish ones whose browser went quiet, drop old cached playback files, apply retention
+Schedule::call(fn () => app(\App\Services\Media\BrowserRecordings::class)->sweep())->name('recordings:sweep')->everyFiveMinutes()->withoutOverlapping();
+Schedule::call(fn () => app(\App\Services\Media\BrowserRecordings::class)->clearCache())->name('recordings:cache')->hourly();
+Schedule::call(fn () => app(\App\Services\Media\BrowserRecordings::class)->purgeExpired())->name('recordings:purge')->dailyAt('02:40');
 Schedule::command('analytics:items')->dailyAt('03:00');
 Schedule::command('evidence:verify --limit=5000')->weekly();
 
@@ -139,7 +143,8 @@ Schedule::command('evidence:verify --limit=5000')->weekly();
  */
 Artisan::command('exams:load-fixture {--candidates=500} {--questions=50} {--out=storage/app/loadtest.json} {--tenant=}', function (AttemptService $attempts) {
     abort_if(app()->isProduction(), 1, 'Not on production.');
-    $tenant = \App\Models\Tenant::where('slug', $this->option('tenant') ?: config('platform.default_tenant'))->firstOrFail();
+    $slug = $this->option('tenant') ?: config('platform.default_tenant');
+    $tenant = $slug ? \App\Models\Tenant::where('slug', $slug)->firstOrFail() : \App\Models\Tenant::orderBy('id')->firstOrFail(); // blank = the first institution
     app(\App\Support\Tenancy\TenantContext::class)->set($tenant);
     $n = (int) $this->option('candidates');
     $tag = 'LOAD'.now()->format('His');
@@ -389,3 +394,25 @@ Artisan::command('directory:sync {--tenant= : One institution by its short name}
 })->purpose('Bring people, courses and registrations in from each institution\'s directory bridge');
 Schedule::command('directory:sync')->hourlyAt(17)->withoutOverlapping();
 
+
+/*
+ * Bring the standard packages to the current default names, prices, currency, taglines and features
+ * (and create any missing package). Modules and capacities are kept unless --modules is given.
+ * Packages the platform team created themselves are never touched. Run once after an update if wanted.
+ */
+Artisan::command('plans:apply-defaults {--modules : also reset each package\'s modules and capacities} {--dry-run}', function () {
+    foreach (\Database\Seeders\PlanSeeder::DEFAULTS as $d) {
+        $d['modules'] = $d['modules'] === '*' ? array_keys(config('modules')) : $d['modules'];
+        $plan = \App\Models\Plan::where('key', $d['key'])->first();
+        $fields = array_intersect_key($d, array_flip(['name', 'tagline', 'description', 'currency', 'price_yearly', 'price_monthly', 'features', 'sort', 'highlighted']));
+        if ($this->option('modules')) {
+            $fields += ['modules' => $d['modules'], 'student_limit' => $d['student_limit'], 'limits' => \Database\Seeders\PlanSeeder::LIMITS[$d['key']] ?? []];
+        }
+        $this->line(($plan ? 'update ' : 'create ').$d['key'].': '.$d['name'].' '.$d['currency'].' '.number_format($d['price_yearly'] / 100).' a year');
+        if ($this->option('dry-run')) {
+            continue;
+        }
+        $plan ? $plan->update($fields) : \App\Models\Plan::create($d + ['limits' => \Database\Seeders\PlanSeeder::LIMITS[$d['key']] ?? []]);
+    }
+    $this->info($this->option('dry-run') ? 'Nothing changed (dry run).' : 'Packages updated. Existing subscriptions keep the price they were sold at.');
+})->purpose('Set the standard packages to the current default names and prices');

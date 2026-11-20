@@ -171,7 +171,7 @@ class PlatformConsoleTest extends TestCase
         $inv = Invoice::where('subscription_id', $sub->id)->sole();
         $ref = 'VT'.$inv->id.'-abcdef012345';
         Http::fake(['api.paystack.co/transaction/verify/*' => Http::response(['status' => true, 'data' => [
-            'status' => 'success', 'amount' => $inv->amount, 'currency' => 'NGN', 'reference' => $ref, 'metadata' => ['invoice_id' => $inv->id]]])]);
+            'status' => 'success', 'amount' => $inv->amount, 'currency' => $inv->currency, 'reference' => $ref, 'metadata' => ['invoice_id' => $inv->id]]])]);
         $body = json_encode(['event' => 'charge.success', 'data' => ['reference' => $ref]]);
 
         $this->call('POST', '/webhooks/paystack', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_PAYSTACK_SIGNATURE' => 'forged'], $body)->assertStatus(401);
@@ -229,7 +229,7 @@ class PlatformConsoleTest extends TestCase
     public function test_the_landing_page_lists_public_plans_with_prices(): void
     {
         Plan::where('key', 'exams_only')->update(['is_public' => false]);
-        $this->get('/')->assertOk()->assertInertia(fn (Assert $p) => $p->component('welcome')->has('plans', 3)
+        $this->get('/')->assertOk()->assertInertia(fn (Assert $p) => $p->component('welcome')->has('plans', count(\Database\Seeders\PlanSeeder::DEFAULTS) - 1)
             ->where('plans.0.key', 'starter')->where('plans.1.highlighted', true));
     }
 

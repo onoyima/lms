@@ -24,11 +24,20 @@ class ExamSettings
         'heartbeat_seconds' => 15,
         'negative_marking' => 0,       // marks deducted per wrong objective answer
         'partial_credit' => false,     // multiple-answer questions: share of correct choices instead of all-or-nothing
+        'mtf_scoring' => 'per_statement',
+        'grading_scale' => '',            // '' = the institution's main scale, else the name of one of its other scales // multiple true/false: per_statement (each statement its share) or all_or_nothing
         'require_check_in' => true,    // hall sittings: invigilator checks the candidate in first (Target 96)
         // Starting late: "sitting" = the sitting's own late-entry minutes; "any_time" = may start until the
         // sitting closes (even 30+ minutes in); "cutoff" = no new starts once late_start_minutes have passed.
         'late_start' => 'sitting',
         'late_start_minutes' => 30,
+        // Connection and power safety. A candidate who loses the connection keeps writing; answers stay on
+        // their computer and are sent when it returns. Time is given back only when the computer itself
+        // went off (power cut, crash, flat battery), up to this many minutes in the whole exam (0 = never).
+        'power_cut_minutes' => 30,
+        // How long after time is up the server waits for a computer it lost contact with before closing
+        // the attempt, and how long answers written in time may still arrive after closing.
+        'offline_sync_minutes' => 120,
     ];
 
     public const PROCTORING = [
@@ -58,7 +67,43 @@ class ExamSettings
         'single_session' => true,          // a new login moves the exam and stops the old window (Target 27, 75)
         'low_bandwidth' => false,          // snapshots instead of video (Target 182)
         'close_banned_apps' => false,      // the desktop app closes remote-control and screen-capture apps (Target 120)
+        'pre_checks' => [],                // checks that must pass before the exam can start (see PRE_CHECKS); empty = none
     ];
+
+    /**
+     * Checks a candidate's computer and room must pass before the exam starts. The exam's setter picks
+     * any of them (or all, or none). Each must succeed on the candidate's screen; the server refuses to
+     * start without them, and the results are kept with the attempt.
+     */
+    public const PRE_CHECKS = [
+        'browser' => ['Browser', 'A supported, up-to-date browser on a secure (https) connection'],
+        'network' => ['Internet connection', 'The exam server answers quickly enough'],
+        'device' => ['Computer', 'A laptop or desktop computer, not a phone'],
+        'power' => ['Power', 'The laptop is charging, or its battery is above half'],
+        'screen' => ['Screen', 'One display only, large enough to read the paper'],
+        'fullscreen' => ['Full screen', 'The exam can open in full screen'],
+        'keyboard' => ['Keyboard', 'The candidate types a short phrase'],
+        'camera' => ['Camera', 'The camera works and the picture is not dark or covered'],
+        'face' => ['Face', 'One face is clearly visible and well lit'],
+        'microphone' => ['Microphone', 'The microphone picks up the candidate\'s voice'],
+        'speakers' => ['Sound', 'The candidate hears a test sound (for listening questions)'],
+        'screen_share' => ['Screen sharing', 'The whole screen can be shared for monitoring'],
+        'secure_app' => ['Secure exam app', 'Opened in the desktop exam app or Safe Exam Browser'],
+        'room_scan' => ['Room scan', 'A short video turning the camera around the room and desk, kept as evidence'],
+    ];
+
+    /** Checks that need the camera, microphone or screen (an approved hardware exception can waive them). */
+    public const PRE_CHECK_NEEDS = [
+        'camera' => 'webcam', 'face' => 'face_detection', 'room_scan' => 'webcam', 'microphone' => 'microphone', 'screen_share' => 'screen_share', 'fullscreen' => 'require_fullscreen', 'screen' => 'detect_multiple_displays',
+    ];
+
+    /** The checks this candidate must pass (an approved hardware exception removes the ones it covers). */
+    public static function preChecksFor(array $policy, array $relaxed = []): array
+    {
+        $list = array_values(array_intersect(array_keys(self::PRE_CHECKS), (array) ($policy['pre_checks'] ?? [])));
+
+        return array_values(array_filter($list, fn ($c) => ! in_array(self::PRE_CHECK_NEEDS[$c] ?? '', $relaxed, true)));
+    }
 
     /** Severity weights used for risk scoring (Target 68, 105, 151). */
     public const EVENT_WEIGHTS = [
@@ -70,11 +115,12 @@ class ExamSettings
         'usb_device' => 10, 'navigation_attempt' => 5, 'identity_mismatch' => 40, 'second_camera_lost' => 10,
         'wireless_display' => 25, 'external_display' => 10, 'screen_capture_app' => 15, 'camera_virtual' => 25,
         'identity_unverified' => 10, 'media_disconnected' => 3, 'media_poor' => 0, 'recording_failed' => 0, 'second_camera_linked' => 0, 'app_closed' => 5,
+        'screen_left' => 8, 'device_off' => 0, 'device_asleep' => 0, 'late_sync' => 0, 'network_online' => 0,
     ];
 
     /** Events that count towards the violation threshold. */
     public const VIOLATIONS = [
-        'tab_hidden', 'fullscreen_exit', 'paste_blocked', 'multiple_displays', 'multiple_faces', 'camera_off',
+        'tab_hidden', 'screen_left', 'fullscreen_exit', 'paste_blocked', 'multiple_displays', 'multiple_faces', 'camera_off',
         'camera_obstructed', 'screen_share_stopped', 'devtools_open', 'vm_detected', 'remote_desktop', 'identity_mismatch', 'wireless_display', 'camera_virtual',
     ];
 
@@ -83,6 +129,10 @@ class ExamSettings
         $out = array_replace(self::SETTINGS, array_intersect_key($stored ?? [], self::SETTINGS));
         $out['late_start'] = in_array($out['late_start'], ['sitting', 'any_time', 'cutoff'], true) ? $out['late_start'] : 'sitting';
         $out['late_start_minutes'] = max(1, min(600, (int) $out['late_start_minutes']));
+        $out['grading_scale'] = is_string($out['grading_scale']) ? mb_substr($out['grading_scale'], 0, 60) : '';
+        $out['mtf_scoring'] = in_array($out['mtf_scoring'], ['per_statement', 'all_or_nothing'], true) ? $out['mtf_scoring'] : 'per_statement';
+        $out['power_cut_minutes'] = max(0, min(240, (int) $out['power_cut_minutes']));
+        $out['offline_sync_minutes'] = max(10, min(4320, (int) $out['offline_sync_minutes']));
 
         return $out;
     }
@@ -124,11 +174,14 @@ class ExamSettings
     public static function forCandidate(?array $stored, int $userId, int $examId): array
     {
         $p = self::proctoring($stored);
+        $relaxed = [];
         foreach (\App\Models\HardwareException::activeFor($userId, $examId) as $ex) {
             foreach (array_intersect((array) $ex->relax, self::RELAXABLE) as $key) {
                 $p[$key] = $key === 'identity_check' ? 'proctor_review' : false;
+                $relaxed[] = $key;
             }
         }
+        $p['pre_checks'] = self::preChecksFor($p, $relaxed);
 
         return $p;
     }
@@ -140,6 +193,7 @@ class ExamSettings
         foreach (array_intersect_key($stored ?? [], self::PROCTORING) as $k => $v) {
             $default = self::PROCTORING[$k];
             $out[$k] = match (true) {
+                is_array($default) => array_values(array_intersect(array_keys(self::PRE_CHECKS), array_map('strval', (array) $v))),
                 is_bool($default) => filter_var($v, FILTER_VALIDATE_BOOLEAN),
                 is_int($default) => max(0, min(100000, (int) $v)),
                 default => in_array($v, self::CHOICES[$k] ?? [], true) ? $v : $default,

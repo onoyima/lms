@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Identity } = require('./identity');
 const { startMonitor } = require('./monitor');
+const { Quiet } = require('./quiet');
 
 const DEV = process.env.EXAM_DESKTOP_DEV === '1';
 const configFile = () => path.join(app.getPath('userData'), 'config.json');
@@ -28,6 +29,7 @@ let origin = null;          // e.g. https://exams.example.edu.ng
 let inExam = false;         // the exam page says an attempt is open
 let closeApps = false;      // the exam asks the app to close remote-control and capture apps
 let stopMonitor = null;
+let quiet = null;           // notifications from other apps are held back while an exam is open
 const bodies = new Map();   // request id → body bytes, for signing
 
 if (!app.requestSingleInstanceLock()) {
@@ -48,7 +50,12 @@ function lockDown(w) {
         if (blocked) e.preventDefault();
     });
     if (!DEV) w.webContents.on('devtools-opened', () => { w.webContents.closeDevTools(); report('devtools_open', {}); });
-    w.on('blur', () => inExam && report('focus_lost', { source: 'desktop' }));
+    w.on('blur', () => {
+        if (!inExam) return;
+        report('focus_lost', { source: 'desktop' });
+        // something took the screen (a system dialog, a notification click): take it back
+        if (!DEV) setTimeout(() => { if (inExam && !w.isDestroyed()) { w.moveTop(); w.focus(); } }, 300);
+    });
     w.on('leave-full-screen', () => { if (inExam) { report('fullscreen_exit', { source: 'desktop' }); w.setFullScreen(true); } });
     w.on('close', (e) => {
         if (!inExam) return;
@@ -151,13 +158,25 @@ ipcMain.handle('desktop:continue', () => {
     examWindow();
     return true;
 });
-ipcMain.on('desktop:exam-state', (_e, state, opts) => { inExam = state === 'open'; closeApps = inExam && Boolean(opts && opts.closeApps); });
+ipcMain.on('desktop:exam-state', (_e, state, opts) => {
+    inExam = state === 'open';
+    closeApps = inExam && Boolean(opts && opts.closeApps);
+    // during the exam nothing may appear over it: the window sits above notification banners and
+    // system notifications are switched off; both go back to normal when the exam closes
+    if (win && !win.isDestroyed() && !DEV) {
+        win.setAlwaysOnTop(inExam, 'screen-saver');
+        if (inExam) win.moveTop();
+    }
+    if (quiet) (inExam ? quiet.start() : quiet.stop()).catch(() => {});
+});
 ipcMain.handle('desktop:info', () => ({ version: app.getVersion(), deviceId: identity.deviceId, platform: process.platform }));
 ipcMain.on('desktop:found', (_e, type, data) => { if (['camera_virtual'].includes(type)) report(type, data); });
 ipcMain.on('desktop:quit', () => { if (!inExam) app.quit(); });
 
 app.whenReady().then(async () => {
     identity = new Identity(app.getPath('userData'), safeStorage);
+    quiet = new Quiet(app.getPath('userData'));
+    await quiet.recover().catch(() => {}); // the computer went off during an exam: notifications back on
     const c = readConfig();
     if (!c) return setupWindow();
     origin = c.origin;
@@ -173,3 +192,9 @@ app.whenReady().then(async () => {
 });
 app.on('web-contents-created', (_e, wc) => wc.on('will-attach-webview', (e) => e.preventDefault()));
 app.on('window-all-closed', () => { stopMonitor && stopMonitor(); app.quit(); });
+app.on('will-quit', (e) => {
+    if (quiet && quiet.on) {
+        e.preventDefault();
+        quiet.stop().finally(() => { quiet.on = false; app.quit(); });
+    }
+});

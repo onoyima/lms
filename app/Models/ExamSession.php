@@ -9,6 +9,23 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ExamSession extends Model
 {
+    /** A sitting added to an exam in a category takes the category's students straight away. */
+    protected static function booted(): void
+    {
+        static::created(function (ExamSession $session) {
+            $groupId = Exam::whereKey($session->exam_id)->value('exam_group_id');
+            if (! $groupId) {
+                return;
+            }
+            \Illuminate\Support\Facades\DB::afterCommit(function () use ($session, $groupId) {
+                $ids = \Illuminate\Support\Facades\DB::table('exam_group_students')->where('exam_group_id', $groupId)->pluck('user_id')->all();
+                if ($ids) {
+                    app(\App\Services\Exams\CandidateRoster::class)->add($session, ['user_ids' => $ids]);
+                }
+            });
+        });
+    }
+
     use BelongsToTenant;
 
     protected $fillable = ['exam_id', 'venue_id', 'name', 'mode', 'starts_at', 'ends_at', 'late_entry_minutes', 'grace_seconds', 'access_pin_hash', 'status', 'paused_at', 'is_practice'];

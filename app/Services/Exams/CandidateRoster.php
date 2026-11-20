@@ -19,7 +19,7 @@ class CandidateRoster
     public function __construct(private Eligibility $eligibility, private AuditLogger $audit) {}
 
     /**
-     * @param  array{identifiers?: string|null, from_enrolment?: bool, from_parent?: bool}  $data
+     * @param  array{identifiers?: string|null, from_enrolment?: bool, from_parent?: bool, from_programme?: array{programme_id: int, level?: int|null}}  $data
      * @return array{added: int, missing: list<string>}
      */
     public function add(ExamSession $session, array $data): array
@@ -37,16 +37,8 @@ class CandidateRoster
         if (! empty($data['from_parent'])) {
             $users = $users->merge(User::whereIn('id', $this->eligibility->parentCandidates($exam))->get());
         }
-
-        $missing = [];
-        if (! empty($data['identifiers'])) {
-            $ids = collect(preg_split('/[\s,;]+/', $data['identifiers']))->map(fn ($v) => trim($v))->filter()->unique()->values();
-            foreach ($ids->chunk(500) as $chunk) {
-                $found = User::where(fn ($q) => $q->whereIn('identifier', $chunk)->orWhereIn('email', $chunk))->get();
-                $users = $users->merge($found);
-                $missing = array_merge($missing, $chunk->diff($found->pluck('identifier'))->diff($found->pluck('email'))->all());
-            }
-        }
+        [$found, $missing] = $this->resolve($data);
+        $users = $users->merge($found);
 
         $added = DB::transaction(function () use ($users, $session, $exam) {
             $added = 0;
@@ -70,7 +62,9 @@ class CandidateRoster
             return $added;
         });
 
-        Notification::send($users->unique('id'), new ExamScheduled($session));
+        if (empty($data['quiet'])) {
+            Notification::send($users->unique('id'), new ExamScheduled($session));
+        }
         $this->audit->record('session.candidates_added', $session, ['added' => $added, 'not_found' => count($missing)]);
 
         return ['added' => $added, 'missing' => array_values($missing)];
@@ -81,5 +75,38 @@ class CandidateRoster
         $missing = $r['missing'];
 
         return "{$r['added']} candidates added.".($missing ? ' Not found: '.implode(', ', array_slice($missing, 0, 20)).(count($missing) > 20 ? '…' : '') : '');
+    }
+
+    /**
+     * Students named by a programme (and level), a pasted list of matric numbers or e-mails, or ids.
+     *
+     * @return array{0: \Illuminate\Support\Collection<int, User>, 1: list<string>} the students, and what was not found
+     */
+    public function resolve(array $data): array
+    {
+        $users = collect();
+        if (! empty($data['from_programme']['programme_id'])) {
+            // every active student of a programme (and level), from the student records
+            $ids = \Illuminate\Support\Facades\DB::table('student_profiles')->where('programme_id', (int) $data['from_programme']['programme_id'])
+                ->when(! empty($data['from_programme']['level']), fn ($q) => $q->where('level', (int) $data['from_programme']['level']))
+                ->pluck('user_id');
+            $users = $users->merge(User::whereIn('id', $ids)->where('user_type', 'student')->where('status', 'active')->get());
+        }
+
+        if (! empty($data['user_ids'])) {
+            $users = $users->merge(User::whereIn('id', array_map('intval', (array) $data['user_ids']))->get());
+        }
+
+        $missing = [];
+        if (! empty($data['identifiers'])) {
+            $ids = collect(preg_split('/[\s,;]+/', $data['identifiers']))->map(fn ($v) => trim($v))->filter()->unique()->values();
+            foreach ($ids->chunk(500) as $chunk) {
+                $found = User::where(fn ($q) => $q->whereIn('identifier', $chunk)->orWhereIn('email', $chunk))->get();
+                $users = $users->merge($found);
+                $missing = array_merge($missing, $chunk->diff($found->pluck('identifier'))->diff($found->pluck('email'))->all());
+            }
+        }
+
+        return [$users->unique('id')->values(), array_values($missing)];
     }
 }

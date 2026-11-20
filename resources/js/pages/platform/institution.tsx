@@ -386,7 +386,7 @@ function InvoicesCard({ invoices, payments }: Props) {
                 }}>
                     <p className="text-sm md:col-span-5">Record a bank transfer for <b>{paying.number}</b> ({paying.amount_label}). Check the money is in the account first.</p>
                     <Field label="Bank reference" error={form.errors.reference}><input className={inputClass} value={form.data.reference} onChange={(e) => form.setData('reference', e.target.value)} required /></Field>
-                    <Field label="Amount received (₦)" error={form.errors.amount}><input type="number" min={0} step="0.01" className={inputClass} value={form.data.amount} onChange={(e) => form.setData('amount', e.target.value)} required /></Field>
+                    <Field label="Amount received" error={form.errors.amount}><input type="number" min={0} step="0.01" className={inputClass} value={form.data.amount} onChange={(e) => form.setData('amount', e.target.value)} required /></Field>
                     <Field label="Method"><select className={inputClass} value={form.data.provider} onChange={(e) => form.setData('provider', e.target.value)}><option value="bank_transfer">Bank transfer</option><option value="manual">Other</option></select></Field>
                     <Field label="Note" error={form.errors.note}><input className={inputClass} value={form.data.note} onChange={(e) => form.setData('note', e.target.value)} /></Field>
                     <div className="flex items-end gap-2"><Button disabled={form.processing}>Save</Button><Button type="button" variant="ghost" onClick={() => setPaying(null)}>Close</Button></div>

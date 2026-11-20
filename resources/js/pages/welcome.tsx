@@ -3,7 +3,6 @@ import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { Check, ChevronDown, Laptop, MonitorSmartphone, Network, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
-import { Toaster } from '@/components/ui/sonner';
 
 type Plan = {
     id: number; key: string; name: string; tagline: string | null; description: string | null; monthly: string | null; yearly: string | null;
@@ -70,14 +69,14 @@ export default function Welcome({ plans = [] }: { plans: Plan[] }) {
     return (
         <>
             <Head title="Exams and learning for institutions" />
-            <div className="landing min-h-screen">
-                <header className="sticky top-0 z-20 border-b border-[var(--paper-2)] bg-[var(--paper)]/90 backdrop-blur">
-                    <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-                        <a href="#top" className="flex items-center gap-2.5">
-                            <span className="flex size-9 items-center justify-center overflow-hidden rounded-[10px] bg-[var(--green)] text-white">
+            <div className="landing min-h-screen overflow-x-clip">
+                <header className="sticky top-0 z-20 px-3 pt-3 sm:px-4">
+                    <div className="glass mx-auto flex max-w-6xl items-center justify-between gap-4 rounded-2xl px-3 py-2.5 sm:px-4">
+                        <a href="#top" className="flex min-w-0 items-center gap-2.5">
+                            <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[var(--brand)] to-[var(--brand-ink)] text-[var(--on-green)] shadow-[0_8px_20px_-8px_var(--brand)]">
                                 {platform?.logo_url ? <img src={platform.logo_url} alt="" className="size-full object-cover" /> : <AppLogoIcon className="size-5 fill-current" />}
                             </span>
-                            <span className="display text-lg">{platform?.short_name}</span>
+                            <span className="display truncate text-lg">{platform?.short_name}</span>
                         </a>
                         <nav className="hidden items-center gap-7 text-sm text-[var(--ink-2)] md:flex" aria-label="Sections">
                             <a href="#product" className="hover:text-[var(--ink)]">Product</a>
@@ -85,9 +84,9 @@ export default function Welcome({ plans = [] }: { plans: Plan[] }) {
                             <a href="#pricing" className="hover:text-[var(--ink)]">Pricing</a>
                             <a href="#questions" className="hover:text-[var(--ink)]">Questions</a>
                         </nav>
-                        <div className="flex items-center gap-2">
-                            <Link href={home} className="rounded-full px-4 py-2 text-sm font-medium hover:bg-[var(--paper-2)]">{auth.user ? `Open ${platform?.short_name}` : 'Sign in'}</Link>
-                            <a href="#apply" className="hidden rounded-full bg-[var(--ink)] px-4 py-2 text-sm font-medium text-white hover:bg-black sm:inline-block">Apply</a>
+                        <div className="flex shrink-0 items-center gap-2">
+                            <Link href={home} className="rounded-xl px-3 py-2 text-sm font-medium hover:bg-[var(--paper-2)] sm:px-4">{auth.user ? `Open ${platform?.short_name}` : 'Sign in'}</Link>
+                            <a href="#apply" className="hidden rounded-xl bg-[var(--green)] px-4 py-2 text-sm font-medium text-[var(--on-green)] shadow-[0_10px_24px_-12px_var(--brand)] hover:bg-[var(--green-deep)] sm:inline-block">Apply</a>
                         </div>
                     </div>
                 </header>
@@ -112,74 +111,81 @@ export default function Welcome({ plans = [] }: { plans: Plan[] }) {
                             <Link href={home} className="hover:text-[var(--ink)]">Sign in</Link>
                         </span>
                     </div>
-</footer>
+                </footer>
             </div>
-            <Toaster />
         </>
     );
 }
 
-/* ---------- hero: a printed answer sheet being filled in ---------- */
+/* ---------- hero: the exam-day board, as the exams office sees it ---------- */
 
-const answers = [1, 3, 0, 2, 2, 0, 3, 1, 0, 2];
-const letters = ['A', 'B', 'C', 'D'];
+const sittings = [
+    { name: 'Nursing · Objective', where: 'CBT Hall A · 120', from: 2, to: 34, label: 'All 120 submitted', tone: 'done' },
+    { name: 'Nursing · Theory', where: 'Hall B · 120', from: 28, to: 78, label: '104 writing · 10 done', tone: 'live' },
+    { name: 'CHM 101 test', where: 'Online · 112', from: 20, to: 54, label: '82 writing', tone: 'live' },
+    { name: 'Nursing · Practical', where: 'OSCE · 4 examiners', from: 58, to: 98, label: 'Starts 14:00', tone: 'later' },
+];
 
 function Hero() {
     const { platform } = usePage().props;
 
     return (
-        <section className="mx-auto grid max-w-6xl items-center gap-12 overflow-x-clip px-4 pt-14 pb-16 sm:px-6 md:pt-20 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
-            <div>
-                <h1 className="display text-[clamp(2.4rem,5.2vw,3.9rem)]">Exams and courses for your whole institution, in one place.</h1>
-                <p className="mt-6 max-w-[34rem] text-lg leading-relaxed text-[var(--ink-2)]">
-                    {platform?.short_name} runs question banks, CBT halls, proctored online exams, marking, results and course pages for universities, polytechnics
-                    and colleges. Equations from Word stay intact, and every answer is saved the moment it is typed.
-                </p>
-                <div className="mt-8 flex flex-wrap gap-3">
-                    <a href="#apply" className="rounded-full bg-[var(--green)] px-6 py-3 font-medium text-white shadow-[0_10px_30px_-10px_var(--green)] hover:bg-[var(--green-deep)]">Apply for your institution</a>
-                    <a href="#pricing" className="rounded-full border border-[var(--ink)]/20 px-6 py-3 font-medium hover:border-[var(--ink)]">See pricing</a>
+        <section className="deep with-picture -mt-[76px] pt-[76px]">
+            <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-14 pb-20 sm:px-6 md:pt-20 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
+                <div>
+                    <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm text-white/80">
+                        <span className="size-2 rounded-full bg-[#4ade80] shadow-[0_0_0_4px_rgb(74_222_128/0.2)]" /> Every answer saved, even offline
+                    </p>
+                    <h1 className="display mt-6 text-[clamp(2.4rem,5.2vw,3.9rem)]">Exams and courses for your whole institution, in one place.</h1>
+                    <p className="mt-6 max-w-[34rem] text-lg leading-relaxed text-white/75">
+                        {platform?.short_name} runs question banks, CBT halls, proctored online exams, marking, results and course pages for universities, polytechnics
+                        and colleges. Equations from Word stay intact, and no candidate loses an exam to a bad connection or a power cut.
+                    </p>
+                    <div className="mt-8 flex flex-wrap gap-3">
+                        <a href="#apply" className="rounded-xl bg-[var(--green)] px-6 py-3 font-medium text-[var(--on-green)] shadow-[0_14px_30px_-12px_var(--brand)] hover:bg-[var(--green-deep)]">Apply for your institution</a>
+                        <a href="#pricing" className="rounded-xl border border-white/20 bg-white/5 px-6 py-3 font-medium text-white hover:bg-white/10">See pricing</a>
+                    </div>
+                    <p className="mt-6 text-sm text-white/60">30-day trial with your own data. No card needed to start.</p>
                 </div>
-                <p className="mt-6 text-sm text-[var(--ink-2)]">30-day trial with your own data. No card needed to start.</p>
-            </div>
 
-            <figure aria-label="An answer sheet being filled in and saved" className="relative mx-auto w-full max-w-[420px]">
-                <div className="relative rotate-[1.5deg] rounded-[6px] border border-[var(--sheet)]/40 bg-white p-6 shadow-[0_30px_60px_-30px_rgba(16,32,39,0.45)]">
-                    <div className="flex items-start justify-between border-b-2 border-[var(--sheet)] pb-3 text-[var(--sheet)]">
+                <figure aria-label="The exam-day board: candidates writing now and today's sittings" className="min-w-0 rounded-3xl border border-white/10 bg-white/[.04] p-4 shadow-[0_40px_80px_-40px_rgb(0_0_0/0.6)] backdrop-blur sm:p-5">
+                    <div className="grid items-end gap-4 sm:grid-cols-[auto_1fr]">
                         <div>
-                            <p className="text-[11px] font-semibold">CHM 101 General Chemistry I</p>
-                            <p className="text-[11px]">First semester examination</p>
+                            <p className="flex items-center gap-2 text-sm text-white/70"><span className="size-2.5 rounded-full bg-[#4ade80]" /> Writing right now</p>
+                            <p className="display mt-1 text-5xl tabular-nums">186 <span className="text-lg font-normal text-white/60">of 412 today</span></p>
                         </div>
-                        <div className="grid grid-cols-6 gap-[3px]" aria-hidden>
-                            {Array.from({ length: 12 }).map((_, i) => <span key={i} className={`h-3 w-1.5 ${i % 3 === 0 ? 'bg-[var(--ink)]' : 'bg-transparent'}`} />)}
+                        <div className="grid grid-cols-2 gap-2 text-sm sm:justify-self-end">
+                            {[['130', 'Submitted', ''], ['2', 'Need help', 'text-[#fbbf24]']].map(([n, l, tone]) => (
+                                <div key={l} className="board-tile px-3 py-2"><p className={`display text-xl ${tone}`}>{n}</p><p className="text-xs text-white/60">{l}</p></div>
+                            ))}
                         </div>
                     </div>
-                    <ol className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2.5" aria-hidden>
-                        {answers.map((a, row) => (
-                            <li key={row} className="flex items-center gap-1.5">
-                                <span className="w-5 text-right text-[11px] font-semibold text-[var(--sheet)] tabular-nums">{row + 1}</span>
-                                {letters.map((l, col) => (
-                                    <span key={l} className={`omr-bubble ${col === a ? 'is-marked' : ''}`} style={{ ['--d' as string]: `${500 + row * 170}ms` }}>{l}</span>
-                                ))}
-                            </li>
+                    <div className="mt-5 grid gap-2.5" aria-hidden>
+                        {sittings.map((x, i) => (
+                            <div key={x.name} className="grid grid-cols-[minmax(0,9.5rem)_1fr] items-center gap-3 sm:grid-cols-[11rem_1fr]">
+                                <div className="min-w-0"><p className="truncate text-sm font-medium">{x.name}</p><p className="truncate text-xs text-white/55">{x.where}</p></div>
+                                <div className="relative h-7 rounded-lg bg-white/[.06]">
+                                    <span className={`bar-grow absolute inset-y-0 flex items-center overflow-hidden rounded-lg px-2 text-[11px] font-medium whitespace-nowrap ${x.tone === 'done' ? 'bg-[var(--brand)] text-[var(--on-green)]' : x.tone === 'live' ? 'bg-gradient-to-r from-[#22c55e] to-[#86efac] text-[#052e16]' : 'border border-white/15 bg-white/10 text-white/85'}`}
+                                        style={{ left: `${x.from}%`, width: `${x.to - x.from}%`, ['--d' as string]: `${300 + i * 160}ms` }}>{x.label}</span>
+                                    <span className="absolute -inset-y-1.5 left-[46%] w-0.5 bg-[#f59e0b]" />
+                                </div>
+                            </div>
                         ))}
-                    </ol>
-                    <div className="mt-5 flex items-end justify-between border-t border-[var(--sheet)]/40 pt-3 text-[11px] text-[var(--sheet)]">
-                        <span>Candidate VUA/21/0457</span>
-                        <span>Seat B-14</span>
                     </div>
-                    <div className="omr-stamp absolute -right-4 -bottom-5 rounded-md border-2 border-[var(--green)] bg-white/90 px-3 py-1.5 text-center text-[var(--green)]" style={{ ['--d' as string]: `${500 + answers.length * 170 + 250}ms` }}>
-                        <p className="display text-base leading-none">Saved</p>
-                        <p className="text-[10px] font-semibold">10 of 10 answers</p>
-                    </div>
-                </div>
-            </figure>
+                    <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
+                        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[var(--brand)]" /> Submitted</span>
+                        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#22c55e]" /> Writing</span>
+                        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-white/30" /> Not started</span>
+                    </p>
+                </figure>
+            </div>
         </section>
     );
 }
 
 function Formats() {
     return (
-        <section className="border-y border-[var(--paper-2)] bg-white">
+        <section className="border-b border-[var(--paper-2)] bg-[var(--card)]">
             <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
                 <p className="mb-6 max-w-xl text-[var(--ink-2)]">Every kind of assessment your senate approves, with the same timetable, approval, marking and results workflow:</p>
                 <dl className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
@@ -209,13 +215,13 @@ function Tour() {
                 <div role="tablist" aria-label="Roles" className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
                     {tour.map((x, n) => (
                         <button key={x.role} role="tab" aria-selected={n === i} aria-controls="tour-panel" onClick={() => setI(n)}
-                            className={`shrink-0 rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${n === i ? 'bg-[var(--ink)] text-white' : 'text-[var(--ink-2)] hover:bg-[var(--paper-2)]'}`}>
+                            className={`shrink-0 rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${n === i ? 'bg-[var(--deep)] text-white shadow-[0_10px_24px_-14px_var(--deep)]' : 'text-[var(--ink-2)] hover:bg-[var(--paper-2)]'}`}>
                             {x.role}
                         </button>
                     ))}
                 </div>
                 <div id="tour-panel" role="tabpanel" key={t.img} className="tour-shot">
-                    <div className="overflow-hidden rounded-xl border border-[var(--ink)]/10 bg-white shadow-[0_24px_60px_-30px_rgba(16,32,39,0.35)]">
+                    <div className="card overflow-hidden">
                         <div className="flex items-center gap-1.5 border-b border-[var(--paper-2)] px-4 py-2.5" aria-hidden>
                             <span className="size-2.5 rounded-full bg-[var(--paper-2)]" /><span className="size-2.5 rounded-full bg-[var(--paper-2)]" /><span className="size-2.5 rounded-full bg-[var(--paper-2)]" />
                         </div>
@@ -235,13 +241,13 @@ function Tour() {
 
 function Steps() {
     return (
-        <section className="bg-[var(--ink)] text-white">
+        <section className="deep">
             <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
                 <h2 className="h2 max-w-xl">From application to your first exam.</h2>
                 <ol className="mt-12 grid gap-10 md:grid-cols-4 md:gap-6">
                     {steps.map((s, n) => (
                         <li key={s.title} className="relative">
-                            <span className="display flex size-11 items-center justify-center rounded-full border-2 border-[var(--green)] text-lg text-[var(--green)]">{n + 1}</span>
+                            <span className="display flex size-11 items-center justify-center rounded-full border-2 border-[var(--glow)] text-lg text-[var(--glow)]">{n + 1}</span>
                             {n < steps.length - 1 && <span aria-hidden className="absolute top-[21px] left-14 hidden h-0.5 w-[calc(100%-3.5rem)] bg-white/15 md:block" />}
                             <h3 className="display mt-5 text-xl">{s.title}</h3>
                             <p className="mt-2 text-sm leading-relaxed text-white/70">{s.body}</p>
@@ -269,9 +275,9 @@ function Security() {
                     ))}
                 </ul>
             </div>
-            <ul className="grid content-start gap-px overflow-hidden rounded-2xl border border-[var(--paper-2)] bg-[var(--paper-2)]">
+            <ul className="card grid content-start gap-px overflow-hidden bg-[var(--paper-2)] p-0">
                 {security.map((s) => (
-                    <li key={s} className="flex gap-4 bg-white p-5 leading-relaxed">
+                    <li key={s} className="flex gap-4 bg-[var(--card)] p-5 leading-relaxed">
                         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-[var(--green)]" />{s}
                     </li>
                 ))}
@@ -286,16 +292,16 @@ function Pricing({ plans }: { plans: Plan[] }) {
     const [yearly, setYearly] = useState(true);
 
     return (
-        <section id="pricing" className="scroll-mt-20 border-t border-[var(--paper-2)] bg-white">
+        <section id="pricing" className="scroll-mt-20 border-t border-[var(--paper-2)] bg-[var(--card)]">
             <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
                 <div className="flex flex-wrap items-end justify-between gap-6">
                     <div className="max-w-xl">
                         <h2 className="h2">Pricing by the size of your institution.</h2>
-                        <p className="mt-4 text-[var(--ink-2)]">Prices are per institution and include hosting, updates, backups and support. Prices in naira; VAT is added on the invoice.</p>
+                        <p className="mt-4 text-[var(--ink-2)]">Prices are per institution and include hosting, updates, backups and support. Each plan shows its own currency; tax is added on the invoice where it applies.</p>
                     </div>
-                    <div role="group" aria-label="Billing period" className="inline-flex rounded-full border border-[var(--ink)]/15 p-1 text-sm">
+                    <div role="group" aria-label="Billing period" className="inline-flex rounded-xl border border-[var(--ink)]/15 p-1 text-sm">
                         {[true, false].map((y) => (
-                            <button key={String(y)} aria-pressed={yearly === y} onClick={() => setYearly(y)} className={`rounded-full px-4 py-1.5 font-medium ${yearly === y ? 'bg-[var(--ink)] text-white' : 'text-[var(--ink-2)]'}`}>
+                            <button key={String(y)} aria-pressed={yearly === y} onClick={() => setYearly(y)} className={`rounded-lg px-4 py-1.5 font-medium ${yearly === y ? 'bg-[var(--deep)] text-white' : 'text-[var(--ink-2)]'}`}>
                                 {y ? 'Yearly' : 'Monthly'}
                             </button>
                         ))}
@@ -307,9 +313,9 @@ function Pricing({ plans }: { plans: Plan[] }) {
                         const dark = p.highlighted;
 
                         return (
-                            <article key={p.id} className={`flex flex-col rounded-2xl p-6 ${dark ? 'bg-[var(--ink)] text-white lg:-my-3 lg:py-9' : 'border border-[var(--paper-2)] bg-[var(--paper)]'}`}>
+                            <article key={p.id} className={`flex flex-col rounded-2xl p-6 ${dark ? 'deep overflow-hidden shadow-[0_30px_60px_-30px_var(--deep)] lg:-my-3 lg:py-9' : 'border border-[var(--paper-2)] bg-[var(--paper)]'}`}>
                                 <h3 className="display text-xl">{p.name}</h3>
-                                {dark && <p className="mt-1 text-sm font-medium text-[var(--green)]">Chosen by most universities</p>}
+                                {dark && <p className="mt-1 text-sm font-medium text-[var(--glow)]">Chosen by most universities</p>}
                                 <p className={`mt-2 min-h-10 text-sm ${dark ? 'text-white/70' : 'text-[var(--ink-2)]'}`}>{p.tagline}</p>
                                 <p className="mt-6">
                                     {price ? (
@@ -318,11 +324,11 @@ function Pricing({ plans }: { plans: Plan[] }) {
                                 </p>
                                 <p className={`mt-1 text-sm ${dark ? 'text-white/60' : 'text-[var(--ink-2)]'}`}>{p.student_limit ? `Up to ${p.student_limit.toLocaleString()} students` : 'Any number of students'}</p>
                                 <ul className="mt-6 grid gap-2 text-sm">
-                                    {p.features.map((f) => <li key={f} className="flex gap-2"><Check className="mt-0.5 size-4 shrink-0 text-[var(--green)]" />{f}</li>)}
+                                    {p.features.map((f) => <li key={f} className="flex gap-2"><Check className={`mt-0.5 size-4 shrink-0 ${dark ? 'text-[var(--glow)]' : 'text-[var(--green)]'}`} />{f}</li>)}
                                 </ul>
                                 <div className="mt-auto pt-8">
                                     <a href="#apply" onClick={() => window.dispatchEvent(new CustomEvent('choose-plan', { detail: { id: p.id, yearly } }))}
-                                        className={`block rounded-full px-5 py-2.5 text-center text-sm font-medium ${dark ? 'bg-[var(--green)] text-white hover:bg-[var(--green-deep)]' : 'border border-[var(--ink)]/20 hover:border-[var(--ink)]'}`}>
+                                        className={`block rounded-xl px-5 py-2.5 text-center text-sm font-medium ${dark ? 'bg-[var(--green)] text-[var(--on-green)] hover:bg-[var(--green-deep)]' : 'border border-[var(--ink)]/20 hover:border-[var(--ink)]'}`}>
                                         {price ? `Apply for ${p.name}` : 'Talk to us'}
                                     </a>
                                 </div>
@@ -355,7 +361,7 @@ function Faq() {
 
 /* ---------- application form ---------- */
 
-const field = 'h-11 w-full rounded-lg border border-[var(--ink)]/15 bg-white px-3 text-[15px] outline-none focus:border-[var(--green)]';
+const field = 'h-11 w-full rounded-[10px] border border-input bg-[var(--card)] px-3 text-[15px] outline-none focus:border-[var(--green)]';
 
 function Apply({ plans }: { plans: Plan[] }) {
     const { flash, platform } = usePage().props as { flash?: { success?: string | null }; platform?: { short_name: string } };
@@ -392,12 +398,12 @@ function Apply({ plans }: { plans: Plan[] }) {
                     <p className="mt-4 text-[var(--ink-2)]">Already using {platform?.short_name}? <Link href="/login" className="font-medium text-[var(--ink)] underline underline-offset-4">Sign in</Link>.</p>
                 </div>
                 {flash?.success ? (
-                    <div role="status" className="self-start rounded-2xl border-2 border-[var(--green)] bg-white p-8">
-                        <p className="display text-2xl text-[var(--green)]">Application received</p>
+                    <div role="status" className="card self-start border-2 border-[var(--green)] p-8">
+                        <p className="display text-2xl text-[var(--green-deep)]">Application received</p>
                         <p className="mt-3 text-[var(--ink-2)]">{flash.success}</p>
                     </div>
                 ) : (
-                    <form className="grid gap-4 rounded-2xl bg-white p-6 shadow-[0_20px_50px_-30px_rgba(16,32,39,0.3)] sm:grid-cols-2 sm:p-8" onSubmit={(e) => {
+                    <form className="card relative grid gap-4 p-6 sm:grid-cols-2 sm:p-8" onSubmit={(e) => {
  e.preventDefault(); form.post('/apply', { preserveScroll: true }); 
 }}>
                         <div className="sm:col-span-2">{label('Institution name', form.errors.institution, <input className={field} value={form.data.institution} onChange={(e) => form.setData('institution', e.target.value)} required autoComplete="organization" />)}</div>
@@ -414,7 +420,7 @@ function Apply({ plans }: { plans: Plan[] }) {
                         <div className="sm:col-span-2">{label('Anything we should know?', form.errors.message, <textarea className={`${field} h-28 py-2`} value={form.data.message} onChange={(e) => form.setData('message', e.target.value)} placeholder="Faculties starting first, exam dates, systems you use today" />)}</div>
                         <div aria-hidden className="absolute -left-[9999px] h-0 overflow-hidden"><label>Website<input tabIndex={-1} autoComplete="off" value={form.data.website} onChange={(e) => form.setData('website', e.target.value)} /></label></div>
                         <div className="flex flex-wrap items-center gap-4 sm:col-span-2">
-                            <button disabled={form.processing} className="rounded-full bg-[var(--green)] px-6 py-3 font-medium text-white hover:bg-[var(--green-deep)] disabled:opacity-60">{form.processing ? 'Sending…' : 'Send application'}</button>
+                            <button disabled={form.processing} className="rounded-xl bg-[var(--green)] px-6 py-3 font-medium text-[var(--on-green)] hover:bg-[var(--green-deep)] disabled:opacity-60">{form.processing ? 'Sending…' : 'Send application'}</button>
                             <span className="text-xs text-[var(--ink-2)]">We use these details only to review your application.</span>
                         </div>
                     </form>

@@ -111,26 +111,43 @@ Full restore: `php artisan backup:decrypt D:\platform-backups\db-YYYYMMDD-HHMMSS
 
 ## 7. Capacity (measured)
 
-Load test on a **2-core** container (application, MariaDB and the load generator on the same 2 cores; Apache + mod_php, OPcache, Redis):
+**How the exam room keeps traffic low (Nov 2026).** Each answer is kept on the candidate's device first, then saved; a check-in rides along with a save instead of being sent separately; the server tells exam rooms to check in less often when it is busy (the "pace", 1–4); a failed paper load is retried; and when time is up, each exam room submits once, at a random moment within half of the 30-second grace period, so thousands of candidates do not hit the server in the same second. If a submit still fails, the server submits the saved answers itself at the deadline. Nothing a candidate saved can be lost.
 
-| Scenario | Requests | Failed | p50 | p95 | p99 |
-|---|---|---|---|---|---|
-| 1,000 candidates, one answer every ~20 s, heartbeats every 15 s, all submit at the deadline | 23,054 | 0 | 12 ms (answers) | 35 ms (answers), 463 ms (submit) | 164 ms |
-| 1,000 candidates, one answer every ~5 s (stress) | 36,684 | 139 (client time-outs while 1,000 submits queued; all recovered by retry / auto-submit) | 117 ms | 738 ms | 45 s |
+Measured on a **2-core** test machine with the application, MariaDB, Redis **and** the load generator on the same 2 cores (Apache + mod_php, OPcache, `php artisan optimize`). Each virtual candidate answers one question every ~20 s and everyone submits at the same deadline:
 
-| Re-run Nov 2026, 500 candidates, one answer every ~5 s, cache in the **database** (no Redis) | 11,425 | 0 | 560 ms | 1.6 s | 47 s |
-| Same, cache in **files** | 14,097 | 256 (Apache hit `MaxRequestWorkers` 150 with 500 open connections) | 160 ms | 0.9 s | 18 s |
+| Run | Requests | Failed saves | Answers saved | Submitted | p50 answer save | Requests per candidate per second |
+|---|---|---|---|---|---|---|
+| 2,000 candidates, previous exam room (separate check-in every 15 s, everyone submits in the same second) | 32,815 | 1,257 save time-outs, 712 submits gave up (server auto-submitted them) | — | 2,000 | 740 ms | 0.091 |
+| **2,000 candidates, current exam room** | 18,403 | **0** | 11,776 of 11,776 | **2,000 of 2,000** (290 needed a retry) | **23 ms** | **0.051** |
 
-The cache driver matters most: with `CACHE_STORE=database` every rate-limit and session check writes to MariaDB, which then competes with answer saves. Use **Redis** for `CACHE_STORE` and `SESSION_DRIVER` during exams, and raise Apache's `MaxRequestWorkers` (or use PHP-FPM) above the number of candidates sitting at once.
+So the same small machine went from failing at 2,000 candidates to carrying them with no lost save. The limit is the processor: about 170 exam requests per second per 2 cores with Laravel's full stack.
 
-The stress run saturated the 2 cores at ~190 requests/s. A real exam hall (one save per answer change, 10 s autosave batching) needs roughly 0.2 requests/s per candidate. Sizing guide: **4 cores / 8 GB for 1,000 concurrent candidates, 8 cores + separate database server for 3,000+**. Re-run before a big exam period:
+**Sizing for candidates writing at the same moment** (dedicated server; database on the same machine up to 4,000):
+
+| Candidates at once | Server | Notes |
+|---|---|---|
+| up to 300 | Shared hosting (SiteGround GoGeek or similar) | Limited PHP processes; fine for tests and quizzes. |
+| 1,000 | VPS, 4 cores, 8 GB | Redis for cache and sessions. |
+| 2,500 | VPS, 8 cores, 16 GB | PHP-FPM with 120+ workers, Redis. |
+| 5,000 | 2 application servers (8 cores each) behind a load balancer + a database server (8 cores, 32 GB) + Redis | `deploy/ha`. Test with the tools below first. |
+| 10,000+ | add application servers | The exam API keeps no state on the web server, so it scales out. |
+
+Recording camera/screen in the browser adds one upload every 10 s per recorded source and about 150–200 kbit/s per candidate (≈ 70 MB per candidate per hour). For 1,000 recorded candidates that is ~150–200 Mbit/s into the server and ~70 GB per hour of exam; put recordings on S3-compatible storage (`RECORDING_DISK=s3`) and record only exams that need it.
+
+Settings that matter most:
+- `CACHE_STORE=redis` and `SESSION_DRIVER=redis` during exams (the database cache makes every check-in write to the database).
+- `php artisan optimize` after each update (doubles requests per second).
+- `APP_DEBUG=false`, `LOG_LEVEL=warning`.
+- Apache `MaxRequestWorkers` (or PHP-FPM `pm.max_children`) above ~10 % of the candidates writing at once; `ListenBacklog` 4096.
+- `EXAM_PACE=auto` (default) lets the server slow check-ins at peaks; `normal` turns that off.
+
+Re-run before a big exam period (never on the live database):
 
 ```bat
-php artisan exams:load-fixture --candidates=1000      :: never on production
-node tools/loadtest.mjs http://127.0.0.1 storage/app/loadtest.json 240 20
+php artisan exams:load-fixture --candidates=2000
+node tools/loadtest.mjs https://exams.example.edu storage/app/loadtest.json 300 20
+node tools/apibench.mjs https://exams.example.edu storage/app/loadtest.json 30 40   :: raw requests per second
 ```
-
-Why it stays fast: each candidate's paper is frozen once and keys stay on the server; answers are one idempotent upsert keyed by (attempt, question) with a sequence number; the exam API is stateless (signed token, no session or cookie lookups); the institution lookup and each attempt's question map are cached; proctoring events are written in batches; every hot query uses an index; the deadline is enforced by the server and a minute-by-minute sweeper.
 
 ## 8. Security notes
 
@@ -311,7 +328,8 @@ Then `php artisan config:clear && php artisan vuna:bridge-check` — it lists th
 
 - Build the screens on your own computer (`npm run build`) and upload `public/build`; Node is not needed on the server.
 - Shared hosting does not allow always-on background processes. Set `QUEUE_VIA_SCHEDULER=true` in `.env`, and add one cron job: `* * * * * cd /path/to/platform && php artisan schedule:run`. The queue (e-mails, transcripts, exports) is then worked every minute by the scheduler.
-- Large exam sittings (several hundred candidates writing at the same time) need a VPS. Shared hosting suits LMS use and smaller tests.
+- Large exam sittings need a VPS: shared hosting carries roughly 300 candidates writing at the same time; see section 7 for sizes up to 5,000 and beyond. The code is the same; only the server changes.
+- Camera and screen recording works without a media server: the candidate's browser records and uploads short pieces (kept encrypted, deleted with other evidence). Watch your storage quota: about 70 MB per recorded candidate per hour.
 
 **Live meetings:**
 
@@ -319,4 +337,36 @@ Then `php artisan config:clear && php artisan vuna:bridge-check` — it lists th
   - Public STUN servers are used to find each computer's address (`BUILTIN_STUN_URLS`).
   - For networks that block direct connections, add a TURN relay (for example coturn on any small VPS): `BUILTIN_TURN_URLS=turn:turn.example.edu:3478` and `BUILTIN_TURN_SECRET=<coturn static-auth-secret>`. The platform then hands out passwords that last 6 hours.
 - *Full classes with recording* need a BigBlueButton server. It must run on its own Linux server with root access and open UDP ports, which shared and managed hosting such as SiteGround do not allow. Rent a small VPS for it, or use a hosted BigBlueButton service, then add it under Platform › Conferencing servers. The platform itself stays where it is.
-- *Live proctoring video* (LiveKit) has the same requirement as BigBlueButton. Snapshot proctoring works without it.
+- *Live proctoring video* (watching candidates live through LiveKit) has the same requirement as BigBlueButton. Snapshots, face checks and **recordings** work without it (recordings are made in the browser), and if a configured media server cannot be reached the exam room records in the browser instead.
+
+## 20. Running on a local network without internet, and offline-safe exams
+
+**Everything runs on your own server.** Fonts, icons, the face-check models, maths rendering and every script are served from the platform itself; no page loads anything from the internet. A campus server on a closed network serves every connected computer.
+
+**Set up a local server**
+1. Install as in section 1 on the server computer. Set `APP_URL` to the address the other computers use, for example `https://exams.campus.local` or `https://192.168.10.5`.
+2. Give the server a name and an HTTPS certificate the hall computers trust. Browsers allow the camera, microphone, screen sharing and the offline exam page only on `https` (or `localhost`). On a closed network: create a local certificate authority (for example with `mkcert`), install its root certificate on every hall computer once (or by group policy), and use a certificate from it for the server. The desktop exam app and Safe Exam Browser need the same.
+3. Run the scheduler and queue worker (section 2). Use `MAIL_MAILER=log` (or a campus mail server) when there is no internet.
+4. Upload the Safe Exam Browser installers under **Exam day > Safe Exam Browser**, so candidates get SEB from the server.
+5. Features that need the internet by nature stay off or fall back: card payments (bank transfer is recorded by hand), AI question reading and marking unless you point the AI setting at a model on your network, public STUN for built-in meetings (add a local TURN relay), and the official SEB download page.
+
+**When a connection or the power fails during an exam**
+- The candidate's answers are saved on their computer first (IndexedDB, written to disk before it reports success, and localStorage) and then sent. Each answer carries the moment it was written, by the server's clock.
+- Internet or server unreachable: a red notice, the candidate keeps writing, answers queue on the computer and are sent in order when it returns. The exam page itself is kept on the computer (a service worker for the exam room only), so a reload or a browser restart while offline still opens the exam.
+- Computer switched off or crashed: on return, the time it was off is given back, up to the exam's *power cut* limit (30 min). The server checks the claim: time in which it heard from that computer, or in which an answer was written, is never given back, and the same gap is never counted twice. A page closed on purpose gives nothing back.
+- Time up while disconnected: the server keeps the attempt open for the exam's *wait for a disconnected computer* time (120 min) instead of closing it, then closes it. Answers written before the end are accepted up to that long after closing and the attempt is marked again; answers written after the end are refused. Every late delivery is in the attempt's log (`late_sync`).
+- Exam moved to another computer: the old computer's unsent answers only fill questions not answered on the new one.
+
+**Notifications and other apps over the exam.** A web page cannot hide the operating system's notifications. For exams where that matters, allow only the desktop exam app and Safe Exam Browser (*Secure exam app* in the pre-exam checks does this):
+- Desktop exam app: during an exam the window stays above everything (screen-saver level) and system notifications are turned off for the signed-in user (Windows: the Notifications switch, which includes Phone Link; GNOME: notification banners), then restored after the exam — also on the next start if the computer went off mid-exam. No administrator rights are needed.
+- Safe Exam Browser: the settings file uses SEB's own locked desktop on Windows and Apple's assessment mode on macOS and iPad (`enableMacOSAAC`, `mobileEnableASAM`), with Siri, dictation and screen sharing off. With a school SEB password the file is encrypted (SEB's `pswd` format) and SEB's settings on that computer are locked with the same password.
+
+**Checks:** `php artisan test --filter=OfflineSafetyTest` and, against a local copy with demo data, `node tests/e2e/offline.mjs` (cuts the network, reloads offline, kills the browser mid-exam and runs out the clock offline).
+
+## 21. AI (reading papers, suggesting questions and marks)
+
+- Off until a key is set. **Platform › AI**: the platform's own provider and key, optionally shared with institutions. **Settings › AI** (each institution): use the platform's AI, or its own provider and key, and switch each AI feature on or off.
+- Providers: Claude (Anthropic) or any OpenAI-compatible service, including a model on your own network (Ollama, LM Studio, vLLM: give its address, e.g. `http://10.0.0.5:11434/v1`, and a vision-capable model). Keys are stored encrypted (APP_KEY) and never shown again. **Test the connection** checks the settings.
+- Reading papers runs in the queue (`ReadPaperWithAi`), so a queue worker or `QUEUE_VIA_SCHEDULER=true` must be running. Pages go in batches of five (overlapping by one page). Diagrams are cut out with PHP's GD extension (`extension=gd`).
+- Upload size: up to 60 page pictures per paper; raise `upload_max_filesize` / `post_max_size` (e.g. 64M) if large papers fail to upload.
+- Papers leave your server when an outside AI service is used. For a closed network, use a model on your own server.

@@ -47,9 +47,16 @@ import {
     Wrench,
     Network,
     MonitorPlay,
+    Radio,
+    Settings2,
+    Sparkles,
+    MessageSquareText,
+    Award,
+    ShoppingBag,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
-import { NavMain } from '@/components/nav-main';
+import { NavGroup, NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
     Sidebar,
@@ -63,7 +70,7 @@ import {
 import { usePlatform } from '@/hooks/use-platform';
 import type { NavItem } from '@/types';
 
-type Group = { label: string; items: NavItem[] };
+type Group = { label: string; icon?: LucideIcon; badge?: string | null; flat?: boolean; items: NavItem[] };
 
 /**
  * The menu follows what the signed-in person may do. Platform administrators see only the
@@ -72,51 +79,45 @@ type Group = { label: string; items: NavItem[] };
  */
 function useMenu(): { home: string; groups: Group[] } {
     const { hasModule, can, canAny, isPlatformAdmin, userType } = usePlatform();
-    const examBoard = Boolean((usePage().props.auth as { examBoard?: boolean } | undefined)?.examBoard);
-
-    const examinerExam = (usePage().props.auth as { examinerExam?: { id: number; title: string } | null } | undefined)?.examinerExam;
+    const page = usePage().props as { auth?: { examBoard?: boolean; examinerExam?: { id: number; title: string } | null }; liveWriting?: number };
+    const examBoard = Boolean(page.auth?.examBoard);
+    const examinerExam = page.auth?.examinerExam;
+    const live = Number(page.liveWriting ?? 0);
 
     if (userType === 'exam_examiner' && examinerExam) {
         const sheet = `/marking/${examinerExam.id}/panel`;
 
-        return { home: sheet, groups: [{ label: examinerExam.title, items: [{ title: 'Scoring sheet', href: sheet, icon: ClipboardCheck }] }] };
+        return { home: sheet, groups: [{ label: examinerExam.title, flat: true, items: [{ title: 'Scoring sheet', href: sheet, icon: ClipboardCheck }] }] };
     }
 
     if (isPlatformAdmin) {
         return {
             home: '/platform',
             groups: [
-                {
-                    label: 'Platform',
-                    items: [
-                        { title: 'Overview', href: '/platform', icon: Gauge },
-                        { title: 'Institutions', href: '/platform/institutions', icon: Building2 },
-                        { title: 'Applications', href: '/platform/applications', icon: Inbox },
-                    ],
-                },
-                {
-                    label: 'Commercial',
-                    items: [
-                        { title: 'Plans & prices', href: '/platform/plans', icon: Tags },
-                        { title: 'Modules per institution', href: '/platform/modules', icon: Layers },
-                        { title: 'Payments & invoices', href: '/platform/payments', icon: Receipt },
-                        { title: 'Discount codes', href: '/platform/coupons', icon: TicketPercent },
-                        { title: 'Billing rules', href: '/platform/settings', icon: SlidersHorizontal },
-                    ],
-                },
-                {
-                    label: 'Team',
-                    items: [
-                        { title: 'Platform administrators', href: '/platform/admins', icon: ShieldCheck },
-                        { title: 'Platform branding', href: '/platform/branding', icon: Palette },
-                        { title: 'Conferencing servers', href: '/platform/conferencing', icon: Video },
-                        { title: 'Announcements', href: '/platform/announcements', icon: Megaphone },
-                        { title: 'Audit trail', href: '/platform/audit', icon: ScrollText },
-                        { title: 'System health', href: '/platform/health', icon: Activity },
-                        { title: 'Security check', href: '/platform/security', icon: ShieldAlert },
-                    ],
-                },
-                { label: 'Help', items: [{ title: 'Platform documentation', href: '/platform/docs', icon: BookMarked }] },
+                { label: 'Platform', flat: true, items: [
+                    { title: 'Overview', href: '/platform', icon: Gauge },
+                    { title: 'Institutions', href: '/platform/institutions', icon: Building2 },
+                    { title: 'Applications', href: '/platform/applications', icon: Inbox },
+                ] },
+                { label: 'Commercial', icon: CreditCard, items: [
+                    { title: 'Plans & prices', href: '/platform/plans', icon: Tags },
+                    { title: 'Modules per institution', href: '/platform/modules', icon: Layers },
+                    { title: 'Payments & invoices', href: '/platform/payments', icon: Receipt },
+                    { title: 'Discount codes', href: '/platform/coupons', icon: TicketPercent },
+                    { title: 'Billing rules', href: '/platform/settings', icon: SlidersHorizontal },
+                    { title: 'AI', href: '/platform/ai', icon: Sparkles },
+                    { title: 'Text messages', href: '/platform/sms', icon: MessageSquareText },
+                ] },
+                { label: 'Team & system', icon: ShieldCheck, items: [
+                    { title: 'Platform administrators', href: '/platform/admins', icon: ShieldCheck },
+                    { title: 'Platform branding', href: '/platform/branding', icon: Palette },
+                    { title: 'Conferencing servers', href: '/platform/conferencing', icon: Video },
+                    { title: 'Announcements', href: '/platform/announcements', icon: Megaphone },
+                    { title: 'Audit trail', href: '/platform/audit', icon: ScrollText },
+                    { title: 'System health', href: '/platform/health', icon: Activity },
+                    { title: 'Security check', href: '/platform/security', icon: ShieldAlert },
+                ] },
+                { label: 'Help', icon: LifeBuoy, items: [{ title: 'Platform documentation', href: '/platform/docs', icon: BookMarked }] },
             ],
         };
     }
@@ -127,90 +128,106 @@ function useMenu(): { home: string; groups: Group[] } {
     const meetings = hasModule('conferencing');
     const proctoring = hasModule('browser_proctoring');
     const groups: Group[] = [];
-    const push = (label: string, items: (NavItem | false)[]) => groups.push({ label, items: items.filter(Boolean) as NavItem[] });
+    const push = (label: string, icon: LucideIcon | undefined, items: (NavItem | false)[], extra: Partial<Group> = {}) =>
+        groups.push({ label, icon, ...extra, items: items.filter(Boolean) as NavItem[] });
 
-    push('Home', [
+    push('Home', undefined, [
         { title: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
         { title: 'Notifications', href: '/notifications', icon: Bell },
         lms && { title: 'Messages', href: '/messages', icon: MessagesSquare },
         lms && { title: 'Calendar', href: '/learn/calendar', icon: CalendarRange },
-        meetings && { title: 'Live classes & meetings', href: '/meetings', icon: Video },
-    ]);
+    ], { flat: true });
 
     if (student) {
-        push('My studies', [
+        push('My studies', BookOpen, [
             lms && { title: 'My courses', href: '/learn/courses', icon: BookOpen },
             lms && { title: 'Course registration', href: '/learn/registration', icon: ClipboardList },
             lms && { title: 'Grades', href: '/learn/grades', icon: NotebookPen },
-            exams && { title: 'My exams', href: '/my/exams', icon: GraduationCap },
-            exams && { title: 'My results', href: '/my/results', icon: Trophy },
             lms && { title: 'Announcements', href: '/learn/announcements', icon: Megaphone },
+            meetings && { title: 'Live classes', href: '/meetings', icon: Video },
             lms && { title: 'Search', href: '/learn/search', icon: Search },
-            { title: 'Requests & exceptions', href: '/my/exceptions', icon: FileQuestion },
         ]);
-    } else if (lms && canAny('lms.teach', 'results.approve', 'academics.manage')) {
-        push('Teaching', [
-            { title: 'Courses', href: '/learn/courses', icon: BookOpen },
-            canAny('academics.manage', 'results.approve') && { title: 'Registration', href: '/learn/registration', icon: ClipboardList },
-            { title: 'Announcements', href: '/learn/announcements', icon: Megaphone },
-            { title: 'Search', href: '/learn/search', icon: Search },
+        push('My exams', GraduationCap, [
+            exams && { title: 'Exams', href: '/my/exams', icon: GraduationCap },
+            exams && { title: 'Results', href: '/my/results', icon: Trophy },
+            { title: 'Requests & exceptions', href: '/my/exceptions', icon: FileQuestion },
+            { title: 'Face identity', href: '/my/identity', icon: ScanFace },
+            exams && { title: 'Certificates', href: '/my/certificates', icon: Award },
+            hasModule('test_shop') && { title: 'Test series', href: '/my/test-series', icon: ShoppingBag },
+            exams && hasModule('secure_client') && { title: 'Safe Exam Browser', href: '/safe-exam-browser', icon: ShieldCheck },
         ]);
     }
 
     if (exams && !student) {
-        push('Assessment', [
+        push('Exams', ScrollText, [
+            can('exams.manage') && { title: 'All exams', href: '/exams', icon: ScrollText },
             can('questions.view') && { title: 'Question bank', href: '/question-bank', icon: Library },
-            can('questions.create') && { title: 'Import questions', href: '/question-bank/import', icon: FileUp },
-            examBoard && { title: 'Exam board', href: '/exam-board', icon: MonitorPlay },
-            can('exams.manage') && { title: 'Exams', href: '/exams', icon: ScrollText },
-            can('exams.manage') && { title: 'Exam calendar', href: '/exam-calendar', icon: CalendarDays },
-            hasModule('cbt_halls') && can('exams.manage') && { title: 'Halls & devices', href: '/venues', icon: Building2 },
-            hasModule('cbt_halls') && can('exams.manage') && { title: 'Exam network', href: '/exam-network', icon: Network },
+            can('questions.create') && { title: 'Upload questions', href: '/question-bank/import', icon: FileUp },
+            can('exams.manage') && { title: 'Timetable', href: '/exam-calendar', icon: CalendarDays },
             can('results.mark') && { title: 'Marking', href: '/marking', icon: ClipboardCheck },
+            can('exams.manage') && { title: 'Certificates', href: '/certificates', icon: Award },
+            can('exams.manage') && hasModule('test_shop') && { title: 'Test-series shop', href: '/admin/shop', icon: ShoppingBag },
+            examBoard && { title: 'Exam board', href: '/exam-board', icon: MonitorPlay },
         ]);
     }
 
     if (proctoring && !student && canAny('exams.proctor', 'exams.invigilate', 'exams.manage')) {
-        push('Exam day', [
-            { title: 'Proctoring', href: '/proctor', icon: Video },
+        push('Exam day', Radio, [
+            { title: 'Live monitoring', href: '/proctor', icon: Video },
             { title: 'Incidents', href: '/incidents', icon: ShieldAlert },
             { title: 'Proctor shifts', href: '/proctor/shifts', icon: CalendarClock },
-        ]);
+            hasModule('cbt_halls') && can('exams.manage') && { title: 'Halls & computers', href: '/venues', icon: Building2 },
+            hasModule('cbt_halls') && can('exams.manage') && { title: 'Exam network', href: '/exam-network', icon: Network },
+            hasModule('secure_client') && can('exams.manage') && { title: 'Safe Exam Browser', href: '/admin/safe-exam-browser', icon: ShieldCheck },
+        ], { badge: live > 0 ? `${live} live` : null });
     } else if (proctoring && !student && examBoard) {
         // examiners and course lecturers watch their own exams' sittings
-        push('Exam day', [{ title: 'Monitoring', href: '/proctor', icon: Video }]);
+        push('Exam day', Radio, [{ title: 'Live monitoring', href: '/proctor', icon: Video }], { badge: live > 0 ? `${live} live` : null });
     }
 
-    push('Administration', [
+    if (!student && (lms || meetings) && canAny('lms.teach', 'results.approve', 'academics.manage', 'meetings.host')) {
+        push('Teaching', BookOpen, [
+            lms && { title: 'Courses', href: '/learn/courses', icon: BookOpen },
+            lms && canAny('academics.manage', 'results.approve') && { title: 'Registration', href: '/learn/registration', icon: ClipboardList },
+            lms && { title: 'Announcements', href: '/learn/announcements', icon: Megaphone },
+            meetings && { title: 'Live classes & meetings', href: '/meetings', icon: Video },
+            lms && { title: 'Search', href: '/learn/search', icon: Search },
+        ]);
+    } else if (!student && meetings) {
+        push('Teaching', BookOpen, [{ title: 'Live classes & meetings', href: '/meetings', icon: Video }]);
+    }
+
+    push('People & records', UsersRound, [
         can('users.manage') && { title: 'People', href: '/admin/people', icon: UsersRound },
-        can('roles.manage') && { title: 'Roles & permissions', href: '/admin/roles', icon: ShieldCheck },
-        can('users.manage') && { title: 'Identity checks', href: '/admin/identity', icon: ScanFace },
-        can('users.manage') && { title: 'Access review', href: '/admin/access-review', icon: UserCheck },
         can('academics.manage') && { title: 'Academic structure', href: '/admin/academics', icon: Landmark },
         canAny('exams.manage', 'academics.manage', 'results.approve', 'users.manage') && { title: 'Exceptions', href: '/admin/exceptions', icon: FileQuestion },
         canAny('audit.view', 'results.approve', 'exams.manage', 'academics.manage') && { title: 'Reports', href: '/admin/reports', icon: BarChart3 },
+        can('users.manage') && { title: 'Identity checks', href: '/admin/identity', icon: ScanFace },
+        can('roles.manage') && { title: 'Roles & permissions', href: '/admin/roles', icon: ShieldCheck },
+        can('users.manage') && { title: 'Access review', href: '/admin/access-review', icon: UserCheck },
         can('audit.view') && { title: 'Audit trail', href: '/admin/audit', icon: ScrollText },
     ]);
 
-    push('Institution settings', [
+    push('Settings', Settings2, [
+        can('institution.manage') && { title: 'Branding & theme', href: '/admin/branding', icon: Palette },
+        can('institution.manage') && { title: 'AI', href: '/admin/ai', icon: Sparkles },
+        can('institution.manage') && { title: 'Text messages', href: '/admin/sms', icon: MessageSquareText },
         can('institution.manage') && { title: 'Policy', href: '/admin/policy', icon: Scale },
-        can('institution.manage') && { title: 'Branding', href: '/admin/branding', icon: Palette },
-        hasModule('enterprise_hosting') && can('institution.manage') && { title: 'Single sign-on', href: '/admin/sso', icon: KeyRound },
-        can('institution.manage') && { title: 'Maintenance', href: '/admin/maintenance', icon: Wrench },
-        meetings && can('conferencing.manage') && { title: 'Conferencing', href: '/admin/conferencing', icon: Video },
-        can('institution.manage') && { title: 'System health', href: '/admin/system-health', icon: Activity },
-        can('institution.manage') && { title: 'E-mail delivery', href: '/admin/mail-log', icon: MailCheck },
-        can('institution.manage') && can('integrations.manage') && { title: 'Integrations', href: '/admin/integrations', icon: Plug },
         can('billing.manage') && { title: 'Subscription & billing', href: '/institution/billing', icon: CreditCard },
+        hasModule('enterprise_hosting') && can('institution.manage') && { title: 'Single sign-on', href: '/admin/sso', icon: KeyRound },
+        meetings && can('conferencing.manage') && { title: 'Conferencing', href: '/admin/conferencing', icon: Video },
+        can('institution.manage') && can('integrations.manage') && { title: 'Integrations', href: '/admin/integrations', icon: Plug },
+        can('institution.manage') && { title: 'E-mail delivery', href: '/admin/mail-log', icon: MailCheck },
+        can('institution.manage') && { title: 'System health', href: '/admin/system-health', icon: Activity },
+        can('institution.manage') && { title: 'Maintenance', href: '/admin/maintenance', icon: Wrench },
+        !student && { title: 'Face identity', href: '/my/identity', icon: ScanFace },
     ]);
 
-    push('Help', [
+    push('Help', LifeBuoy, [
         { title: 'Documentation', href: '/docs', icon: BookMarked },
         !student && { title: 'Templates', href: '/templates', icon: FileDown },
         { title: 'Help centre', href: '/help', icon: LifeBuoy },
     ]);
-
-    push('Account', [{ title: 'Face identity', href: '/my/identity', icon: ScanFace }]);
 
     return { home: '/dashboard', groups: groups.filter((g) => g.items.length > 0) };
 }
@@ -232,10 +249,10 @@ export function AppSidebar() {
                 </SidebarMenu>
             </SidebarHeader>
 
-            <SidebarContent>
-                {groups.map((g) => (
-                    <NavMain key={g.label} label={g.label} items={g.items} />
-                ))}
+            <SidebarContent className="gap-1 pt-1">
+                {groups.map((g) => (g.flat
+                    ? <NavMain key={g.label} label={g.label} items={g.items} />
+                    : <NavGroup key={g.label} label={g.label} icon={g.icon} badge={g.badge} items={g.items} />))}
             </SidebarContent>
 
             <SidebarFooter>

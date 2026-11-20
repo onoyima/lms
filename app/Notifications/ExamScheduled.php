@@ -15,7 +15,7 @@ class ExamScheduled extends Notification
 
     public function via(object $notifiable): array
     {
-        return \App\Support\NotificationCategories::filter($notifiable, 'exams', ['database']);
+        return \App\Support\NotificationCategories::filter($notifiable, 'exams', ['database', \App\Notifications\Channels\SmsChannel::class]);
     }
 
     public function toArray(object $notifiable): array
@@ -25,5 +25,12 @@ class ExamScheduled extends Notification
             'body' => $this->session->exam->title.' — '.$this->session->starts_at->format('D j M, H:i').($this->session->venue ? ' at '.$this->session->venue->name : ' (online)'),
             'exam_session_id' => $this->session->id,
         ];
+    }
+
+    public function toSms(object $notifiable): string
+    {
+        $s = $this->session;
+
+        return 'Exam: '.$s->exam->title.', '.$s->starts_at->format('D j M, H:i').($s->venue ? ', '.$s->venue->name : ', online').'.';
     }
 }

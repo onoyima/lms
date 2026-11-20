@@ -92,6 +92,10 @@ class ExamWorkflow
         if ($to === 'published' && $ids->isNotEmpty()) {
             $users = User::whereIn('id', Result::whereIn('id', $ids)->pluck('user_id'))->get();
             Notification::send($users, new ResultsPublished($exam));
+            // certificates and badges for everyone who reached the pass mark
+            if ($exam->certificate_template_id && \App\Models\CertificateTemplate::whereKey($exam->certificate_template_id)->where('auto_award', true)->exists()) {
+                app(\App\Services\Documents\Certificates::class)->awardForExam($exam->fresh(), $by);
+            }
         }
         $this->audit->record("results.$to", $exam, ['count' => $ids->count()], $by->id);
 

@@ -14,7 +14,7 @@ class Exam extends Model
 {
     use BelongsToTenant, SoftDeletes;
 
-    protected $fillable = ['course_id', 'semester_id', 'created_by', 'title', 'code', 'type', 'category', 'kind', 'parent_exam_id', 'instructions', 'status', 'total_mark', 'pass_mark', 'duration_minutes', 'max_attempts', 'score_policy', 'settings', 'proctoring', 'channels', 'marking_policy', 'version', 'approved_at', 'approved_by', 'legacy_ref'];
+    protected $fillable = ['course_id', 'semester_id', 'created_by', 'title', 'code', 'type', 'category', 'kind', 'parent_exam_id', 'exam_group_id', 'certificate_template_id', 'instructions', 'status', 'total_mark', 'pass_mark', 'duration_minutes', 'max_attempts', 'score_policy', 'settings', 'proctoring', 'channels', 'marking_policy', 'version', 'approved_at', 'approved_by', 'legacy_ref'];
 
     protected function casts(): array
     {
@@ -47,6 +47,7 @@ class Exam extends Model
     }
 
     public function course(): BelongsTo { return $this->belongsTo(Course::class); }
+    public function group(): BelongsTo { return $this->belongsTo(ExamGroup::class, 'exam_group_id'); }
     public function semester(): BelongsTo { return $this->belongsTo(Semester::class); }
     public function sections(): HasMany { return $this->hasMany(ExamSection::class)->orderBy('position'); }
     public function criteria(): HasMany { return $this->hasMany(MarkingCriterion::class)->orderBy('position'); }

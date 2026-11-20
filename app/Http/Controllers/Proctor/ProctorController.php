@@ -176,7 +176,9 @@ class ProctorController extends Controller
             'messages' => CandidateMessage::where('attempt_id', $attempt->id)->orderByDesc('id')->limit(100)->get(),
             'evidence' => EvidenceFile::where('attempt_id', $attempt->id)->latest('id')->limit(100)->get(['id', 'kind', 'mime', 'size', 'captured_at', 'sha256']),
             'incidents' => Incident::where('attempt_id', $attempt->id)->latest('id')->get(['id', 'type', 'severity', 'status', 'title', 'needs_human_review']),
-            'recordings' => \App\Models\MediaRecording::where('attempt_id', $attempt->id)->latest('id')->get(['id', 'kind', 'status', 'duration_seconds', 'started_at']),
+            'recordings' => \App\Models\MediaRecording::where('attempt_id', $attempt->id)->latest('id')->get(['id', 'kind', 'status', 'duration_seconds', 'started_at', 'egress_id'])
+                ->map(fn ($r) => ['id' => $r->id, 'kind' => $r->kind, 'status' => $r->status, 'duration_seconds' => $r->duration_seconds, 'started_at' => $r->started_at,
+                    'browser' => \App\Services\Media\BrowserRecordings::isBrowser($r)] + (\App\Services\Media\BrowserRecordings::isBrowser($r) ? app(\App\Services\Media\BrowserRecordings::class)->summary($r) : [])),
             'identity' => [
                 'checks' => \App\Models\IdentityCheck::where('attempt_id', $attempt->id)->latest('id')->limit(20)->get(['id', 'kind', 'result', 'evidence_file_id', 'created_at']),
                 'reference' => ($p = \App\Models\FaceProfile::where('user_id', $attempt->user_id)->first())
@@ -190,6 +192,14 @@ class ProctorController extends Controller
     {
         $attempt = Attempt::findOrFail($recording->attempt_id);
         $this->authorizeSession($request, $attempt->session);
+        if (\App\Services\Media\BrowserRecordings::isBrowser($recording)) {
+            // recorded in the candidate's browser: pieces joined into one file (supports jumping around)
+            $file = app(\App\Services\Media\BrowserRecordings::class)->playable($recording);
+            abort_unless($file, 404, 'The start of this recording never arrived.');
+            $this->audit->record('evidence.recording_viewed', $attempt, ['recording' => $recording->id]);
+
+            return response()->file($file, ['Content-Type' => \App\Services\Media\BrowserRecordings::mime($recording), 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
+        }
         $root = rtrim((string) config('platform.livekit.recordings_local'), '/');
         $inner = rtrim((string) config('platform.livekit.recordings_path'), '/');
         abort_unless($root && $recording->status === 'complete' && $recording->location && str_starts_with($recording->location, $inner.'/'), 404);

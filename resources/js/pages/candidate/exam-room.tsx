@@ -1,20 +1,30 @@
 import { Head, Link } from '@inertiajs/react';
 import { AlertTriangle, Camera, CheckCircle2, ChevronLeft, ChevronRight, Clock, Flag, Hand, LayoutGrid, Loader2, Send, Shield, Wifi, WifiOff, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PreChecks, RoomScan } from '@/components/exam/pre-checks';
+import type { CheckKey } from '@/components/exam/pre-checks';
 import { formatClock, sendJson } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
+import { ExamStore, keepExamPageOffline } from '@/lib/exam-store';
+import type { Snapshot, StoredAnswer } from '@/lib/exam-store';
 import { frameToJpeg, loadFace, readFace } from '@/lib/face';
 import { publish } from '@/lib/live';
-import { Toaster } from '@/components/ui/sonner';
+import { PieceRecorder, RecordingUploader } from '@/lib/recorder';
+import type { RecordPlan } from '@/lib/recorder';
 
 /* ─── Types ───────────────────────────────────────────────────────────── */
 type Option = { id: number; label: string; html: string };
 type MatchItem = { key: string; html: string };
-type PaperQuestion = { id: number; number: number; type: string; mark: number; stem_html: string; options: Option[]; matching?: { left: MatchItem[]; right: MatchItem[] } | null };
-type Paper = { exam: { title: string; instructions: string | null; type: string }; sections: { id: number; title: string; instructions: string | null; answer_any: number | null; questions: PaperQuestion[] }[] };
-type Response = { options?: number[]; text?: string; number?: number; pairs?: Record<string, string> } | null;
-type Answer = { response: Response; flagged: boolean; seq: number };
-type AttemptState = { id: number; status: string; remaining_seconds: number; deadline_at: string; server_time: string; answered: number; violations: number; session_paused: boolean };
+type PaperQuestion = {
+    id: number; number: number; type: string; mark: number; stem_html: string; options: Option[]; matching?: { left: MatchItem[]; right: MatchItem[] } | null;
+    blanks?: number[] | null; file?: { kinds: string[]; max_mb: number } | null; passage_id?: number | null;
+};
+type Paper = { exam: { title: string; instructions: string | null; type: string }; sections: { id: number; title: string; instructions: string | null; answer_any: number | null; questions: PaperQuestion[] }[]; passages?: Record<string, { title: string; html: string } | null> };
+type Uploader = (questionId: number, file: File) => Promise<{ id: number; name: string; size: number } | string>;
+const FILE_EXT: Record<string, string> = { image: '.jpg,.jpeg,.png,.webp,.heic', pdf: '.pdf', document: '.doc,.docx,.odt,.rtf,.txt', spreadsheet: '.xls,.xlsx,.ods,.csv', slides: '.ppt,.pptx,.odp', code: '.zip,.py,.java,.c,.cpp,.js,.ts,.php,.r,.m,.ipynb' };
+type Response = { options?: number[]; text?: string; number?: number; pairs?: Record<string, string>; tf?: Record<string, boolean>; order?: number[]; blanks?: Record<string, string>; file?: { id: number; name: string; size: number } } | null;
+type Answer = { response: Response; flagged: boolean; seq: number; at?: number };
+type AttemptState = { id: number; status: string; remaining_seconds: number; deadline_at: string; server_time: string; answered: number; violations: number; session_paused: boolean; grace_seconds?: number; pace?: number; power_cut_left?: number; violation_threshold?: number; violation_action?: string };
 type Message = { id: number; kind: string; body: string };
 type Policy = Record<string, boolean | number | string>;
 type Props = {
@@ -33,33 +43,89 @@ const CLOSED = ['submitted', 'auto_submitted', 'terminated'];
 export default function ExamRoom(props: Props) {
     const [phase, setPhase] = useState<'check' | 'exam' | 'done'>('check');
     const [token, setToken] = useState<string | null>(null);
+    const [startedOffline, setStartedOffline] = useState(false);
     const [receipt, setReceipt] = useState<{ submitted_at?: string; hash?: string; answered?: number; score?: { raw: number; max: number } | null; reason?: string } | null>(null);
+    // recording pieces still waiting to be sent; the uploader outlives the exam screen so nothing is left behind
+    const [waiting, setWaiting] = useState(0);
+    const uploader = useMemo(() => (token ? new RecordingUploader(props.candidate.id, () => token, setWaiting) : null), [token, props.candidate.id]);
+    useEffect(() => {
+        uploader?.start();
+
+        return () => uploader?.stop();
+    }, [uploader]);
+
+    // what this computer kept of an exam under way: the paper, the clock and every answer
+    const store = useMemo(() => new ExamStore(props.candidate.id), [props.candidate.id]);
+    const [snap, setSnap] = useState<Snapshot | null>(null);
+    // the computer went off (power cut, crash, flat battery) while the exam was open: the gap is reported
+    // so the time is given back; closing the page on purpose gives nothing back
+    const [off, setOff] = useState<OffReport | null>(null);
+    useEffect(() => {
+        keepExamPageOffline();
+        void store.load().then((loaded) => {
+            const to = Date.now() + (loaded.session?.clockOffset ?? 0);
+
+            if (loaded.session && loaded.exit !== 'clean' && loaded.aliveAt && to - loaded.aliveAt >= 20000) {
+                setOff({ from: Math.round(loaded.aliveAt), to: Math.round(to), kind: 'off' });
+            }
+
+            setSnap(loaded);
+        });
+    }, [store]);
 
     return (
         <>
             <Head title={props.exam.title} />
-            {phase === 'check' && <SystemCheck {...props} onStarted={(t) => (setToken(t), setPhase('exam'))} />}
-            {phase === 'exam' && token && <Exam {...props} token={token} onFinished={(r) => (setReceipt(r), setPhase('done'))} />}
-            {phase === 'done' && <Done receipt={receipt} />}
-            <Toaster />
+            {phase === 'check' && <SystemCheck {...props} stored={snap} off={off} onStarted={(t, offline) => (setToken(t), setStartedOffline(offline), setPhase('exam'))} />}
+            {phase === 'exam' && token && snap && (
+                <Exam {...props} token={token} uploader={uploader} store={store} snap={snap} off={startedOffline ? off : null} startedOffline={startedOffline}
+                    onFinished={(r) => (setReceipt(r), setPhase('done'))} />
+            )}
+            {phase === 'done' && <Done receipt={receipt} waiting={waiting} />}
         </>
     );
 }
+
+type OffReport = { from: number; to: number; kind: 'off' | 'asleep' };
 
 type DesktopBridge = { onEvent: (cb: (type: string, data?: Record<string, unknown>) => void) => () => void; examState: (s: 'open' | 'closed', opts?: { closeApps?: boolean }) => void };
 const desktop = typeof window !== 'undefined' ? (window as unknown as { examDesktop?: DesktopBridge }).examDesktop : undefined;
 
 /* ─── Pre-exam checks, consent, PIN (Target 80, 127-129, 175, 202-203) ───────── */
-function SystemCheck({ candidate, exam, onStarted }: Props & { onStarted: (token: string) => void }) {
+function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stored: Snapshot | null; off: OffReport | null; onStarted: (token: string, offline: boolean) => void }) {
     const p = exam.proctoring;
     const [checks, setChecks] = useState<{ label: string; ok: boolean | null; note?: string }[]>([]);
     const [consent, setConsent] = useState(candidate.consent_given);
     const [pin, setPin] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
     const streamRef = useRef<MediaStream | null>(null);
+    // an exam already under way on this computer (or on the server) continues without repeating the checks
+    const kept = stored?.session ?? null;
+    // a copy left on this computer from an attempt that has since closed: the server asks for the full start
+    const [fresh, setFresh] = useState(false);
+    const resuming = (candidate.has_open_attempt || !!kept) && !fresh;
+    const preList = useMemo(() => (Array.isArray(p.pre_checks) ? (p.pre_checks as unknown as CheckKey[]) : []), [p.pre_checks]);
+    const showPre = !resuming && preList.length > 0;
+    const [passed, setPassed] = useState<{ checks: Record<string, boolean>; details: Record<string, string> }>({ checks: {}, details: {} });
+    const onPre = useCallback((c: Record<string, boolean>, d: Record<string, string>) => setPassed({ checks: c, details: d }), []);
+    const preDone = !showPre || preList.every((k) => passed.checks[k]);
 
     useEffect(() => {
+        const up = () => setOnline(true);
+        const down = () => setOnline(false);
+        window.addEventListener('online', up);
+        window.addEventListener('offline', down);
+
+        return () => (window.removeEventListener('online', up), window.removeEventListener('offline', down));
+    }, []);
+
+    useEffect(() => {
+        if (showPre) {
+            return; // the chosen pre-exam checks below do this, one by one
+        }
+
         (async () => {
             const list: { label: string; ok: boolean | null; note?: string }[] = [];
             list.push({ label: 'Secure connection (needed for camera)', ok: window.isSecureContext, note: window.isSecureContext ? undefined : 'Use the https address or the desktop app.' });
@@ -78,7 +144,8 @@ function SystemCheck({ candidate, exam, onStarted }: Props & { onStarted: (token
             }
 
             const up = await fetch('/up', { cache: 'no-store' }).then((r) => r.ok).catch(() => false);
-            list.push({ label: `Server reachable${up ? ` (${Math.round(performance.now() - t)} ms)` : ''}`, ok: up });
+            list.push({ label: `Server reachable${up ? ` (${Math.round(performance.now() - t)} ms)` : ''}`, ok: up ? true : kept ? null : false,
+                note: !up && kept ? 'Not connected. You can carry on with the exam saved on this computer.' : undefined });
 
             if (p.require_fullscreen) {
                 list.push({ label: 'Full screen available', ok: !!document.documentElement.requestFullscreen });
@@ -102,9 +169,16 @@ function SystemCheck({ candidate, exam, onStarted }: Props & { onStarted: (token
         })();
 
         return () => streamRef.current?.getTracks().forEach((t) => t.stop());
-    }, [p, exam.compat]);
+    }, [p, exam.compat, showPre, kept]);
 
-    const blocking = checks.some((c) => c.ok === false && !c.label.startsWith('Single display'));
+    const blocking = !showPre && checks.some((c) => c.ok === false && !c.label.startsWith('Single display'));
+
+    const carryOnOffline = () => {
+        if (kept) {
+            streamRef.current?.getTracks().forEach((t) => t.stop());
+            onStarted(kept.token, true);
+        }
+    };
 
     const start = async () => {
         setBusy(true);
@@ -114,19 +188,43 @@ function SystemCheck({ candidate, exam, onStarted }: Props & { onStarted: (token
             await document.documentElement.requestFullscreen?.().catch(() => undefined);
         }
 
-        const res = await sendJson<{ token?: string; message?: string }>(`/my/exams/${candidate.id}/start`, 'POST', { pin: pin || null, consent });
+        let res: { ok: boolean; status: number; data: { token?: string; message?: string; reason?: string } };
+
+        try {
+            res = await sendJson(`/my/exams/${candidate.id}/start`, 'POST', {
+                pin: pin || null, consent,
+                ...(showPre ? { checks: passed.checks, check_details: passed.details } : {}),
+                ...(resuming && off ? { off } : {}),
+            });
+        } catch {
+            res = { ok: false, status: 0, data: {} };
+        }
+
         setBusy(false);
 
         if (res.ok && res.data.token) {
             streamRef.current?.getTracks().forEach((t) => t.stop());
-            onStarted(res.data.token);
+            onStarted(res.data.token, false);
+        } else if ((res.status === 0 || res.status >= 502) && kept) {
+            // the server cannot be reached: carry on with the exam kept on this computer
+            carryOnOffline();
         } else {
-            setError(res.data.message ?? 'Could not start the exam.');
+            if (['pre_checks', 'consent_required', 'pin_required'].includes(res.data.reason ?? '') && resuming) {
+                setFresh(true);
+            }
+
+            setError(res.status === 0 ? 'Cannot reach the exam server. Check the connection, then try again.' : res.data.message ?? 'Could not start the exam.');
         }
     };
 
     return (
         <div className="min-h-screen bg-background">
+            {kept && !online && (
+                <div role="alert" className="flex flex-wrap items-center justify-center gap-3 bg-[#b91c1c] px-4 py-3 text-sm font-medium text-white">
+                    <WifiOff className="size-4" /> No internet connection. Your exam and answers are saved on this computer.
+                    <button onClick={carryOnOffline} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-[#b91c1c]">Continue my exam</button>
+                </div>
+            )}
             <div className="mx-auto grid max-w-5xl gap-8 px-6 py-12 lg:grid-cols-[1fr_380px]">
                 <div className="grid content-start gap-6">
                     <p className="eyebrow">{exam.practice ? 'Practice exam' : 'Exam room'}</p>
@@ -140,8 +238,8 @@ function SystemCheck({ candidate, exam, onStarted }: Props & { onStarted: (token
                     <div className="surface p-5 text-sm leading-relaxed">
                         <p className="eyebrow mb-3 flex items-center gap-2"><Shield className="size-3.5" /> What is monitored</p>
                         <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-                            {p.detect_tab_switch && <li>Leaving this page or switching tabs is recorded.</li>}
-                            {p.require_fullscreen && <li>The exam must stay in full screen.</li>}
+                            {(p.detect_tab_switch || p.detect_focus_loss) && <li>Leaving the exam screen (another tab, window or app) gives you a warning.</li>}
+                            {p.require_fullscreen && <li>The exam must stay in full screen. Leaving full screen gives you a warning.</li>}
                             {p.block_copy_paste && <li>Copy and paste are disabled.</li>}
                             {p.detect_multiple_displays && <li>Extra monitors or screen projection are reported.</li>}
                             {p.webcam && <li>Your camera takes a picture every {String(p.snapshot_seconds)} seconds.</li>}
@@ -151,56 +249,71 @@ function SystemCheck({ candidate, exam, onStarted }: Props & { onStarted: (token
                             {p.gaze_tracking && <li>Turning away from the screen for a long time is noted for review.</li>}
                             {p.microphone && <li>Your microphone is on.</li>}
                             {p.screen_share && <li>You will be asked to share your screen.</li>}
-                            <li>Your answers save automatically, also on this device if the network drops.</li>
+                            {(p.record_video || p.record_screen) && <li>Your {[p.record_video && 'camera', p.record_video && p.microphone && 'microphone', p.record_screen && 'screen'].filter(Boolean).join(' and ')} {p.record_video && p.microphone ? 'are' : 'is'} recorded for the whole exam, for authorised staff to review.</li>}
+                            {p.live_video && <li>Proctors may watch your camera live.</li>}
+                            <li>Your answers are saved on this computer as you write and sent to the server automatically. If the internet goes off, keep writing: nothing is lost.</li>
+                            <li>If the computer goes off (power cut), come back to this page: your answers are still here and the lost time is given back.</li>
                             <li>
-                                After {String(p.violation_threshold)} warnings the exam is {p.violation_action === 'submit' ? 'submitted automatically' : p.violation_action === 'lock' ? 'locked until an invigilator unlocks it' : 'reported'}.
+                                After {String(p.violation_threshold)} warnings the exam is {p.violation_action === 'submit' ? 'submitted automatically' : p.violation_action === 'lock' ? 'locked until an administrator or invigilator unlocks it' : 'reported'}.
                             </li>
                             <li>Recordings and images are kept only for the period set by your institution, then deleted.</li>
                         </ul>
                     </div>
                 </div>
                 <aside className="surface grid content-start gap-4 p-6">
-                    <p className="eyebrow">System check</p>
-                    <ul className="space-y-2 text-sm">
-                        {checks.length === 0 && <li className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Checking…</li>}
-                        {checks.map((c) => (
-                            <li key={c.label}>
-                                <span className={`flex items-center gap-2 ${c.ok === false ? 'text-status-critical' : c.ok ? 'text-status-good' : 'text-status-warning'}`}>
-                                    {c.ok === false ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}
-                                    {c.label}
-                                </span>
-                                {c.note && <span className="ml-6 block text-xs text-muted-foreground">{c.note}</span>}
-                            </li>
-                        ))}
-                    </ul>
-                    {exam.needs_pin && (
+                    {showPre ? (
+                        <PreChecks checks={preList} compat={exam.compat ?? []} onChange={onPre} />
+                    ) : (
+                        <>
+                            <p className="eyebrow">{resuming ? 'Continue your exam' : 'System check'}</p>
+                            <ul className="space-y-2 text-sm">
+                                {checks.length === 0 && <li className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Checking…</li>}
+                                {checks.map((c) => (
+                                    <li key={c.label}>
+                                        <span className={`flex items-center gap-2 ${c.ok === false ? 'text-status-critical' : c.ok ? 'text-status-good' : 'text-status-warning'}`}>
+                                            {c.ok === false ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}
+                                            {c.label}
+                                        </span>
+                                        {c.note && <span className="ml-6 block text-xs text-muted-foreground">{c.note}</span>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </>
+                    )}
+                    {exam.needs_pin && !resuming && (
                         <label className="grid gap-1 text-sm">
                             <span className="font-medium">Exam PIN</span>
                             <input className="h-11 rounded-xl border border-input bg-background px-3 font-mono text-lg tracking-widest" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} />
                         </label>
                     )}
-                    {p.require_consent && !candidate.consent_given && (
+                    {p.require_consent && !candidate.consent_given && !resuming && (
                         <label className="flex items-start gap-2 text-sm">
                             <input type="checkbox" className="mt-1" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
                             I have read what is monitored and agree to it for this exam.
                         </label>
                     )}
                     {error && <p className="rounded-xl bg-status-critical/10 p-3 text-sm text-status-critical">{error}</p>}
-                    {candidate.max_attempts > 1 && (
+                    {candidate.max_attempts > 1 && !resuming && (
                         <p className="text-xs text-muted-foreground">
                             {candidate.attempts_used === 0 ? `You may attempt this exam ${candidate.max_attempts} times.` : `You have used ${candidate.attempts_used} of ${candidate.max_attempts} attempts.`}
                         </p>
                     )}
+                    {showPre && !preDone && <p className="text-xs text-muted-foreground">Start becomes available when every check above has passed.</p>}
                     <button
                         onClick={start}
-                        disabled={busy || blocking || (!!p.require_consent && !consent && !candidate.consent_given)}
-                        className={`h-12 rounded-2xl font-medium transition hover:brightness-110 disabled:opacity-40 ${candidate.can_reattempt ? 'bg-[#b45309] font-semibold text-white' : 'bg-brand text-brand-foreground'}`}
+                        disabled={busy || blocking || !preDone || (!resuming && !!p.require_consent && !consent && !candidate.consent_given)}
+                        className={`h-12 rounded-2xl font-medium transition hover:brightness-110 disabled:opacity-40 ${candidate.can_reattempt && !resuming ? 'bg-[#b45309] font-semibold text-white' : 'bg-brand text-brand-foreground'}`}
                     >
-                        {busy ? 'Starting…' : candidate.has_open_attempt ? 'Continue exam' : candidate.can_reattempt ? `Re-attempt (${candidate.attempts_used + 1} of ${candidate.max_attempts})` : 'Start exam'}
+                        {busy ? 'Starting…' : resuming ? 'Continue exam' : candidate.can_reattempt ? `Re-attempt (${candidate.attempts_used + 1} of ${candidate.max_attempts})` : 'Start exam'}
                     </button>
                     {exam.channels.includes('seb') && (
                         <a href={`/my/exams/${candidate.id}/seb`} className="text-center text-xs text-muted-foreground underline-offset-4 hover:underline">
                             Open in Safe Exam Browser instead
+                        </a>
+                    )}
+                    {exam.channels.includes('seb') && (
+                        <a href="/safe-exam-browser" className="-mt-2 text-center text-xs text-muted-foreground underline-offset-4 hover:underline">
+                            Get Safe Exam Browser
                         </a>
                     )}
                 </aside>
@@ -210,15 +323,18 @@ function SystemCheck({ candidate, exam, onStarted }: Props & { onStarted: (token
 }
 
 /* ─── The exam itself ─────────────────────────────────────────────────── */
-function Exam({ candidate, exam, token, onFinished }: Props & { token: string; onFinished: (r: Record<string, unknown> & { reason?: string }) => void }) {
-    const storageKey = `exam:answers:${candidate.id}`;
+function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffline, onFinished }: Props & { token: string; uploader: RecordingUploader | null; store: ExamStore; snap: Snapshot; off: OffReport | null; startedOffline: boolean; onFinished: (r: Record<string, unknown> & { reason?: string }) => void }) {
     const [paper, setPaper] = useState<Paper | null>(null);
     const [answers, setAnswers] = useState<Record<number, Answer>>({});
     const [index, setIndex] = useState(0);
     const [state, setState] = useState<AttemptState | null>(null);
     const [settings, setSettings] = useState<Record<string, unknown>>({});
-    const [online, setOnline] = useState(navigator.onLine);
+    // "online" means the exam server answered the last request (not only that the computer has a network)
+    const [online, setOnline] = useState(!startedOffline && navigator.onLine);
+    const [backOnline, setBackOnline] = useState(false);
     const [pending, setPending] = useState(0);
+    const [roomScan, setRoomScan] = useState(false);
+    const [strike, setStrike] = useState<{ count: number; why: string } | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [blockedReason, setBlockedReason] = useState<string | null>(null);
     const [confirmSubmit, setConfirmSubmit] = useState(false);
@@ -240,12 +356,36 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
 
     const seq = useRef(0);
     const queue = useRef<Record<number, Answer>>({});
+    const all = useRef<Record<number, Answer>>({});
+    const offlineSince = useRef<number | null>(null);
+    // a gap in which this computer was off or asleep, still to be reported to the server (time is given back)
+    const pendingOff = useRef<OffReport | null>(off);
+    const clock = useRef(snap.session?.clockOffset ?? 0);
     const events = useRef<{ type: string; at: string; data?: Record<string, unknown> }[]>([]);
     const [clockOffset, setClockOffset] = useState(0);
     const submitRef = useRef<() => void>(() => undefined);
     const finished = useRef(false);
+    const timeUp = useRef(false);
+    const submitTries = useRef(0);
+    const [submitting, setSubmitting] = useState(false);
+    const [timeIsUp, setTimeIsUp] = useState(false);
+    const recorders = useRef<PieceRecorder[]>([]);
+    const [recState, setRecState] = useState<'off' | 'recording' | 'failed'>('off');
     const policy = exam.proctoring;
     const auth = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
+
+    const reach = useCallback((ok: boolean) => {
+        if (!ok && offlineSince.current === null) {
+            offlineSince.current = Date.now();
+        }
+
+        if (ok && offlineSince.current !== null) {
+            offlineSince.current = null;
+            setBackOnline(true);
+        }
+
+        setOnline(ok);
+    }, []);
 
     const api = useCallback(async <T,>(path: string, method = 'GET', body?: unknown): Promise<{ ok: boolean; status: number; data: T }> => {
         try {
@@ -255,15 +395,16 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                 body: body === undefined ? undefined : JSON.stringify(body),
             });
             const data = (await res.json().catch(() => ({}))) as T;
-            setOnline(true);
+            // a proxy or a restarting server answers 502-504: that is not the exam server yet
+            reach(res.status < 502 || res.status > 504);
 
             return { ok: res.ok, status: res.status, data };
         } catch {
-            setOnline(false);
+            reach(false);
 
             return { ok: false, status: 0, data: {} as T };
         }
-    }, [auth]);
+    }, [auth, reach]);
 
     const finish = useCallback((r: Record<string, unknown> & { reason?: string }) => {
         if (finished.current) {
@@ -271,11 +412,12 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         }
 
         finished.current = true;
+        recorders.current.forEach((r) => void r.stop());
         desktop?.examState('closed');
-        localStorage.removeItem(storageKey);
+        void store.clear();
         document.exitFullscreen?.().catch(() => undefined);
         onFinished(r);
-    }, [onFinished, storageKey]);
+    }, [onFinished, store]);
 
     const handleStatus = useCallback((status: number, data: { reason?: string; message?: string }) => {
         if (status === 409 && data.reason === 'session_moved') {
@@ -283,7 +425,7 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         } else if (status === 409) {
             finish({ reason: 'closed' });
         } else if (status === 423) {
-            setBlockedReason(data.message ?? 'Paused.');
+            setBlockedReason(data.message ?? 'Paused. Your answers are safe.');
         } else if (status === 401) {
             setBlockedReason('Your exam session expired. Go back to My exams and open it again.');
         }
@@ -332,46 +474,197 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         };
     }, [policy.microphone, record]);
 
-    /* Load the paper; merge with anything saved on this device but not yet on the server */
-    useEffect(() => {
-        (async () => {
-            const res = await api<{ attempt: AttemptState; paper: Paper; answers: Record<number, Answer>; settings: Record<string, unknown> }>('paper');
+    /* Load the paper. Anything written on this computer and not yet on the server is kept (newest wins).
+       When the server cannot be reached, the copy kept on this computer opens instead and the exam goes on. */
+    const kept = snap.session;
+    const openKept = useCallback((): boolean => {
+        if (!kept) {
+            return false;
+        }
 
-            if (!res.ok) {
-                handleStatus(res.status, res.data as { reason?: string });
+        const saved = { ...kept.state } as AttemptState;
 
-                return;
+        // time given back here for a power cut, until the server confirms it
+        if (pendingOff.current && saved.status === 'in_progress') {
+            const left = Number(saved.power_cut_left ?? 0);
+            const gap = Math.max(0, Math.floor((pendingOff.current.to - pendingOff.current.from) / 1000));
+            const credit = Math.min(gap, left);
+            saved.deadline_at = new Date(new Date(saved.deadline_at).getTime() + credit * 1000).toISOString();
+            saved.power_cut_left = left - credit;
+        }
+
+        const merged: Record<number, Answer> = { ...(snap.answers as Record<number, Answer>) };
+
+        for (const [qid, a] of Object.entries(snap.queue as Record<number, Answer>)) {
+            if (!merged[Number(qid)] || a.seq >= merged[Number(qid)].seq) {
+                merged[Number(qid)] = a;
             }
 
-            const local = JSON.parse(localStorage.getItem(storageKey) ?? '{}') as Record<number, Answer>;
-            const merged: Record<number, Answer> = { ...res.data.answers };
+            queue.current[Number(qid)] = a;
+        }
 
-            for (const [qid, a] of Object.entries(local)) {
+        all.current = merged;
+        clock.current = kept.clockOffset;
+        seq.current = Math.max(seq.current, Date.now() % 1_000_000_000, ...Object.values(merged).map((a) => a.seq + 1));
+        setPaper(kept.paper as Paper);
+        setAnswers(merged);
+        setSettings(kept.settings);
+        setState(saved);
+        setClockOffset(kept.clockOffset);
+        setPending(Object.keys(queue.current).length);
+
+        return true;
+    }, [kept, snap]);
+
+    const loadPaper = useCallback(async (cancelled: () => boolean) => {
+        let res = await api<{ attempt: AttemptState; paper: Paper; answers: Record<number, Answer>; settings: Record<string, unknown>; reason?: string }>('paper');
+        let usingKept = false;
+
+        // everyone opens the paper at the same moment: if the server is busy or the network blips, keep trying;
+        // with a copy on this computer the candidate writes from it meanwhile
+        for (let n = 1; !cancelled() && !res.ok && (res.status === 0 || res.status === 429 || res.status >= 500); n++) {
+            if (!usingKept && kept && kept.attemptId) {
+                usingKept = openKept();
+            }
+
+            if (!usingKept) {
+                setWarningToast('Connecting to the exam server… your paper will appear in a moment.');
+            }
+
+            await new Promise((r) => setTimeout(r, Math.min(15000, 1500 * n) + Math.random() * 1000));
+            res = await api('paper');
+        }
+
+        if (cancelled()) {
+            return;
+        }
+
+        if (res.status === 428 && res.data.reason === 'room_scan') {
+            setRoomScan(true);
+
+            return;
+        }
+
+        if (!res.ok) {
+            handleStatus(res.status, res.data as { reason?: string });
+
+            return;
+        }
+
+        setWarningToast(null);
+
+        // answers kept on this computer for this same attempt (not one from an earlier attempt)
+        const sameAttempt = !kept || kept.attemptId === res.data.attempt.id;
+        const local: Record<number, Answer> = sameAttempt ? { ...(snap.answers as Record<number, Answer>), ...(snap.queue as Record<number, Answer>) } : {};
+        const merged: Record<number, Answer> = { ...res.data.answers };
+
+        for (const src of [local, all.current, queue.current]) {
+            for (const [qid, a] of Object.entries(src)) {
                 if (!merged[Number(qid)] || a.seq > merged[Number(qid)].seq) {
                     merged[Number(qid)] = a;
                     queue.current[Number(qid)] = a;
                 }
             }
+        }
 
-            seq.current = Math.max(seq.current, Date.now() % 1_000_000_000, ...Object.values(merged).map((a) => a.seq + 1));
-            setPaper(res.data.paper);
-            setAnswers(merged);
-            setSettings(res.data.settings);
-            setState(res.data.attempt);
-            setClockOffset(new Date(res.data.attempt.server_time).getTime() - Date.now());
-            setPending(Object.keys(queue.current).length);
-        })();
-    }, [api, handleStatus, storageKey]);
+        const offset = new Date(res.data.attempt.server_time).getTime() - Date.now();
+        all.current = merged;
+        clock.current = offset;
+        seq.current = Math.max(seq.current, Date.now() % 1_000_000_000, ...Object.values(merged).map((a) => a.seq + 1));
+        paperRef.current = res.data.paper;
+        setPaper(res.data.paper);
+        setAnswers(merged);
+        setSettings(res.data.settings);
+        setState(res.data.attempt);
+        setClockOffset(offset);
+        setPending(Object.keys(queue.current).length);
+        store.saveSession({ candidateId: candidate.id, attemptId: res.data.attempt.id, token, paper: res.data.paper, state: res.data.attempt, settings: res.data.settings, clockOffset: offset, savedAt: Date.now() + offset });
+        store.saveAnswers(all.current as Record<number, StoredAnswer>, queue.current as Record<number, StoredAnswer>);
+    }, [api, handleStatus, kept, snap, store, token, candidate.id, openKept]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const t = window.setTimeout(() => void loadPaper(() => cancelled), 0);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(t);
+        };
+    }, [loadPaper]);
+
+    const lastBeat = useRef(0);
+    // the latest clock from the server, kept on this computer too (so a restart offline shows the right time)
+    const keepState = useRef<(a: AttemptState) => void>(() => undefined);
+    const beatNow = useRef<() => void>(() => undefined);
+    // warnings given on this screen; the server's count (state.violations) is the one that counts
+    const strikesHere = useRef(0);
+    // the exam itself opens a browser prompt (screen share, camera choice): not a departure
+    const expectedBlur = useRef(0);
+    const allowPrompt = useCallback((ms: number) => {
+        expectedBlur.current = Date.now() + ms;
+    }, []);
+    const paperRef = useRef<unknown>(kept?.paper ?? null);
+    const pace = useRef(1);
+    const applyBeat = useCallback((data: { attempt: AttemptState; messages?: Message[] }) => {
+        lastBeat.current = Date.now();
+        pace.current = Math.max(1, Math.min(4, Number(data.attempt.pace ?? 1)));
+        setState(data.attempt);
+        clock.current = new Date(data.attempt.server_time).getTime() - Date.now();
+        setClockOffset(clock.current);
+
+        if (data.messages) {
+            setMessages(data.messages);
+        }
+
+        keepState.current(data.attempt);
+
+        if (CLOSED.includes(data.attempt.status)) {
+            finish({ reason: data.attempt.status });
+        }
+
+        setBlockedReason(data.attempt.status === 'locked' ? 'Your exam is locked after too many warnings. An administrator or invigilator must unlock it before you can continue. Your answers are safe.' : data.attempt.status === 'paused' || data.attempt.session_paused ? 'The exam is paused. The clock is stopped and your answers are safe.' : null);
+    }, [finish]);
 
     /* Flush queued answers (also on a timer and when the network returns) */
     const flush = useCallback(async () => {
-        const items = Object.entries(queue.current).map(([qid, a]) => ({ question_id: Number(qid), seq: a.seq, flagged: a.flagged, response: a.response }));
+        const items = Object.entries(queue.current).map(([qid, a]) => ({ question_id: Number(qid), seq: a.seq, flagged: a.flagged, response: a.response, at: a.at }));
 
         if (!items.length) {
             return;
         }
 
-        const res = await api<{ saved: number[]; remaining: number; reason?: string; message?: string }>('answers', 'POST', { answers: items });
+        const offReport = pendingOff.current;
+
+        // the check-in rides along with the save when one is due soon, so a separate one is not needed
+        const withBeat = Date.now() - lastBeat.current > (Number(settings.heartbeat_seconds ?? 15) * 1000) / 2;
+        const batch = withBeat ? events.current.splice(0, 50) : [];
+        const res = await api<{ saved: number[]; remaining: number; reason?: string; message?: string; attempt?: AttemptState; messages?: Message[]; credited?: number }>('answers', 'POST', {
+            answers: items,
+            ...(offReport ? { off: offReport } : {}),
+            ...(withBeat ? { status: !navigator.onLine ? 'offline' : document.hidden ? 'blur' : 'active', events: batch } : {}),
+        });
+
+        if (!res.ok && batch.length) {
+            events.current.unshift(...batch);
+        }
+
+        if (res.ok && pendingOff.current === offReport) {
+            pendingOff.current = null;
+        }
+
+        if (res.ok && res.data.attempt) {
+            applyBeat({ attempt: res.data.attempt, messages: res.data.messages });
+        }
+
+        // the exam moved to another computer: what this one kept has been offered to it; stop here
+        if (res.status === 409 && res.data.reason === 'session_moved') {
+            for (const id of res.data.saved ?? []) {
+                delete queue.current[id];
+            }
+
+            store.saveQueue(queue.current as Record<number, StoredAnswer>);
+            setPending(Object.keys(queue.current).length);
+        }
 
         if (res.ok) {
             for (const id of [...res.data.saved, ...((res.data as { rejected?: number[] }).rejected ?? [])]) {
@@ -382,36 +675,54 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                 }
             }
 
-            localStorage.setItem(storageKey, JSON.stringify(queue.current));
+            store.saveQueue(queue.current as Record<number, StoredAnswer>);
             setPending(Object.keys(queue.current).length);
         } else {
             handleStatus(res.status, res.data);
         }
-    }, [api, handleStatus, storageKey]);
+    }, [api, handleStatus, store, settings.heartbeat_seconds, applyBeat]);
 
     useEffect(() => {
         const t = window.setInterval(flush, Number(settings.autosave_seconds ?? 10) * 1000);
-        const onOnline = () => (setOnline(true), flush());
+        const onOnline = () => void flush();
         window.addEventListener('online', onOnline);
 
         return () => (window.clearInterval(t), window.removeEventListener('online', onOnline));
     }, [flush, settings.autosave_seconds]);
 
     const answer = (q: PaperQuestion, response: Response, flagged?: boolean) => {
-        const a: Answer = { response, flagged: flagged ?? answers[q.id]?.flagged ?? false, seq: ++seq.current };
+        if (timeUp.current || finished.current) {
+            return; // time is up: nothing more can be written
+        }
+
+        // the moment it was written (server clock) goes with it, so it counts even if it arrives late
+        const a: Answer = { response, flagged: flagged ?? answers[q.id]?.flagged ?? false, seq: ++seq.current, at: Math.round(Date.now() + clock.current) };
         setAnswers((prev) => ({ ...prev, [q.id]: a }));
         queue.current[q.id] = a;
-        localStorage.setItem(storageKey, JSON.stringify(queue.current));
+        all.current = { ...all.current, [q.id]: a };
+        store.saveAnswers(all.current as Record<number, StoredAnswer>, queue.current as Record<number, StoredAnswer>);
         setPending(Object.keys(queue.current).length);
-        window.setTimeout(flush, 800);
+        // a busy server asks for fewer, larger saves; the answer is already kept on this device
+        window.setTimeout(flush, 800 * pace.current);
     };
 
-    /* Heartbeat: status + proctoring events, receives status changes and messages */
+    /* Heartbeat: status + proctoring events, receives status changes and messages. Skipped when a save
+       carried it recently; a busy server stretches the interval (pace) and answers stay safe on the device. */
     useEffect(() => {
-        const beat = async () => {
+        const every = Number(settings.heartbeat_seconds ?? 15) * 1000;
+        const beat = async (force = false) => {
+            if (!force && Date.now() - lastBeat.current < every * pace.current - 1000) {
+                return;
+            }
+
             const status = !navigator.onLine ? 'offline' : document.hidden ? 'blur' : 'active';
             const batch = events.current.splice(0, 50);
-            const res = await api<{ attempt: AttemptState; messages: Message[] }>('heartbeat', 'POST', { status, events: batch });
+            const offReport = pendingOff.current;
+            const res = await api<{ attempt: AttemptState; messages: Message[] }>('heartbeat', 'POST', { status, events: batch, ...(offReport ? { off: offReport } : {}) });
+
+            if (res.ok && pendingOff.current === offReport) {
+                pendingOff.current = null;
+            }
 
             if (!res.ok) {
                 events.current.unshift(...batch);
@@ -420,29 +731,128 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                 return;
             }
 
-            setState(res.data.attempt);
-            setClockOffset(new Date(res.data.attempt.server_time).getTime() - Date.now());
-            setMessages(res.data.messages);
-
-            if (CLOSED.includes(res.data.attempt.status)) {
-                finish({ reason: res.data.attempt.status });
-            }
-
-            setBlockedReason(res.data.attempt.status === 'locked' ? 'Your exam is locked. Please wait for the invigilator.' : res.data.attempt.status === 'paused' || res.data.attempt.session_paused ? 'The exam is paused. The clock is stopped and your answers are safe.' : null);
+            applyBeat(res.data);
         };
-        beat();
-        const t = window.setInterval(beat, Number(settings.heartbeat_seconds ?? 15) * 1000);
+        void beat(true);
+        const t = window.setInterval(() => void beat(), Math.min(every, 5000));
+        beatNow.current = () => void beat(true);
 
         return () => window.clearInterval(t);
-    }, [api, finish, handleStatus, settings.heartbeat_seconds]);
+    }, [api, applyBeat, handleStatus, settings.heartbeat_seconds]);
+
+    /* Keep the clock on this computer, note that the page is alive (every 5 s), and spot a computer that
+       was asleep or frozen: a gap of more than 30 s in which the page was on screen is reported and the
+       time is given back (up to the exam's limit). Time while the page was hidden is never given back. */
+    useEffect(() => {
+        keepState.current = (a) => store.saveState(a, clock.current);
+    }, [store]);
+    useEffect(() => {
+        let last = Date.now();
+        let visible = !document.hidden;
+        store.alive(last + clock.current);
+        const t = window.setInterval(() => {
+            const now = Date.now();
+
+            if (now - last > 30000 && visible && !finished.current) {
+                const from = Math.round(last + clock.current);
+                const to = Math.round(now + clock.current);
+                pendingOff.current = pendingOff.current ? { from: Math.min(pendingOff.current.from, from), to, kind: pendingOff.current.kind } : { from, to, kind: 'asleep' };
+                // until the server confirms, move the clock here as well
+                setState((st) => {
+                    if (!st || st.status !== 'in_progress') {
+                        return st;
+                    }
+
+                    const credit = Math.min(Math.floor((to - from) / 1000), Number(st.power_cut_left ?? 0));
+
+                    return { ...st, deadline_at: new Date(new Date(st.deadline_at).getTime() + credit * 1000).toISOString(), power_cut_left: Number(st.power_cut_left ?? 0) - credit };
+                });
+                beatNow.current();
+            }
+
+            last = now;
+            visible = !document.hidden;
+
+            if (!finished.current) {
+                store.alive(now + clock.current);
+            }
+        }, 5000);
+        const onHide = () => store.leftCleanly();
+        const onShow = () => store.alive(Date.now() + clock.current);
+        window.addEventListener('pagehide', onHide);
+        window.addEventListener('pageshow', onShow);
+
+        return () => (window.clearInterval(t), window.removeEventListener('pagehide', onHide), window.removeEventListener('pageshow', onShow));
+    }, [store]);
+
+    /* Back online: send everything kept on this computer straight away and say so */
+    useEffect(() => {
+        if (!backOnline) {
+            return;
+        }
+
+        void flush();
+        beatNow.current();
+        const t = window.setTimeout(() => setBackOnline(false), 6000);
+
+        return () => window.clearTimeout(t);
+    }, [backOnline, flush]);
 
     /* Browser proctoring detectors (Target 70-74, 125, 128) */
     useEffect(() => {
-        const onVisibility = () => document.hidden && policy.detect_tab_switch && (record('tab_hidden'), setWarningToast('Leaving the exam page is recorded.'));
-        const onBlur = () => policy.detect_focus_loss && record('focus_lost');
+        /* Strikes. Leaving the exam screen (another tab, window or app, or out of full screen) is one
+           warning per departure, however it happens. After the exam's limit (5 by default) the exam is
+           locked until an administrator or invigilator unlocks it. A short blur (a permission prompt, the
+           browser's own dialogs) is not a departure; nor is anything in the first seconds of the exam,
+           while the browser asks for the camera. */
+        let away: string | null = null;
+        let blurTimer = 0;
+        const quietUntil = Date.now() + 15000;
+        const leave = (why: string, type: string) => {
+            if (finished.current || timeUp.current || Date.now() < quietUntil || Date.now() < expectedBlur.current) {
+                return;
+            }
+
+            if (away) {
+                record('focus_lost', { also: type }); // same departure: logged, not another warning
+
+                return;
+            }
+
+            away = why;
+            record(type);
+            strikesHere.current += 1;
+            beatNow.current(); // tell the server now, so the limit applies at once
+        };
+        const back = () => {
+            window.clearTimeout(blurTimer);
+
+            if (away && !document.hidden) {
+                setStrike({ count: strikesHere.current, why: away });
+                away = null;
+            }
+        };
+        const onVisibility = () => {
+            if (document.hidden) {
+                if (policy.detect_tab_switch) {
+                    leave('You left the exam page.', 'tab_hidden');
+                }
+            } else {
+                back();
+            }
+        };
+        const onBlur = () => {
+            if (!policy.detect_focus_loss) {
+                return;
+            }
+
+            window.clearTimeout(blurTimer);
+            blurTimer = window.setTimeout(() => !document.hasFocus() && leave('You switched to another window or app.', 'screen_left'), 1500);
+        };
+        const onFocus = () => back();
         const onFullscreen = () => {
             if (policy.require_fullscreen && !document.fullscreenElement && !finished.current) {
-                record('fullscreen_exit');
+                leave('You left full screen.', 'fullscreen_exit');
                 setWarningToast('Please return to full screen.');
             }
         };
@@ -466,7 +876,7 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                 }
             }
         };
-        const onOffline = () => (setOnline(false), record('network_offline'));
+        const onOffline = () => (reach(false), record('network_offline'));
         const scr = window.screen as Screen & { isExtended?: boolean; addEventListener?: (t: string, f: () => void) => void; removeEventListener?: (t: string, f: () => void) => void };
         const onScreen = () => {
             if (policy.detect_multiple_displays) {
@@ -480,6 +890,7 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
 
         document.addEventListener('visibilitychange', onVisibility);
         window.addEventListener('blur', onBlur);
+        window.addEventListener('focus', onFocus);
         document.addEventListener('fullscreenchange', onFullscreen);
         document.addEventListener('copy', onCopy);
         document.addEventListener('cut', onCopy);
@@ -498,6 +909,8 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         return () => {
             document.removeEventListener('visibilitychange', onVisibility);
             window.removeEventListener('blur', onBlur);
+            window.removeEventListener('focus', onFocus);
+            window.clearTimeout(blurTimer);
             document.removeEventListener('fullscreenchange', onFullscreen);
             document.removeEventListener('copy', onCopy);
             document.removeEventListener('cut', onCopy);
@@ -508,7 +921,7 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
             scr.removeEventListener?.('change', onScreen);
             window.removeEventListener('beforeunload', onUnload);
         };
-    }, [policy, record]);
+    }, [policy, record, reach]);
 
     /* Webcam snapshots + face presence (Target 8-11, 34, 112, 116-120) */
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -711,7 +1124,9 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         }
 
         let stream: MediaStream | null = null;
+        allowPrompt(60000); // the browser's screen picker is open
         navigator.mediaDevices.getDisplayMedia?.({ video: true, audio: false }).then((s) => {
+            allowPrompt(2000);
             stream = s;
             screenStream.current = s;
             const track = s.getVideoTracks()[0];
@@ -728,7 +1143,7 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
             stream?.getTracks().forEach((t) => t.stop());
             screenStream.current = null;
         };
-    }, [policy.screen_share, record]);
+    }, [policy.screen_share, record, allowPrompt]);
 
     /* Live video, audio and screen to proctors through the platform's media server (Target 4-7, 35-36, 182) */
     const screenStream = useRef<MediaStream | null>(null);
@@ -744,6 +1159,66 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         let room: Awaited<ReturnType<typeof publish>> | null = null;
         let mic: MediaStream | null = null;
         let lastPoor = 0;
+        let watch: number | null = null;
+        let browserRecording = false;
+        // no media server: record camera (and screen) here and upload the pieces as the exam goes on
+        const recordInBrowser = (plan: RecordPlan) => {
+            if (browserRecording) {
+                return;
+            }
+
+            browserRecording = true;
+
+            if (!uploader || !PieceRecorder.supported()) {
+                setRecState('failed');
+                record('recording_failed', { reason: 'browser_cannot_record' });
+
+                return;
+            }
+
+            const current: { camera: { stream: MediaStream | null; rec: PieceRecorder | null }; screen: { stream: MediaStream | null; rec: PieceRecorder | null } } = {
+                camera: { stream: null, rec: null },
+                screen: { stream: null, rec: null },
+            };
+            const ensure = async () => {
+                if (stopped || finished.current) {
+                    return;
+                }
+
+                const wanted: ('camera' | 'screen')[] = [...(plan.camera ? ['camera' as const] : []), ...(plan.screen ? ['screen' as const] : [])];
+
+                for (const kind of wanted) {
+                    const source = kind === 'camera' ? camStream.current : screenStream.current;
+                    const live = source?.getVideoTracks().some((t) => t.readyState === 'live');
+                    const slot = current[kind];
+
+                    if (!source || !live || (slot.rec?.active && slot.stream === source)) {
+                        continue;
+                    }
+
+                    await slot.rec?.stop();
+                    let stream = source;
+
+                    if (kind === 'camera' && plan.audio) {
+                        mic ??= await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+                        stream = new MediaStream([...source.getVideoTracks(), ...(mic?.getAudioTracks() ?? [])]);
+                    }
+
+                    const rec = new PieceRecorder(kind, stream, kind === 'camera' ? plan.camera_kbps : plan.screen_kbps, plan.chunk_seconds, uploader, (why) => {
+                        setRecState('failed');
+                        record('recording_failed', { kind, reason: why });
+                    });
+                    rec.start();
+                    slot.stream = source;
+                    slot.rec = rec;
+                    recorders.current = [...recorders.current.filter((r) => r.active), rec];
+                    setRecState(rec.active ? 'recording' : 'failed');
+                }
+            };
+            void ensure();
+            // a camera or screen that was switched or shared again starts a new part of the recording
+            watch = window.setInterval(() => void ensure(), 5000);
+        };
         const connect = async (attempt = 1): Promise<void> => {
             // wait for the camera (and the shared screen if the exam asks for it)
             for (let i = 0; i < 40 && !stopped && (!camStream.current || (policy.screen_share && !screenStream.current)); i++) {
@@ -754,7 +1229,13 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                 return;
             }
 
-            const res = await api<{ enabled: boolean; url?: string; token?: string; sources?: string[] }>('media-token', 'POST');
+            const res = await api<{ enabled: boolean; url?: string; token?: string; sources?: string[]; record?: RecordPlan | null }>('media-token', 'POST');
+
+            if (res.ok && !res.data.enabled && res.data.record) {
+                recordInBrowser(res.data.record);
+
+                return;
+            }
 
             if (!res.ok || !res.data.enabled || !res.data.url || !res.data.token) {
                 return; // not set up: snapshots carry on as before
@@ -809,6 +1290,11 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
             } catch {
                 setLiveState('lost');
 
+                // the media server cannot be reached: record here instead, so nothing is lost
+                if (attempt >= 2 && res.data.record) {
+                    recordInBrowser(res.data.record);
+                }
+
                 if (!stopped) {
                     window.setTimeout(() => connect(attempt + 1), Math.min(30000, 5000 * attempt));
                 }
@@ -819,9 +1305,15 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         return () => {
             stopped = true;
             room?.disconnect();
+
+            if (watch) {
+                window.clearInterval(watch);
+            }
+
+            recorders.current.forEach((r) => void r.stop());
             mic?.getTracks().forEach((t) => t.stop());
         };
-    }, [api, policy.screen_share, record, wantsLive]);
+    }, [api, policy.screen_share, record, wantsLive, uploader]);
 
     /* A second camera plugged in by USB, pointed at the desk (Target 113-114) */
     const usbStream = useRef<MediaStream | null>(null);
@@ -834,7 +1326,9 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
     };
     const pickUsbCam = async (id: string, label: string) => {
         usbStream.current?.getTracks().forEach((t) => t.stop());
+        allowPrompt(30000);
         const s = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: id }, width: 640, height: 360 } }).catch(() => null);
+        allowPrompt(2000);
         const track = s?.getVideoTracks()[0];
 
         if (!s || !track) {
@@ -920,16 +1414,39 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         return () => window.clearTimeout(t);
     }, [timerNotice]);
 
+    /* A file answer goes up straight away (it needs a connection); the answer then saves as usual */
+    const uploadFile = useCallback<Uploader>(async (questionId, file) => {
+        const fd = new FormData();
+        fd.append('question_id', String(questionId));
+        fd.append('file', file);
+
+        try {
+            const res = await fetch('/api/exam/attempt/file', { method: 'POST', headers: { Accept: 'application/json', ...auth }, body: fd });
+            const data = (await res.json().catch(() => ({}))) as { id?: number; name?: string; size?: number; message?: string };
+            reach(true);
+
+            return res.ok && data.id ? { id: data.id, name: data.name ?? file.name, size: data.size ?? file.size } : data.message ?? 'The file could not be sent.';
+        } catch {
+            reach(false);
+
+            return 'No connection: the file could not be sent. Keep it, and try again when the connection is back.';
+        }
+    }, [auth, reach]);
+
     const submit = useCallback(async () => {
-        const items = Object.entries(queue.current).map(([qid, a]) => ({ question_id: Number(qid), seq: a.seq, flagged: a.flagged, response: a.response }));
-        const res = await api<{ receipt: Record<string, unknown>; score: { raw: number; max: number } | null; attempt: AttemptState; reason?: string }>('submit', 'POST', { answers: items });
+        const items = Object.entries(queue.current).map(([qid, a]) => ({ question_id: Number(qid), seq: a.seq, flagged: a.flagged, response: a.response, at: a.at }));
+        const offReport = pendingOff.current;
+        setSubmitting(true);
+        const res = await api<{ receipt: Record<string, unknown>; score: { raw: number; max: number } | null; attempt: AttemptState; reason?: string }>('submit', 'POST', { answers: items, ...(offReport ? { off: offReport } : {}) });
 
         if (res.ok) {
             finish({ ...res.data.receipt, score: res.data.score });
-        } else if (res.status === 0) {
-            setWarningToast('No connection. Your answers are kept on this device; trying again…');
-            window.setTimeout(() => submitRef.current(), 3000);
+        } else if (res.status === 0 || res.status === 429 || res.status >= 500) {
+            // not sent: everything stays on this computer and is sent the moment the server answers
+            submitTries.current += 1;
+            window.setTimeout(() => submitRef.current(), Math.min(10000, 2000 * submitTries.current));
         } else {
+            setSubmitting(false);
             handleStatus(res.status, res.data as { reason?: string });
         }
     }, [api, finish, handleStatus]);
@@ -938,11 +1455,17 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
         submitRef.current = submit;
     }, [submit]);
 
+    // Time up: submit once. Thousands of candidates reach the deadline together, so each waits a
+    // random moment inside the server's grace period; the server accepts answers until then.
     useEffect(() => {
-        if (state && state.status === 'in_progress' && remaining <= 0 && !finished.current) {
-            submit();
+        if (state && state.status === 'in_progress' && remaining <= 0 && !finished.current && !timeUp.current) {
+            timeUp.current = true;
+            setTimeIsUp(true);
+            setConfirmSubmit(false);
+            const spread = Math.min(15000, Math.max(0, Number(state.grace_seconds ?? 30) * 500));
+            window.setTimeout(() => submitRef.current(), Math.random() * spread);
         }
-    }, [remaining, state, submit]);
+    }, [remaining, state]);
 
     useEffect(() => {
         if (!warningToast) {
@@ -957,6 +1480,10 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
     const questions = useMemo(() => paper?.sections.flatMap((s) => s.questions.map((q) => ({ ...q, section: s }))) ?? [], [paper]);
     const q = questions[index];
     const answeredCount = questions.filter((x) => isAnswered(answers[x.id]?.response)).length;
+
+    if (roomScan) {
+        return <RoomScan token={token} onDone={() => (setRoomScan(false), void loadPaper(() => false))} />;
+    }
 
     if (!paper || !q) {
         return (
@@ -1014,7 +1541,7 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                 <div className="flex items-center gap-2 text-sm">
                     <span className={`hidden items-center gap-1 sm:flex ${online ? 'opacity-60' : 'text-status-critical'}`} title={online ? 'Connected' : 'Offline'}>
                         {online ? <Wifi className="size-4" /> : <WifiOff className="size-4" />}
-                        {pending > 0 ? `${pending} saving` : online ? 'Saved' : 'Saved on this device'}
+                        {!online ? 'Offline' : pending > 0 ? `${pending} saving` : 'Saved'}
                     </span>
                     {camOn && <video ref={attachVideo} muted playsInline className="h-9 w-12 rounded-md bg-black object-cover" aria-label="Your camera" />}
                     <button className="rounded-lg border border-current/20 px-2 py-1.5 text-xs" onClick={() => setContrast(!contrast)}>Contrast</button>
@@ -1028,6 +1555,22 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                     </button>
                 </div>
             </header>
+
+            {!online && (
+                <div role="alert" className="flex shrink-0 items-start gap-3 bg-[#b91c1c] px-4 py-2.5 text-sm text-white md:px-6">
+                    <WifiOff className="mt-0.5 size-4 shrink-0" />
+                    <p>
+                        <b className="font-semibold">No connection to the exam server.</b> Keep writing: every answer is saved on this computer
+                        {pending > 0 ? ` (${pending} waiting to be sent)` : ''} and is sent automatically when the connection comes back.
+                        Do not close this page or switch off the computer.
+                    </p>
+                </div>
+            )}
+            {online && backOnline && (
+                <div role="status" className="flex shrink-0 items-center gap-2 bg-[#15803d] px-4 py-2 text-sm font-medium text-white md:px-6">
+                    <Wifi className="size-4" /> Connected again. {pending > 0 ? `Sending ${pending} answer(s)…` : 'All your answers are saved on the server.'}
+                </div>
+            )}
 
             {timerNotice && (
                 <div role="alert" className={`flex shrink-0 items-center justify-between gap-3 px-4 py-2 text-sm font-medium text-white md:px-6 ${timerNotice.tone === 'half' ? 'bg-[#b45309]' : 'bg-[#b91c1c]'}`}>
@@ -1045,9 +1588,15 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                         <p className="text-[0.75em] font-medium opacity-60">
                             {q.section.title} · Question {q.number} · {q.mark} mark{q.mark === 1 ? '' : 's'}
                         </p>
-                        <RichContent html={q.stem_html} className="mt-3 leading-relaxed" />
+                        {q.passage_id && paper.passages?.[String(q.passage_id)] && (
+                            <details open className={`mt-3 rounded-2xl border p-4 text-[0.92em] ${contrast ? 'border-white/30' : 'border-black/10 bg-black/[.025]'}`}>
+                                <summary className="cursor-pointer font-semibold">{paper.passages[String(q.passage_id)]!.title}</summary>
+                                <RichContent html={paper.passages[String(q.passage_id)]!.html} className="mt-2 max-h-[45vh] overflow-y-auto leading-relaxed" />
+                            </details>
+                        )}
+                        <RichContent html={q.type === 'fill_blank' ? q.stem_html.replace(/\[\[(\d{1,2})\]\]/g, '<span class="blank-chip">($1)</span>') : q.stem_html} className="mt-3 leading-relaxed" />
                         <div className="mt-5">
-                            <QuestionInput q={q} value={answers[q.id]?.response ?? null} onChange={(r) => answer(q, r)} contrast={contrast} />
+                            <QuestionInput q={q} value={answers[q.id]?.response ?? null} onChange={(r) => answer(q, r)} contrast={contrast} upload={uploadFile} />
                         </div>
                     </div>
                     <div className={`flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-4 py-3 md:px-8 ${contrast ? 'border-white/30' : 'border-black/10 bg-white'}`}>
@@ -1090,6 +1639,11 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                         <Hand className="size-4" /> I need help
                     </button>
                     {camOn && <p className="flex items-center gap-1 text-xs opacity-60"><Camera className="size-3.5" /> Camera on</p>}
+                    {recState !== 'off' && (
+                        <p className={`flex items-center gap-1 text-xs ${recState === 'recording' ? 'opacity-60' : 'text-status-warning'}`}>
+                            {recState === 'recording' ? <><span className="size-2 rounded-full bg-status-critical" aria-hidden /> Recording</> : 'This browser cannot record — the proctor has been told'}
+                        </p>
+                    )}
                     {wantsLive && liveState !== 'off' && (
                         <p className={`text-xs ${liveState === 'live' ? 'opacity-60' : 'text-status-warning'}`}>
                             {liveState === 'live' ? 'Live to proctors' : liveState === 'connecting' ? 'Connecting video…' : liveState === 'poor' ? 'Weak video connection' : 'Video connection lost — retrying'}
@@ -1157,6 +1711,41 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
                 </Modal>
             )}
 
+            {strike && !blockedReason && (
+                <Modal>
+                    <div className="flex items-center gap-3">
+                        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-[#b91c1c] text-white"><AlertTriangle className="size-5" /></span>
+                        <div>
+                            <p className="text-sm font-semibold text-[#b91c1c]">Warning {Math.min(Math.max(state?.violations ?? 0, strike.count), Number(state?.violation_threshold ?? policy.violation_threshold ?? 5))} of {String(state?.violation_threshold ?? policy.violation_threshold ?? 5)}</p>
+                            <p className="text-lg font-semibold">{strike.why}</p>
+                        </div>
+                    </div>
+                    <p className="mt-4 text-sm opacity-80">
+                        Stay on the exam screen until you submit. {(state?.violation_action ?? policy.violation_action) === 'submit'
+                            ? 'At the last warning your exam is submitted automatically.'
+                            : (state?.violation_action ?? policy.violation_action) === 'lock'
+                                ? 'At the last warning your exam is locked, and only an administrator or invigilator can unlock it.'
+                                : 'Every warning is reported to the exams office.'}
+                    </p>
+                    <button className="mt-6 w-full rounded-xl bg-[#0b0d10] py-3 font-semibold text-white" onClick={() => (setStrike(null), policy.require_fullscreen && document.documentElement.requestFullscreen?.().catch(() => undefined))} autoFocus>
+                        Return to my exam
+                    </button>
+                </Modal>
+            )}
+
+            {(timeIsUp || submitting) && !blockedReason && (
+                <Modal>
+                    {online ? <Loader2 className="size-6 animate-spin" /> : <WifiOff className="size-6 text-[#b91c1c]" />}
+                    <p className="mt-3 text-lg font-semibold">{timeIsUp ? 'Time is up.' : 'Submitting your exam…'}</p>
+                    <p className="mt-2 text-sm opacity-80">
+                        {online
+                            ? 'Sending your answers to the server…'
+                            : 'There is no connection to the exam server right now. Your answers are saved on this computer and will be sent automatically as soon as the connection comes back. Keep this page open and do not switch off the computer.'}
+                    </p>
+                    {pending > 0 && <p className="mt-2 text-xs opacity-60">{pending} answer(s) waiting to be sent.</p>}
+                </Modal>
+            )}
+
             {blockedReason && (
                 <Modal>
                     <AlertTriangle className="size-6 text-status-warning" />
@@ -1219,10 +1808,44 @@ function Exam({ candidate, exam, token, onFinished }: Props & { token: string; o
 }
 
 function isAnswered(r: Response | undefined): boolean {
-    return !!r && ((r.options?.length ?? 0) > 0 || (r.text ?? '').trim() !== '' || r.number !== undefined || Object.keys(r.pairs ?? {}).length > 0);
+    return !!r && ((r.options?.length ?? 0) > 0 || (r.text ?? '').trim() !== '' || r.number !== undefined || Object.keys(r.pairs ?? {}).length > 0 || Object.keys(r.tf ?? {}).length > 0 || (r.order?.length ?? 0) > 0 || Object.keys(r.blanks ?? {}).length > 0 || !!r.file);
 }
 
-function QuestionInput({ q, value, onChange, contrast }: { q: PaperQuestion; value: Response; onChange: (r: Response) => void; contrast: boolean }) {
+function QuestionInput({ q, value, onChange, contrast, upload }: { q: PaperQuestion; value: Response; onChange: (r: Response) => void; contrast: boolean; upload: Uploader }) {
+    if (q.type === 'ordering') {
+        return <OrderingInput q={q} value={value} onChange={onChange} contrast={contrast} />;
+    }
+
+    if (q.type === 'fill_blank') {
+        const given = value?.blanks ?? {};
+
+        return (
+            <div className="grid gap-3">
+                <p className="text-[0.8em] opacity-60">Write the missing word or number for each numbered blank.</p>
+                {(q.blanks ?? []).map((n) => (
+                    <label key={n} className="flex flex-wrap items-center gap-3">
+                        <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-[0.8em] font-semibold ${contrast ? 'bg-white/20' : 'bg-black/5'}`}>{n}</span>
+                        <input className={`h-12 min-w-0 flex-1 rounded-xl border-2 bg-transparent px-3 sm:max-w-md ${given[String(n)] ? 'border-brand' : contrast ? 'border-white/30' : 'border-black/15'}`}
+                            value={given[String(n)] ?? ''} aria-label={`Blank ${n}`} spellCheck={false}
+                            onChange={(e) => {
+                                const next = { ...given, [String(n)]: e.target.value };
+
+                                if (!e.target.value) {
+                                    delete next[String(n)];
+                                }
+
+                                onChange(Object.keys(next).length ? { blanks: next } : null);
+                            }} />
+                    </label>
+                ))}
+            </div>
+        );
+    }
+
+    if (q.type === 'file_upload') {
+        return <FileAnswer q={q} value={value} onChange={onChange} contrast={contrast} upload={upload} />;
+    }
+
     if (['single_choice', 'true_false', 'multiple_choice'].includes(q.type)) {
         const multi = q.type === 'multiple_choice';
         const chosen = value?.options ?? [];
@@ -1247,6 +1870,50 @@ function QuestionInput({ q, value, onChange, contrast }: { q: PaperQuestion; val
                     );
                 })}
                 {chosen.length > 0 && (
+                    <button className="w-fit text-[0.75em] underline opacity-50" onClick={() => onChange(null)}>
+                        Clear answer
+                    </button>
+                )}
+            </div>
+        );
+    }
+
+    if (q.type === 'multi_true_false') {
+        const tf = value?.tf ?? {};
+        const set = (id: number, v: boolean | null) => {
+            const next = { ...tf };
+
+            if (v === null) {
+                delete next[String(id)];
+            } else {
+                next[String(id)] = v;
+            }
+
+            onChange(Object.keys(next).length ? { tf: next } : null);
+        };
+
+        return (
+            <div className="grid gap-3">
+                <p className="text-[0.8em] opacity-60">Mark each statement True or False.</p>
+                {q.options.map((o) => {
+                    const v = tf[String(o.id)];
+
+                    return (
+                        <div key={o.id} className={`flex flex-wrap items-center gap-3 rounded-2xl border-2 p-3 md:flex-nowrap ${v !== undefined ? 'border-brand/60' : contrast ? 'border-white/30' : 'border-black/10'}`}>
+                            <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-[0.8em] font-semibold ${contrast ? 'bg-white/20' : 'bg-black/5'}`}>{o.label}</span>
+                            <RichContent html={o.html} className="min-w-0 flex-1" />
+                            <span className="flex shrink-0 gap-2" role="radiogroup" aria-label={`Statement ${o.label}`}>
+                                {[true, false].map((b) => (
+                                    <button key={String(b)} role="radio" aria-checked={v === b} onClick={() => set(o.id, v === b ? null : b)}
+                                        className={`min-w-20 rounded-xl border-2 px-3 py-2 text-[0.85em] font-semibold transition ${v === b ? 'border-brand bg-brand text-brand-foreground' : contrast ? 'border-white/30' : 'border-black/15 hover:border-black/40'}`}>
+                                        {b ? 'True' : 'False'}
+                                    </button>
+                                ))}
+                            </span>
+                        </div>
+                    );
+                })}
+                {Object.keys(tf).length > 0 && (
                     <button className="w-fit text-[0.75em] underline opacity-50" onClick={() => onChange(null)}>
                         Clear answer
                     </button>
@@ -1285,10 +1952,10 @@ function QuestionInput({ q, value, onChange, contrast }: { q: PaperQuestion; val
                 ))}
                 <div className="grid gap-1 rounded-xl bg-black/5 p-3 text-[0.85em]">
                     {q.matching.right.map((r, i) => <div key={r.key} className="flex gap-2"><strong>{String.fromCharCode(65 + i)}.</strong><RichContent html={r.html} /></div>)}
-</div>
-        </div>
-    );
-}
+                </div>
+            </div>
+        );
+    }
 
     if (q.type === 'numeric') {
         return (
@@ -1318,6 +1985,82 @@ function QuestionInput({ q, value, onChange, contrast }: { q: PaperQuestion; val
     );
 }
 
+/** Put in order: move items up and down (works with keyboard and touch, no dragging needed). */
+function OrderingInput({ q, value, onChange, contrast }: { q: PaperQuestion; value: Response; onChange: (r: Response) => void; contrast: boolean }) {
+    const ids = value?.order ?? q.options.map((o) => o.id);
+    const byId = new Map(q.options.map((o) => [o.id, o]));
+    const move = (i: number, d: -1 | 1) => {
+        const j = i + d;
+
+        if (j < 0 || j >= ids.length) {
+            return;
+        }
+
+        const next = [...ids];
+        [next[i], next[j]] = [next[j], next[i]];
+        onChange({ order: next });
+    };
+
+    return (
+        <div className="grid gap-2">
+            <p className="text-[0.8em] opacity-60">Put the items in the right order: first at the top. Use the arrows to move them.</p>
+            <ol className="grid gap-2">
+                {ids.map((id, i) => (
+                    <li key={id} className={`flex items-center gap-3 rounded-2xl border-2 p-3 ${value?.order ? 'border-brand/50' : contrast ? 'border-white/30' : 'border-black/10'}`}>
+                        <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-[0.8em] font-semibold ${contrast ? 'bg-white/20' : 'bg-black/5'}`}>{i + 1}</span>
+                        <RichContent html={byId.get(id)?.html ?? ''} className="min-w-0 flex-1" />
+                        <span className="flex shrink-0 gap-1">
+                            <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)} className="grid size-10 place-items-center rounded-xl border-2 border-current/15 disabled:opacity-25">↑</button>
+                            <button type="button" aria-label="Move down" disabled={i === ids.length - 1} onClick={() => move(i, 1)} className="grid size-10 place-items-center rounded-xl border-2 border-current/15 disabled:opacity-25">↓</button>
+                        </span>
+                    </li>
+                ))}
+            </ol>
+            {!value?.order && <button type="button" className="w-fit text-[0.8em] underline opacity-70" onClick={() => onChange({ order: ids })}>This order is my answer</button>}
+        </div>
+    );
+}
+
+/** Hand in a file (a drawing, a photo of working, a report). Needs a connection to send it. */
+function FileAnswer({ q, value, onChange, contrast, upload }: { q: PaperQuestion; value: Response; onChange: (r: Response) => void; contrast: boolean; upload: Uploader }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const accept = (q.file?.kinds ?? ['image', 'pdf', 'document']).map((k) => FILE_EXT[k] ?? '').filter(Boolean).join(',');
+
+    return (
+        <div className={`grid gap-3 rounded-2xl border-2 border-dashed p-5 ${contrast ? 'border-white/30' : 'border-black/15'}`}>
+            {value?.file ? (
+                <p className="text-[0.9em]">Handed in: <b>{value.file.name}</b> ({Math.max(1, Math.round(value.file.size / 1024))} KB)</p>
+            ) : (
+                <p className="text-[0.85em] opacity-70">Choose the file to hand in{q.file ? ` (up to ${q.file.max_mb} MB)` : ''}.</p>
+            )}
+            <label className={`inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-[0.9em] font-semibold ${busy ? 'opacity-60' : ''} ${contrast ? 'bg-white text-black' : 'bg-[#0b0d10] text-white'}`}>
+                {busy ? 'Sending…' : value?.file ? 'Replace the file' : 'Choose a file'}
+                <input type="file" className="sr-only" accept={accept} disabled={busy} onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = '';
+
+                    if (!f) {
+                        return;
+                    }
+
+                    setBusy(true);
+                    setError(null);
+                    const r = await upload(q.id, f);
+                    setBusy(false);
+
+                    if (typeof r === 'string') {
+                        setError(r);
+                    } else {
+                        onChange({ file: r });
+                    }
+                }} />
+            </label>
+            {error && <p role="alert" className="text-[0.85em] text-[#b91c1c]">{error}</p>}
+        </div>
+    );
+}
+
 function Modal({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
@@ -1326,7 +2069,7 @@ function Modal({ children, wide = false }: { children: React.ReactNode; wide?: b
     );
 }
 
-function Done({ receipt }: { receipt: { submitted_at?: string; hash?: string; answered?: number; score?: { raw: number; max: number } | null; reason?: string } | null }) {
+function Done({ receipt, waiting = 0 }: { receipt: { submitted_at?: string; hash?: string; answered?: number; score?: { raw: number; max: number } | null; reason?: string } | null; waiting?: number }) {
     const pct = receipt?.score && Number(receipt.score.max) > 0 ? Math.round((Number(receipt.score.raw) / Number(receipt.score.max)) * 1000) / 10 : null;
 
     return (
@@ -1349,6 +2092,11 @@ function Done({ receipt }: { receipt: { submitted_at?: string; hash?: string; an
                         Receipt {receipt.submitted_at && new Date(receipt.submitted_at).toLocaleString()} · {receipt.answered} answers
                         <br />
                         <span className="font-mono break-all">{receipt.hash}</span>
+                    </p>
+                )}
+                {waiting > 0 && (
+                    <p className="mt-6 flex items-center justify-center gap-2 rounded-lg bg-status-warning/10 p-3 text-sm" role="status">
+                        <Loader2 className="size-4 animate-spin" /> Sending the rest of your exam recording ({waiting} left). Please keep this page open.
                     </p>
                 )}
                 <div className="mt-8 flex flex-wrap justify-center gap-3">

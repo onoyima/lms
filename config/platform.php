@@ -4,9 +4,6 @@ return [
     // Staff in the roles listed in the institution policy must turn on two-factor sign-in
     'enforce_mfa' => (bool) env('ENFORCE_MFA', true),
 
-    // Days a browser that answered a two-factor code is trusted (0 = ask every time)
-    'trust_two_factor_days' => (int) env('TRUST_TWO_FACTOR_DAYS', 30),
-
     // Monitoring tools send this in X-Health-Token to see detailed health (empty = summary only)
     'health_token' => env('HEALTH_TOKEN', ''),
 
@@ -34,6 +31,22 @@ return [
         'secret' => env('LIVEKIT_API_SECRET', ''),
         'recordings_path' => env('LIVEKIT_RECORDINGS_PATH', '/recordings'), // inside the egress container
         'recordings_local' => env('LIVEKIT_RECORDINGS_LOCAL', ''),          // the same folder as seen by this web server (optional)
+    ],
+
+    // Exam room pacing: "auto" lets busy servers ask exam rooms to check in less often (answers stay
+    // safe on the candidate's device either way); "normal" keeps the exam's own intervals.
+    'exam_pace' => env('EXAM_PACE', 'auto'),
+    'cpu_cores' => (int) env('PLATFORM_CPU_CORES', 0), // 0 = detect
+
+    // Camera and screen recordings made in the candidate's browser when there is no media server
+    // (shared hosting). Pieces are uploaded every few seconds, encrypted at rest and kept as long as
+    // other proctoring evidence. Bitrates set the size: 150 kbps ≈ 65 MB per candidate per hour.
+    'recording' => [
+        'disk' => env('RECORDING_DISK', 'local'),
+        'camera_kbps' => (int) env('RECORDING_CAMERA_KBPS', 150),
+        'screen_kbps' => (int) env('RECORDING_SCREEN_KBPS', 200),
+        'chunk_seconds' => (int) env('RECORDING_CHUNK_SECONDS', 10),
+        'accept_after_submit_minutes' => 120, // pieces still queued in the browser may arrive after submitting
     ],
 
     // Backups: where to write them (use a different disk or a mounted share), how long to keep them,

@@ -1,5 +1,10 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+@php($platformBrand = \App\Support\Platform\PlatformSettings::brand())
+@php($brand = \App\Http\Middleware\HandleInertiaRequests::showsPlatform(request()) ? null : tenant()?->brandPayload())
+@php($look = $brand ?? $platformBrand)
+@php($theme = in_array($look['theme'] ?? null, ['sapphire', 'forest', 'plum'], true) ? $look['theme'] : 'sapphire')
+@php($wash = ($look['background_mode'] ?? 'theme') === 'none' ? 'none' : (! empty($look['background_url']) ? 'url('.str_replace(['(', ')', ' ', '"', "'"], '', $look['background_url']).')' : null))
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="{{ $theme }}" @if ($wash) style="--wash-image: {{ $wash }}" @endif @class(['dark' => ($appearance ?? 'system') == 'dark'])>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -22,17 +27,14 @@
         {{-- Inline style to set the HTML background color based on our theme in app.css --}}
         <style>
             html {
-                background-color: #ffffff;
+                background-color: {{ ['sapphire' => '#f2f5fb', 'forest' => '#f1f5f2', 'plum' => '#f4f2fb'][$theme] }};
             }
 
             html.dark {
-                background-color: #0b0d10;
+                background-color: #0a0f1e;
             }
         </style>
 
-        @php($platformBrand = \App\Support\Platform\PlatformSettings::brand())
-        @php($brand = \App\Http\Middleware\HandleInertiaRequests::showsPlatform(request()) ? null : tenant()?->brandPayload())
-        @php($look = $brand ?? $platformBrand)
         @if ($look['favicon_url'] ?? null)
             <link rel="icon" href="{{ $look['favicon_url'] }}">
         @else
@@ -41,7 +43,8 @@
         @endif
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
-        <style>:root { --brand: {{ $look['brand'] }}; --brand-foreground: {{ $look['brand_foreground'] }};@if ($look['accent'] ?? null) --brand-2: {{ $look['accent'] }}; --brand-2-foreground: {{ $look['accent_foreground'] }};@endif }</style>
+        {{-- The theme sets the interface colours; the institution's own colour is kept for its crest --}}
+        <style>:root { --inst: {{ $look['brand'] }}; --inst-foreground: {{ $look['brand_foreground'] }};@if ($look['accent'] ?? null) --brand-2: {{ $look['accent'] }}; --brand-2-foreground: {{ $look['accent_foreground'] }};@endif }</style>
 
         {{-- Equations: local MathJax 3 (works offline on a campus LAN); see resources/js/components/rich-content.tsx --}}
         <script nonce="{{ Vite::cspNonce() }}">

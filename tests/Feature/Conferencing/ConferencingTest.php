@@ -360,7 +360,7 @@ class ConferencingTest extends TestCase
         $this->actingAs($platform)->post('/platform/branding', ['brand_name' => 'CampusOne Exams & Learning', 'brand_short_name' => 'CampusOne', 'brand_color' => '#224466'])->assertSessionHas('success');
         $this->assertSame('CampusOne', PlatformSettings::brand()['short_name']);
         auth()->logout();
-        $this->get('/')->assertOk()->assertInertia(fn (Assert $p) => $p->where('platform.short_name', 'CampusOne')->where('tenant', null))->assertSee('CampusOne</title>', false)->assertSee('--brand: #224466', false);
+        $this->get('/')->assertOk()->assertInertia(fn (Assert $p) => $p->where('platform.short_name', 'CampusOne')->where('tenant', null))->assertSee('CampusOne</title>', false)->assertSee('--inst: #224466', false);
         // inside an institution its own name and colour lead
         $this->tenant->update(['brand_color' => '#aa3300']);
         $this->actingAs($this->student)->get('/dashboard')->assertInertia(fn (Assert $p) => $p->where('tenant.brand', '#aa3300')->where('platform.short_name', 'CampusOne'));

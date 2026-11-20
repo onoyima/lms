@@ -39,7 +39,7 @@ class ExamAdminController extends Controller
                 'attempts' => $e->attempts_count, 'results' => $e->results_count,
             ]);
 
-        return Inertia::render('exams/index', ['exams' => $exams, 'filters' => $request->only(['type', 'status', 'q'])]);
+        return Inertia::render('exams/index', ['exams' => $exams, 'filters' => $request->only(['type', 'status', 'q']), 'groups' => ExamGroupController::listing()]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -80,8 +80,12 @@ class ExamAdminController extends Controller
         return Inertia::render('exams/show', [
             'exam' => [
                 ...$exam->only(['id', 'title', 'code', 'type', 'category', 'kind', 'parent_exam_id', 'status', 'instructions', 'total_mark', 'pass_mark', 'duration_minutes', 'max_attempts', 'score_policy', 'marking_policy', 'version', 'course_id', 'semester_id', 'channels']),
-                'settings' => ExamSettings::settings($exam->settings) + ['seb' => data_get($exam->settings, 'seb', [])],
+                'settings' => ExamSettings::settings($exam->settings) + ['seb' => \Illuminate\Support\Arr::except((array) data_get($exam->settings, 'seb', []), ['settings_password']) + ['has_settings_password' => (bool) data_get($exam->settings, 'seb.settings_password')]],
                 'proctoring' => ExamSettings::proctoring($exam->proctoring),
+                'grading_scales' => array_keys((array) \App\Support\Policy::get('grading_scales')),
+                'certificate_template_id' => $exam->certificate_template_id,
+                'certificate_templates' => \App\Models\CertificateTemplate::orderBy('name')->get(['id', 'name', 'kind', 'min_percent']),
+                'pre_check_options' => collect(ExamSettings::PRE_CHECKS)->map(fn ($c, $k) => ['key' => $k, 'label' => $c[0], 'hint' => $c[1]])->values(),
                 'course' => $exam->course, 'semester' => $exam->semester,
                 'is_panel' => $exam->isPanelMarked(),
                 'can_edit' => in_array($exam->status, ['draft', 'returned'], true),
@@ -107,6 +111,7 @@ class ExamAdminController extends Controller
             'topics' => Question::query()->when($exam->course_id, fn ($q) => $q->where('course_id', $exam->course_id))->whereNotNull('topic')->distinct()->orderBy('topic')->pluck('topic'),
             'staff' => User::where('user_type', 'staff')->orderBy('name')->limit(500)->get(['id', 'name', 'email']),
             'parent' => $exam->parent_exam_id ? Exam::find($exam->parent_exam_id, ['id', 'title']) : null,
+            'group' => $exam->exam_group_id ? \App\Models\ExamGroup::find($exam->exam_group_id, ['id', 'title']) : null,
             'followUps' => Exam::where('parent_exam_id', $exam->id)->get(['id', 'title', 'kind', 'status']),
             'anomalies' => \App\Models\AttemptAnomaly::with('attempt.user:id,name,identifier')->where('exam_id', $exam->id)->orderByDesc('score')->limit(100)->get()
                 ->map(fn ($x) => ['id' => $x->id, 'attempt_id' => $x->attempt_id, 'score' => $x->score, 'reasons' => $x->reasons, 'review' => $x->review,
@@ -184,7 +189,13 @@ class ExamAdminController extends Controller
             'seb.config_key' => ['nullable', 'string', 'max:128'],
             'seb.browser_exam_keys' => ['nullable', 'array', 'max:20'],
             'seb.quit_password' => ['nullable', 'string', 'max:64'],
+            'seb.settings_password' => ['nullable', 'string', 'min:6', 'max:100'],
+            'seb.clear_settings_password' => ['nullable', 'boolean'],
+            'certificate_template_id' => ['sometimes', 'nullable', 'integer', Rule::exists('certificate_templates', 'id')->where('tenant_id', tenant_id())],
         ]);
+        if ($request->has('certificate_template_id')) {
+            $exam->certificate_template_id = $settings['certificate_template_id'] ?? null;
+        }
 
         $structural = ['type', 'duration_minutes', 'total_mark', 'max_attempts', 'score_policy'];
         if (! in_array($exam->status, ['draft', 'returned'], true) && array_diff_assoc(array_intersect_key($data, array_flip($structural)), $exam->only($structural))) {
@@ -196,13 +207,25 @@ class ExamAdminController extends Controller
             $exam->settings = array_merge(ExamSettings::settings($settings['settings']), ['seb' => data_get($exam->settings, 'seb', [])]);
         }
         if (isset($settings['seb'])) {
-            $exam->settings = array_merge($exam->settings ?? [], ['seb' => array_filter($settings['seb'], fn ($v) => $v !== null)]);
+            $old = (array) data_get($exam->settings, 'seb', []);
+            $seb = array_filter(\Illuminate\Support\Arr::except($settings['seb'], ['settings_password', 'clear_settings_password']), fn ($v) => $v !== null);
+            // this exam's own SEB password (kept encrypted, never sent back to the browser)
+            if (! empty($settings['seb']['settings_password'])) {
+                $seb['settings_password'] = \Illuminate\Support\Facades\Crypt::encryptString((string) $settings['seb']['settings_password']);
+            } elseif (empty($settings['seb']['clear_settings_password']) && ! empty($old['settings_password'])) {
+                $seb['settings_password'] = $old['settings_password'];
+            }
+            $exam->settings = array_merge($exam->settings ?? [], ['seb' => $seb]);
         }
         if (isset($settings['proctoring'])) {
             $exam->proctoring = ExamSettings::proctoring($settings['proctoring']);
         }
         if (isset($settings['channels'])) {
             $exam->channels = array_values(array_unique($settings['channels']));
+        }
+        // "secure exam app" as a pre-exam check: the exam can then only be opened in the desktop app or Safe Exam Browser
+        if (in_array('secure_app', (array) data_get($exam->proctoring, 'pre_checks', []), true)) {
+            $exam->channels = array_values(array_intersect((array) ($exam->channels ?: ['web', 'desktop', 'seb']), ['desktop', 'seb'])) ?: ['desktop', 'seb'];
         }
         $dirty = array_keys($exam->getDirty());
         $exam->save();

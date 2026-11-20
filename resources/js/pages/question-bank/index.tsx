@@ -25,7 +25,7 @@ type Row = {
 };
 type Filters = { course_id?: string; type?: string; status?: string; topic?: string; difficulty?: string; q?: string };
 
-const TYPES = ['single_choice', 'multiple_choice', 'true_false', 'matching', 'numeric', 'short_answer', 'essay'];
+const TYPES = ['single_choice', 'multiple_choice', 'true_false', 'multi_true_false', 'matching', 'ordering', 'fill_blank', 'numeric', 'short_answer', 'essay'];
 
 function answerText(q: Row): string | null {
     if (q.matching) {

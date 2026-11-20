@@ -46,6 +46,18 @@ class UploadScanner
         $this->clamav($path, $originalName, $field);
     }
 
+    /** Antivirus only (when configured), for files that are programs on purpose, such as SEB installers. */
+    public function antivirus(string $path, string $originalName, string $field = 'file'): void
+    {
+        $fh = @fopen($path, 'rb');
+        $head = $fh ? (string) fread($fh, 4096) : '';
+        $fh && fclose($fh);
+        if (str_contains($head, self::EICAR)) {
+            $this->refuse($field, $originalName, 'malware', 'This file was flagged by the virus check and was not uploaded.');
+        }
+        $this->clamav($path, $originalName, $field);
+    }
+
     private function clamav(string $path, string $name, string $field): void
     {
         $socket = (string) config('security.uploads.clamav');

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-const MOBILE_BREAKPOINT = 768;
+const MOBILE_BREAKPOINT = 1024; // below this the menu opens over the page, so tablets get the full width
 
 const mql =
     typeof window === 'undefined'

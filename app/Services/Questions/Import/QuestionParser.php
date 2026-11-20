@@ -19,6 +19,9 @@ use DOMNode;
  *   Mark: 2                  <- optional lines: Mark, Topic, Difficulty, Type, Explanation
  *   Answer: B                <- alternative to the *, multiple answers "Answer: A, C"
  *
+ * Multiple true/false: lettered statements, then "Type: MTF" and the truth of each statement,
+ * "Answer: TFTFT" or "Answer: A-T, B-F, C-T, D-F, E-T" (or the * on each true statement).
+ *
  * Word's own numbered lists work too: a numbered list item starts a question and
  * a lettered (A, B, C) sub-list holds its options.
  */
@@ -244,6 +247,11 @@ class QuestionParser
         $q = $this->current;
         switch ($key) {
             case 'answer': case 'ans': case 'correct': case 'correct answer':
+                if (self::truthList($value) !== null) {
+                    $q->answerText = $value; // multiple true/false, resolved in finish()
+                    $q->type = 'multi_true_false';
+                    break;
+                }
                 if (preg_match('/^[A-Ha-h](\s*[,;&]\s*[A-Ha-h])*\s*$/u', $value) || preg_match('/^[A-Ha-h](\s+and\s+[A-Ha-h])*$/iu', $value)) {
                     preg_match_all('/[A-Ha-h]/u', $value, $mm);
                     $labels = array_map('strtoupper', $mm[0]);
@@ -270,7 +278,10 @@ class QuestionParser
                 break;
             case 'type':
                 $v = str_replace([' ', '-'], '_', strtolower($value));
-                $aliases = ['mcq' => 'single_choice', 'objective' => 'single_choice', 'multi' => 'multiple_choice', 'tf' => 'true_false', 'theory' => 'essay', 'short' => 'short_answer'];
+                $aliases = ['mcq' => 'single_choice', 'objective' => 'single_choice', 'multi' => 'multiple_choice', 'tf' => 'true_false', 'theory' => 'essay', 'short' => 'short_answer',
+                    'mtf' => 'multi_true_false', 'multiple_true_false' => 'multi_true_false', 'multiple_true/false' => 'multi_true_false', 'multi_tf' => 'multi_true_false', 'true_false_set' => 'multi_true_false',
+                    'blank' => 'fill_blank', 'blanks' => 'fill_blank', 'fill' => 'fill_blank', 'fill_in' => 'fill_blank', 'fill_in_the_blank' => 'fill_blank', 'fill_in_the_blanks' => 'fill_blank', 'cloze' => 'fill_blank',
+                    'order' => 'ordering', 'sequence' => 'ordering', 'arrange' => 'ordering', 'upload' => 'file_upload', 'file' => 'file_upload'];
                 $q->type = $aliases[$v] ?? $v;
                 break;
             case 'pair': case 'match':
@@ -307,6 +318,67 @@ class QuestionParser
             return;
         }
         $this->current = null;
+
+        // fill in the blanks: ___ in the text become [[1]], [[2]]…; "Answer: cell; nucleus|nuclei" gives each blank's answers
+        if ($q->type === 'fill_blank') {
+            $n = 0;
+            $q->stemHtml = preg_replace_callback('/_{3,}|\[\[\d{1,2}\]\]/', function () use (&$n) {
+                return '[['.(++$n).']]';
+            }, $q->stemHtml);
+            $parts = $q->answerText !== null ? array_map('trim', explode(';', $q->answerText)) : [];
+            $q->blanks = array_map(fn ($p) => ['answers' => array_values(array_filter(array_map('trim', explode('|', $p))))], $parts);
+            $q->answerText = null;
+            $n === 0 && $q->warnings[] = 'No blanks found: write ___ (three or more underscores) where each answer goes.';
+            $n !== count($q->blanks) && $n > 0 && $q->warnings[] = "The text has $n blanks but ".count($q->blanks).' answers were given (separate them with ;).';
+            $this->questions[] = $q;
+
+            return;
+        }
+        // put in order: the options as written are the right order
+        if ($q->type === 'ordering') {
+            foreach ($q->options as &$o) {
+                $o['correct'] = true;
+            }
+            unset($o);
+            count($q->options) < 2 && $q->warnings[] = 'Give at least two items to put in order.';
+            $q->answerText = null;
+            $this->questions[] = $q;
+
+            return;
+        }
+        if ($q->type === 'file_upload') {
+            $q->options = [];
+            $q->answerText = null;
+            $this->questions[] = $q;
+
+            return;
+        }
+
+        // multiple true/false: the truth of every statement, by position or by letter
+        if ($q->type === 'multi_true_false') {
+            $truth = $q->answerText !== null ? self::truthList($q->answerText) : null;
+            if ($truth === null && $q->answerText !== null && preg_match('/^[A-H](\s*[,;&]\s*[A-H])*$/i', $q->answerText)) {
+                preg_match_all('/[A-H]/i', $q->answerText, $mm); // "Answer: A, C" = those are true, the rest false
+                $truth = array_fill_keys(array_map('strtoupper', $mm[0]), true);
+                foreach ($q->options as $o) {
+                    $truth[$o['label']] ??= false;
+                }
+            }
+            foreach ($q->options as $i => &$o) {
+                if ($truth !== null) {
+                    $o['correct'] = (bool) ($truth[$o['label']] ?? $truth[$i] ?? false);
+                }
+            }
+            unset($o);
+            if ($truth !== null && count($truth) !== count($q->options) && array_is_list($truth)) {
+                $q->warnings[] = 'The answer gives '.count($truth).' true/false values for '.count($q->options).' statements.';
+            }
+            $q->answerText = null;
+            count($q->options) < 2 && $q->warnings[] = 'A multiple true/false question needs at least two statements.';
+            $this->questions[] = $q;
+
+            return;
+        }
 
         // "Answer: B" written before the options
         if ($q->answerText && $q->options && preg_match('/^[A-H](\s*[,;&]\s*[A-H])*$/i', $q->answerText)) {
@@ -362,6 +434,31 @@ class QuestionParser
         }
 
         $this->questions[] = $q;
+    }
+
+    /**
+     * "TFTFT", "T F T", "A-T, B-F", "A=True; B=False" → truth by position (list) or by letter (map); null if not that form.
+     *
+     * @return array<int|string, bool>|null
+     */
+    public static function truthList(string $value): ?array
+    {
+        $v = trim($value);
+        if (preg_match('/^([TF]\s*,?\s*){2,8}$/i', $v)) {
+            preg_match_all('/[TF]/i', $v, $m);
+
+            return array_map(fn ($c) => strtoupper($c) === 'T', $m[0]);
+        }
+        if (preg_match_all('/([A-H])\s*[-=:)]\s*(T(?:rue)?|F(?:alse)?)\b/i', $v, $m, PREG_SET_ORDER) && count($m) >= 2) {
+            $out = [];
+            foreach ($m as $x) {
+                $out[strtoupper($x[1])] = strtoupper($x[2][0]) === 'T';
+            }
+
+            return $out;
+        }
+
+        return null;
     }
 
     private function html(DOMNode $node): string

@@ -82,7 +82,7 @@ return new class extends Migration
             $table->json('lines');
             $table->timestamp('period_start')->nullable();
             $table->timestamp('period_end')->nullable();
-            $table->timestamp('due_at');
+            $table->dateTime('due_at');
             $table->timestamp('paid_at')->nullable();
             $table->timestamps();
             $table->index(['tenant_id', 'status']);

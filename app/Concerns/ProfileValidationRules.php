@@ -18,6 +18,8 @@ trait ProfileValidationRules
         return [
             'name' => $this->nameRules(),
             'email' => $this->emailRules($userId),
+            // a mobile number for text messages and sign-in codes (optional)
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^[+0-9 ()-]{7,32}$/'],
         ];
     }
 

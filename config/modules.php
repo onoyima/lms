@@ -48,6 +48,12 @@ return [
         'requires' => ['question_bank'],
         'items' => '62-69, 194-197',
     ],
+    'test_shop' => [
+        'name' => 'Test-series shop',
+        'description' => 'Sell practice and mock exam packages to candidates: catalogue, cart, vouchers, online payment, receipts and timed access.',
+        'requires' => ['question_bank'],
+        'items' => 'spec 2.2, 12',
+    ],
     'secure_client' => [
         'name' => 'Secure clients (desktop app & SEB)',
         'description' => 'Desktop exam app and Safe Exam Browser support with display, USB, VM and remote-desktop checks.',

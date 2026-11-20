@@ -36,9 +36,14 @@ class Billing
 
     public const CYCLE_LABELS = ['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'biannual' => 'Every 6 months', 'yearly' => 'Yearly'];
 
+    /** Common currency signs; any other ISO code is shown as the code ("XOF 1,200.00"). */
+    public const SIGNS = ['NGN' => '₦', 'USD' => '$', 'EUR' => '€', 'GBP' => '£', 'GHS' => 'GH₵', 'KES' => 'KSh ', 'ZAR' => 'R ', 'CAD' => 'CA$', 'AUD' => 'A$', 'INR' => '₹', 'XOF' => 'CFA ', 'XAF' => 'FCFA ', 'EGP' => 'E£', 'UGX' => 'USh ', 'TZS' => 'TSh ', 'RWF' => 'RF '];
+
     public static function money(int $minor, string $currency = 'NGN'): string
     {
-        return ($currency === 'NGN' ? '₦' : $currency.' ').number_format($minor / 100, 2);
+        $currency = strtoupper($currency);
+
+        return (self::SIGNS[$currency] ?? $currency.' ').number_format($minor / 100, 2);
     }
 
     public static function cycleRule(): string

@@ -80,7 +80,10 @@ class QuestionController extends Controller
                 'numeric' => $q->numeric_answer, 'accepted' => $q->accepted_answers,
                 'pairs' => collect($q->matching['left'] ?? [])->map(fn ($l) => ['left' => $l['html'], 'right' => collect($q->matching['right'])->firstWhere('key', $q->matching['answer'][$l['key']] ?? null)['html'] ?? ''])->values(),
                 'used' => DB::table('attempt_questions')->where('question_id', $q->id)->exists(),
+                'blanks' => $q->accepted_answers['blanks'] ?? [], 'file' => $q->accepted_answers['file'] ?? null, 'passage_id' => $q->passage_id,
             ] : null,
+            'passages' => \App\Models\QuestionPassage::latest('id')->limit(200)->get(['id', 'title', 'course_id']),
+            'fileKinds' => array_keys(Question::FILE_KINDS),
             'courses' => Course::orderBy('code')->get(['id', 'code', 'title', 'learning_outcomes']),
             'topics' => Question::whereNotNull('topic')->distinct()->orderBy('topic')->pluck('topic'),
         ]);
@@ -111,9 +114,34 @@ class QuestionController extends Controller
             'accepted' => ['array', 'max:20'], 'accepted.*' => ['string', 'max:190'], 'case_sensitive' => ['boolean'],
             'pairs' => ['array', 'max:20'], 'pairs.*.left' => ['required', 'string', 'max:2000'], 'pairs.*.right' => ['required', 'string', 'max:2000'],
             'distractors' => ['array', 'max:10'], 'distractors.*' => ['string', 'max:2000'],
+            'blanks' => ['array', 'max:30'], 'blanks.*.answers' => ['array', 'max:20'], 'blanks.*.answers.*' => ['nullable', 'string', 'max:190'],
+            'blanks.*.case_sensitive' => ['boolean'], 'blanks.*.value' => ['nullable', 'numeric'], 'blanks.*.tolerance' => ['nullable', 'numeric', 'min:0'],
+            'file.kinds' => ['array'], 'file.kinds.*' => [Rule::in(array_keys(Question::FILE_KINDS))], 'file.max_mb' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'passage_id' => ['nullable', 'integer', Rule::exists('question_passages', 'id')->where('tenant_id', tenant_id())],
         ]);
-        $choice = in_array($data['type'], ['single_choice', 'multiple_choice', 'true_false'], true);
-        if ($choice) {
+        foreach (['options', 'pairs'] as $list) {
+            isset($data[$list]) && ksort($data[$list]);
+        }
+        if (isset($data['blanks'])) {
+            ksort($data['blanks']); // keep blank 1, 2, 3… in order whatever order validation rebuilt them in
+        }
+        if ($data['type'] === 'fill_blank') {
+            $n = count(Question::blankNumbers($data['stem_html']));
+            $n === 0 && throw ValidationException::withMessages(['stem_html' => 'Mark each blank in the text as [[1]], [[2]] and so on.']);
+            $blanks = array_values($data['blanks'] ?? []);
+            count($blanks) !== $n && throw ValidationException::withMessages(['blanks' => "The text has $n blanks; give the answers for each."]);
+            foreach ($blanks as $i => $b) {
+                (array_filter((array) ($b['answers'] ?? [])) === [] && ! isset($b['value'])) && throw ValidationException::withMessages(['blanks' => 'Give at least one accepted answer for blank '.($i + 1).'.']);
+            }
+        }
+        $data['type'] === 'ordering' && count($data['options'] ?? []) < 2 && throw ValidationException::withMessages(['options' => 'Give at least two items, in the right order.']);
+        $choice = in_array($data['type'], ['single_choice', 'multiple_choice', 'true_false', 'multi_true_false', 'ordering'], true);
+        if ($data['type'] === 'ordering') {
+            // items in the right order; no "correct" flag
+        } elseif ($data['type'] === 'multi_true_false') {
+            // statements, each marked true (correct) or false; any mix is allowed
+            count($data['options'] ?? []) < 2 && throw ValidationException::withMessages(['options' => 'Give at least two statements.']);
+        } elseif ($choice) {
             $correct = collect($data['options'] ?? [])->where('correct', true)->count();
             count($data['options'] ?? []) < 2 && throw ValidationException::withMessages(['options' => 'Give at least two options.']);
             $correct === 0 && throw ValidationException::withMessages(['options' => 'Mark the correct option.']);
@@ -144,19 +172,60 @@ class QuestionController extends Controller
                 'course_id' => $data['course_id'] ?? null,
                 'numeric_answer' => $data['type'] === 'numeric' ? ['value' => (float) $data['numeric']['value'], 'tolerance' => (float) ($data['numeric']['tolerance'] ?? 0)] : null,
                 'matching' => $data['type'] === 'matching' ? Question::buildMatching($pairs, $clean) : null,
-                'accepted_answers' => $data['type'] === 'short_answer' && ! empty($data['accepted']) ? ['answers' => array_values(array_filter($data['accepted'])), 'case_sensitive' => (bool) ($data['case_sensitive'] ?? false)] : null,
+                'accepted_answers' => match (true) {
+                    $data['type'] === 'short_answer' && ! empty($data['accepted']) => ['answers' => array_values(array_filter($data['accepted'])), 'case_sensitive' => (bool) ($data['case_sensitive'] ?? false)],
+                    $data['type'] === 'fill_blank' => ['blanks' => array_map(fn ($b) => array_filter([
+                        'answers' => array_values(array_filter(array_map('trim', (array) ($b['answers'] ?? [])))), 'case_sensitive' => (bool) ($b['case_sensitive'] ?? false),
+                        'value' => isset($b['value']) && $b['value'] !== '' ? (float) $b['value'] : null, 'tolerance' => isset($b['tolerance']) ? (float) $b['tolerance'] : null,
+                    ], fn ($v) => $v !== null), array_values($data['blanks']))],
+                    $data['type'] === 'file_upload' => ['file' => ['kinds' => array_values($data['file']['kinds'] ?? ['image', 'pdf', 'document']) ?: ['image', 'pdf', 'document'], 'max_mb' => (int) ($data['file']['max_mb'] ?? 10)]],
+                    default => null,
+                },
+                'passage_id' => $data['passage_id'] ?? null,
             ])->save();
             // papers already delivered keep their frozen copy and key, so options can be replaced safely
             $q->options()->delete();
             if ($choice) {
                 foreach ($data['options'] as $i => $o) {
-                    $q->options()->create(['label' => chr(65 + $i), 'body_html' => $clean($o['html']), 'is_correct' => (bool) ($o['correct'] ?? false), 'position' => $i]);
+                    $q->options()->create(['label' => chr(65 + $i), 'body_html' => $clean($o['html']), 'is_correct' => $data['type'] === 'ordering' || (bool) ($o['correct'] ?? false), 'position' => $i]);
                 }
             }
             $this->audit->record($q->wasRecentlyCreated ? 'question.created' : 'question.edited', $q, ['version' => $q->version, 'type' => $q->type]);
 
             return $q;
         });
+    }
+
+    /** A reading passage or case study for several questions. */
+    public function storePassage(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate(['title' => ['required', 'string', 'max:190'], 'body_html' => ['required', 'string', 'max:500000'],
+            'course_id' => ['nullable', 'integer', Rule::exists('courses', 'id')->where('tenant_id', tenant_id())]]);
+        $p = \App\Models\QuestionPassage::create(['title' => $data['title'], 'body_html' => $this->sanitizer->clean($data['body_html']), 'course_id' => $data['course_id'] ?? null, 'created_by' => $request->user()->id]);
+        $this->audit->record('question.passage_created', $p, []);
+
+        return response()->json(['id' => $p->id, 'title' => $p->title]);
+    }
+
+    /** Pictures, sound and video for questions (listening tests, clips, diagrams), stored with the institution's files. */
+    public function media(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate(['file' => ['required', 'file', 'max:204800', 'mimes:png,jpg,jpeg,gif,webp,mp3,m4a,wav,ogg,oga,mp4,webm,mov']]);
+        $ext = strtolower($data['file']->getClientOriginalExtension());
+        $path = $data['file']->storeAs('question-media/'.tenant_id().'/uploads', \Illuminate\Support\Str::random(16).'.'.$ext, 'public');
+        $kind = match (true) {
+            in_array($ext, ['mp3', 'm4a', 'wav', 'ogg', 'oga'], true) => 'audio',
+            in_array($ext, ['mp4', 'webm', 'mov'], true) => 'video',
+            default => 'image',
+        };
+        $this->audit->record('question.media_uploaded', null, ['kind' => $kind, 'size' => $data['file']->getSize()]);
+        $url = '/storage/'.$path;
+
+        return response()->json(['url' => $url, 'kind' => $kind, 'html' => match ($kind) {
+            'audio' => '<audio controls src="'.$url.'"></audio>',
+            'video' => '<video controls src="'.$url.'"></video>',
+            default => '<figure><img src="'.$url.'" alt=""></figure>',
+        }]);
     }
 
     /** Server-side sanitised preview for the editor, so unsafe HTML is never rendered in the browser. */

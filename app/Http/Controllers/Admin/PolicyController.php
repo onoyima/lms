@@ -55,6 +55,8 @@ class PolicyController extends Controller
             'grading_scale' => ['required', 'array', 'min:2', 'max:12'], 'grading_scale.*' => ['numeric', 'min:0', 'max:100'],
             'grade_points' => ['required', 'array'], 'grade_points.*' => ['numeric', 'min:0', 'max:10'],
             'pass_grade_min' => ['required', 'string', 'max:3'],
+            'grading_scales' => ['array', 'max:10'], 'grading_scales.*.grades' => ['required', 'array', 'min:2', 'max:15'], 'grading_scales.*.grades.*' => ['numeric', 'min:0', 'max:100'],
+            'grading_scales.*.points' => ['array'], 'grading_scales.*.points.*' => ['numeric', 'min:0', 'max:10'], 'grading_scales.*.pass' => ['required', 'string', 'max:6'],
             'email_domains' => ['array', 'max:20'], 'email_domains.*' => ['string', 'max:120', 'regex:/^[a-z0-9.-]+\.[a-z]{2,}$/i'],
             'severity_overrides' => ['array'], 'severity_overrides.*' => ['nullable', 'integer', 'min:1', 'max:5'],
             'faculty_exam_defaults' => ['array'], 'exam_type_defaults' => ['array'],
@@ -76,6 +78,12 @@ class PolicyController extends Controller
         abort_unless(in_array(0, array_map('floatval', $data['grading_scale']), true) || min($data['grading_scale']) == 0, 422, 'The lowest grade must start at 0.');
         abort_unless(array_key_exists($data['pass_grade_min'], $data['grading_scale']), 422, 'The pass grade must be one of the grades.');
         abort_if(! empty($data['resit_max_grade']) && ! array_key_exists($data['resit_max_grade'], $data['grading_scale']), 422, 'The resit grade cap must be one of the grades.');
+        foreach ($data['grading_scales'] ?? [] as $name => $sc) {
+            abort_unless(mb_strlen((string) $name) <= 60 && trim((string) $name) !== '', 422, 'Give each grading scale a short name.');
+            abort_unless(min($sc['grades']) == 0, 422, "The lowest grade of \"$name\" must start at 0.");
+            abort_unless(array_key_exists($sc['pass'], $sc['grades']), 422, "The pass grade of \"$name\" must be one of its grades.");
+        }
+        $data['grading_scales'] ??= [];
         $data['max_exams_per_day'] ??= 2;
         $allowed = array_keys(ExamSettings::PROCTORING);
         foreach (['faculty_exam_defaults', 'exam_type_defaults'] as $k) {
@@ -83,7 +91,7 @@ class PolicyController extends Controller
             $data[$k] = collect($data[$k] ?? [])->map(fn ($v) => collect(array_intersect_key((array) $v, array_flip($allowed)))
                 ->reject(fn ($x) => $x === null)
                 ->map(fn ($x, $key) => match (gettype(ExamSettings::PROCTORING[$key])) {
-                    'boolean' => (bool) $x, 'integer' => max(0, (int) $x), default => in_array($x, ['none', 'photo_match', 'proctor_review', 'warn', 'lock', 'submit'], true) ? $x : ExamSettings::PROCTORING[$key],
+                    'boolean' => (bool) $x, 'integer' => max(0, (int) $x), 'array' => array_values(array_intersect(array_keys(ExamSettings::PRE_CHECKS), (array) $x)), default => in_array($x, ['none', 'photo_match', 'proctor_review', 'warn', 'lock', 'submit'], true) ? $x : ExamSettings::PROCTORING[$key],
                 })->all())->filter()->all();
         }
         $data['severity_overrides'] = array_filter($data['severity_overrides'] ?? []);

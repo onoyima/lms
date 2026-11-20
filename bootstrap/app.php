@@ -21,7 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
-        $middleware->preventRequestForgery(except: ['sso/*/acs', 'webhooks/paystack', 'webhooks/mail']); // verified by their signatures instead
+        $middleware->preventRequestForgery(except: ['sso/*/acs', 'webhooks/paystack', 'webhooks/shop/paystack', 'webhooks/mail']); // verified by their signatures instead
 
         // The institution must be known before the signed-in user is loaded (users are
         // per institution) and before route-model binding, so records in URLs only
@@ -54,6 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\EnsureSessionCurrent::class,
             \App\Http\Middleware\SingleStudentSession::class,
             \App\Http\Middleware\ExamExaminerScope::class,
+            \App\Http\Middleware\ExamGuestScope::class,
             \App\Http\Middleware\TenantRateLimit::class,
         ]);
         $middleware->api(append: [\App\Http\Middleware\EnforceUploadCapacity::class, \App\Http\Middleware\PlatformMaintenance::class, \App\Http\Middleware\TenantRateLimit::class]);

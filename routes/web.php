@@ -20,6 +20,41 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [\App\Http\Controllers\LandingController::class, 'show'])->name('home');
 Route::post('apply', [\App\Http\Controllers\LandingController::class, 'apply'])->middleware('throttle:5,10,apply')->name('apply.store');
 
+// Sign in with a one-time code (email or text message) instead of a password
+Route::middleware('guest')->group(function () {
+    Route::get('login/code', [\App\Http\Controllers\Auth\LoginCodeController::class, 'show'])->name('login-code.show');
+    Route::post('login/code', [\App\Http\Controllers\Auth\LoginCodeController::class, 'send'])->middleware('throttle:10,1,logincode')->name('login-code.send');
+    Route::post('login/code/verify', [\App\Http\Controllers\Auth\LoginCodeController::class, 'verify'])->middleware('throttle:20,1,logincodev')->name('login-code.verify');
+});
+
+// ── Test-series shop: open to visitors; buying needs an account (made at checkout) ──
+Route::middleware('module:test_shop')->group(function () {
+    $shop = \App\Http\Controllers\Shop\ShopController::class;
+    Route::get('shop', [$shop, 'index'])->name('shop.index');
+    Route::post('shop/cart/{package}', [$shop, 'add'])->whereNumber('package')->middleware('throttle:60,1,shopcart')->name('shop.add');
+    Route::delete('shop/cart/{package}', [$shop, 'remove'])->whereNumber('package')->name('shop.remove');
+    Route::get('shop/checkout', [$shop, 'checkout'])->name('shop.checkout');
+    Route::post('shop/checkout', [$shop, 'pay'])->middleware('throttle:10,1,shoppay')->name('shop.pay');
+    Route::post('webhooks/shop/paystack', [$shop, 'webhook'])->middleware('throttle:120,1,shopwh')->name('shop.webhook');
+    Route::middleware('auth')->group(function () use ($shop) {
+        Route::get('shop/paid', [$shop, 'callback'])->name('shop.callback');
+        Route::get('shop/orders/{number}', [$shop, 'order'])->where('number', '[A-Z0-9-]{6,24}')->name('shop.order');
+        Route::get('shop/orders/{number}/receipt.pdf', [$shop, 'receipt'])->where('number', '[A-Z0-9-]{6,24}')->name('shop.receipt');
+        Route::get('my/test-series', [$shop, 'mine'])->name('shop.mine');
+    });
+    Route::middleware(['auth', 'verified', 'permission:exams.manage'])->prefix('admin/shop')->name('shop.admin.')->group(function () {
+        $a = \App\Http\Controllers\Shop\ShopAdminController::class;
+        Route::get('/', [$a, 'index'])->name('index');
+        Route::post('packages', [$a, 'storePackage'])->name('packages.store');
+        Route::put('packages/{package}', [$a, 'updatePackage'])->name('packages.update');
+        Route::post('vouchers', [$a, 'storeVoucher'])->name('vouchers.store');
+        Route::post('vouchers/{voucher}/toggle', [$a, 'toggleVoucher'])->name('vouchers.toggle');
+        Route::get('vouchers.csv', [$a, 'vouchersCsv'])->name('vouchers.csv');
+        Route::post('orders/{order}/recheck', [$a, 'recheck'])->name('orders.recheck');
+        Route::put('settings', [$a, 'settings'])->name('settings');
+    });
+});
+
 // Paystack payment notifications: exempt from CSRF and checked by HMAC signature instead
 // Meeting-screen colours for BigBlueButton (public, colours only)
 Route::get('conferencing/theme/{tenant}.css', [\App\Http\Controllers\Conferencing\CallbackController::class, 'theme'])->whereNumber('tenant')->middleware('throttle:120,1,bbbcss')->name('conferencing.theme');
@@ -38,6 +73,9 @@ Route::middleware(['module:conferencing'])->group(function () {
     Route::post('join/{token}/room/signal', [$rc, 'signal'])->where('token', '[A-Za-z0-9]{32}')->middleware('throttle:600,1,groomsig');
     Route::post('join/{token}/room/leave', [$rc, 'leave'])->where('token', '[A-Za-z0-9]{32}');
 });
+// Exam links: candidates open /x/{token}; students sign in, or (if the sitting allows) anyone enters with a name
+Route::get('x/{token}', [\App\Http\Controllers\Exam\ExamLinkController::class, 'show'])->where('token', '[A-Za-z0-9]{32}')->middleware('throttle:60,1,examlink')->name('exam-link.show');
+Route::post('x/{token}', [\App\Http\Controllers\Exam\ExamLinkController::class, 'enter'])->where('token', '[A-Za-z0-9]{32}')->middleware('throttle:10,1,examlinkenter')->name('exam-link.enter');
 // Preloaded slides, fetched by the BigBlueButton server through a short-lived signed link
 Route::get('conferencing/slides/{meeting}/{index}', [\App\Http\Controllers\Conferencing\MeetingController::class, 'slide'])->whereNumber('index')->middleware(['signed', 'throttle:60,1,bbbslide'])->name('conferencing.slide');
 
@@ -153,6 +191,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+    Route::get('quick-search', \App\Http\Controllers\QuickSearchController::class)->middleware('throttle:60,1,qsearch')->name('quick-search');
     Route::get('docs/{slug?}', [\App\Http\Controllers\DocsController::class, 'institution'])->where('slug', '[a-z0-9-]+')->name('docs');
     Route::get('templates', [\App\Http\Controllers\TemplateController::class, 'index'])->name('templates');
     Route::get('templates/{key}', [\App\Http\Controllers\TemplateController::class, 'download'])->where('key', '[a-z_]+')->middleware('throttle:60,1,tpl')->name('templates.download');
@@ -236,6 +275,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('permission:institution.manage')->group(function () {
         Route::get('admin/branding', [BrandingController::class, 'edit'])->name('admin.branding.edit');
         Route::post('admin/branding', [BrandingController::class, 'update'])->name('admin.branding.update');
+        Route::get('admin/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'institution'])->name('admin.ai');
+        Route::put('admin/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'saveInstitution'])->name('admin.ai.update');
+        Route::get('admin/sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'institution'])->name('admin.sms');
+        Route::put('admin/sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'saveInstitution'])->name('admin.sms.update');
+        Route::post('admin/sms/test', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'test'])->middleware('throttle:5,1,smstest')->name('admin.sms.test');
+        Route::post('admin/ai/test', [\App\Http\Controllers\Admin\AiSettingsController::class, 'test'])->middleware('throttle:10,1,aitest')->name('admin.ai.test');
     });
 
     // Institution billing: the institution's own subscription, invoices and payments
@@ -272,6 +317,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('invoices/{invoice}/pdf', [$pc, 'document'])->whereNumber('invoice')->name('invoice.pdf');
         Route::get('settings', [$pc, 'settings'])->name('settings');
         Route::put('settings', [$pc, 'saveSettings'])->name('settings.update');
+        Route::get('ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'platform'])->name('ai');
+        Route::put('ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'savePlatform'])->name('ai.update');
+        Route::get('sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'platform'])->name('sms');
+        Route::put('sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'savePlatform'])->name('sms.update');
+        Route::post('sms/test', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'test'])->middleware('throttle:5,1,plsmstest')->name('sms.test');
+        Route::post('ai/test', [\App\Http\Controllers\Admin\AiSettingsController::class, 'test'])->middleware('throttle:10,1,plaitest')->name('ai.test');
         Route::get('announcements', [$pc, 'announcements'])->name('announcements');
         Route::post('announcements', [$pc, 'saveAnnouncement'])->name('announcements.store');
         Route::put('announcements/{announcement}', [$pc, 'saveAnnouncement'])->whereNumber('announcement')->name('announcements.update');
@@ -321,17 +372,42 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('questions', [QuestionController::class, 'store'])->name('store');
             Route::get('questions/{question}/edit', [QuestionController::class, 'edit'])->name('edit');
             Route::put('questions/{question}', [QuestionController::class, 'update'])->name('update');
+            Route::post('passages', [QuestionController::class, 'storePassage'])->name('passages.store');
+            Route::post('media', [QuestionController::class, 'media'])->middleware('throttle:60,1,qmedia')->name('media');
             Route::post('preview', [QuestionController::class, 'preview'])->middleware('throttle:120,1,web125')->name('preview');
             Route::get('import', [ImportController::class, 'create'])->name('import.create');
             Route::post('import', [ImportController::class, 'store'])->name('import.store');
             Route::get('imports/{import}', [ImportController::class, 'show'])->name('imports.show');
             Route::post('imports/{import}/commit', [ImportController::class, 'commit'])->name('imports.commit');
+            Route::post('imports/{import}/retry', [ImportController::class, 'retry'])->name('imports.retry');
+            Route::post('write', [ImportController::class, 'write'])->middleware('throttle:20,1,aiwrite')->name('write');
+            Route::get('imports/{import}/pages/{n}', [ImportController::class, 'page'])->whereNumber('n')->name('imports.page');
         });
         Route::post('moderate', [QuestionController::class, 'moderate'])->middleware('permission:questions.moderate')->name('moderate');
     });
 
     // ── Exams (module: question_bank = exam delivery) ─────────────────────────
     Route::middleware(['module:question_bank', 'permission:exams.manage'])->group(function () {
+        // An exam with its papers (objective, theory, practical, viva), set up from one place
+        $eg = \App\Http\Controllers\Exam\ExamGroupController::class;
+        Route::get('exams/new', [$eg, 'create'])->name('exam-groups.create');
+        Route::post('exam-groups', [$eg, 'store'])->name('exam-groups.store');
+        Route::get('exam-groups/{group}', [$eg, 'show'])->name('exam-groups.show');
+        Route::put('exam-groups/{group}', [$eg, 'update'])->name('exam-groups.update');
+        Route::post('exam-groups/{group}/papers', [$eg, 'addPaper'])->name('exam-groups.papers.store');
+        Route::post('exam-groups/{group}/students', [$eg, 'assignStudents'])->middleware('throttle:30,1,egstud')->name('exam-groups.students');
+        Route::post('exam-groups/{group}/submit', [$eg, 'submitAll'])->name('exam-groups.submit');
+        Route::delete('exam-groups/{group}/students/{user}', [$eg, 'removeStudent'])->whereNumber('user')->name('exam-groups.students.remove');
+        Route::get('exam-groups/{group}/report.{format}', [$eg, 'report'])->whereIn('format', ['pdf', 'csv', 'xlsx', 'json'])->name('exam-groups.report');
+        Route::post('sessions/{session}/share', [$eg, 'shareSitting'])->name('sessions.share');
+        Route::redirect('exams/quick', '/exams/new');
+        // A sitting's shareable link and live control page
+        $qe = \App\Http\Controllers\Exam\SittingLinkController::class;
+        Route::get('exams/quick/pool', [$qe, 'pool'])->name('exams.quick.pool');
+        Route::get('sessions/{session}/ready', [$qe, 'ready'])->name('exams.ready');
+        Route::put('sessions/{session}/link', [$qe, 'saveLink'])->name('exams.link.save');
+        Route::post('sessions/{session}/link-entries/{entry}/release', [$qe, 'releaseEntry'])->name('exams.link.release');
+        Route::post('sessions/{session}/close', [$qe, 'close'])->name('exams.session.close');
         Route::get('exams', [ExamAdminController::class, 'index'])->name('exams.index');
         Route::post('exams', [ExamAdminController::class, 'store'])->name('exams.store');
         Route::get('exams/{exam}', [ExamAdminController::class, 'show'])->name('exams.show');
@@ -437,6 +513,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('marking', [MarkingController::class, 'index'])->name('marking.index');
         Route::get('marking/{exam}/essays', [MarkingController::class, 'essays'])->name('marking.essays');
         Route::post('marking/{exam}/essays', [MarkingController::class, 'markEssay'])->name('marking.essays.store');
+        Route::get('marking/{exam}/files/{file}', [MarkingController::class, 'file'])->whereNumber('file')->name('marking.file');
+        Route::post('marking/{exam}/essays/suggest', [MarkingController::class, 'suggest'])->middleware('throttle:60,1,aisuggest')->name('marking.essays.suggest');
         Route::get('marking/{exam}/panel', [MarkingController::class, 'panel'])->name('marking.panel');
         Route::post('marking/{exam}/panel', [MarkingController::class, 'savePanel'])->name('marking.panel.store');
     });
@@ -452,6 +530,29 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('results/appeals/{appeal}', [ResultController::class, 'decideAppeal'])->name('results.appeal.decide');
     });
     Route::get('results/{exam}/analytics', [ResultController::class, 'analytics'])->middleware(['module:analytics', 'permission:results.mark'])->name('results.analytics');
+
+    // ── Safe Exam Browser: download from this server, school SEB password ─────
+    Route::middleware('module:secure_client')->group(function () {
+        Route::get('safe-exam-browser', [\App\Http\Controllers\Exam\SebController::class, 'downloads'])->name('seb.downloads');
+        Route::get('safe-exam-browser/{os}/download', [\App\Http\Controllers\Exam\SebController::class, 'installer'])->whereIn('os', ['windows', 'macos'])->name('seb.installer');
+        Route::middleware('permission:exams.manage')->group(function () {
+            Route::get('admin/safe-exam-browser', [\App\Http\Controllers\Exam\SebController::class, 'edit'])->name('seb.edit');
+            Route::post('admin/safe-exam-browser/installers', [\App\Http\Controllers\Exam\SebController::class, 'upload'])->name('seb.upload');
+            Route::delete('admin/safe-exam-browser/installers/{os}', [\App\Http\Controllers\Exam\SebController::class, 'remove'])->whereIn('os', ['windows', 'macos'])->name('seb.remove');
+            Route::put('admin/safe-exam-browser/passwords', [\App\Http\Controllers\Exam\SebController::class, 'passwords'])->name('seb.passwords');
+        });
+    });
+
+    // ── Certificates and badges ─────────────────────────────────────────────
+    Route::get('my/certificates', [\App\Http\Controllers\CertificateController::class, 'mine'])->name('certificates.mine');
+    Route::get('certificates/{code}.pdf', [\App\Http\Controllers\CertificateController::class, 'pdf'])->where('code', '[A-Za-z0-9]{16}')->name('certificates.pdf');
+    Route::middleware('permission:exams.manage')->group(function () {
+        Route::get('certificates', [\App\Http\Controllers\CertificateController::class, 'index'])->name('certificates.index');
+        Route::post('certificates', [\App\Http\Controllers\CertificateController::class, 'store'])->name('certificates.store');
+        Route::put('certificates/{template}', [\App\Http\Controllers\CertificateController::class, 'update'])->name('certificates.update');
+        Route::post('certificates/awards/{award}/revoke', [\App\Http\Controllers\CertificateController::class, 'revoke'])->whereNumber('award')->name('certificates.revoke');
+        Route::post('exams/{exam}/certificates', [\App\Http\Controllers\CertificateController::class, 'awardExam'])->name('certificates.award');
+    });
 
     // ── Candidate side ────────────────────────────────────────────────────────
     Route::middleware(['module:question_bank'])->prefix('my')->name('candidate.')->group(function () {

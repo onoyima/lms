@@ -9,7 +9,7 @@ The platform runs your institution's question banks, examinations (online, in CB
 ## First week checklist for the institution administrator
 
 1. **Turn on two-factor sign-in** for yourself: your name (bottom left) > Settings > Security.
-2. **Branding**: Institution settings > Branding — logo, colours and the name candidates see.
+2. **Branding & theme**: Settings > Branding & theme — choose one of the three designs (Sapphire, Forest & gold or Plum) and the picture behind the glass (the theme's campus, your own campus photo, or none), then your logo, colours and the name candidates see. You can switch design or picture at any time; everyone sees the change on their next page, including the sign-in page.
 3. **Policy**: grading scale, password rules, who must use two-factor sign-in, exam-day contacts and the notice shown to candidates before every exam. Every save is kept as a version you can roll back.
 4. **Academic structure**: faculties, departments, programmes, courses (import them from CSV), the academic calendar and this semester's course offerings with their lecturers.
 5. **People**: import staff and students from CSV, or connect your student information system (Integrations). Give each member of staff the roles they need — nothing more.

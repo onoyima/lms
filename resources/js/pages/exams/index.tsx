@@ -1,5 +1,5 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { ArrowRight, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Field, inputClass, PageHeader, Status, Table, Td } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,9 @@ const types = [
     { value: 'research', label: 'Research (project or thesis, examiner score)' },
 ];
 
-export default function Exams({ exams, filters }: { exams: Paginated<Row>; filters: { type?: string; status?: string; q?: string } }) {
+type Group = { id: number; title: string; code: string | null; papers: { id: number; label: string; status: string }[] };
+
+export default function Exams({ exams, filters, groups = [] }: { exams: Paginated<Row>; filters: { type?: string; status?: string; q?: string }; groups?: Group[] }) {
     const { flash } = usePage().props;
     const [open, setOpen] = useState(false);
     const form = useForm({ title: '', type: 'cbt', category: 'exam', duration_minutes: 60, total_mark: 100 as number | '' });
@@ -26,13 +28,17 @@ export default function Exams({ exams, filters }: { exams: Paginated<Row>; filte
             <Head title="Exams" />
             <div className="flex flex-col gap-8 p-6 md:p-10">
                 <PageHeader
-                    title="Every format,"
-                    accent="one engine."
-                    lead="CBT, essay, mixed, practical checklists and vivas — all with the same scheduling, approval, marking and results workflow."
+                    title="Exams"
+                    lead="Exam categories (a Nursing exam, a semester exam, GST…) hold separate exams — objective, theory, practical, viva, tests and quizzes — each with its own questions, students, examiners, time and proctoring."
                     actions={
-                        <Button onClick={() => setOpen(!open)}>
-                            <Plus className="size-4" /> New exam
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" onClick={() => setOpen(!open)}>
+                                Single exam
+                            </Button>
+                            <Button asChild>
+                                <Link href="/exams/new"><Plus className="size-4" /> New exam category</Link>
+                            </Button>
+                        </div>
                     }
                 />
                 {flash?.success && <p className="text-sm text-status-good">{flash.success}</p>}
@@ -80,6 +86,30 @@ export default function Exams({ exams, filters }: { exams: Paginated<Row>; filte
                     </form>
                 )}
 
+                {groups.length > 0 && (
+                    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {groups.map((g) => (
+                            <Link key={g.id} href={`/exam-groups/${g.id}`} className="surface group grid gap-3 p-5 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-24px_var(--brand)]">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <h2 className="truncate text-lg font-semibold">{g.title}</h2>
+                                        <p className="text-sm text-muted-foreground">{[g.code, `${g.papers.length} ${g.papers.length === 1 ? 'exam' : 'exams'}`].filter(Boolean).join(' · ')}</p>
+                                    </div>
+                                    <ArrowRight className="mt-1 size-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {g.papers.map((p) => (
+                                        <span key={p.id} className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[.05] px-2.5 py-1 text-xs font-medium">
+                                            {p.label} <Status value={p.status} className="px-1.5 py-0 text-[10.5px]" />
+                                        </span>
+                                    ))}
+                                </div>
+                            </Link>
+                        ))}
+                    </section>
+                )}
+
+                <h2 className="pt-2 text-lg font-semibold">All exams</h2>
                 <div className="flex flex-wrap gap-2">
                     <input
                         className={`${inputClass} max-w-xs`}

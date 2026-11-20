@@ -117,12 +117,30 @@ class ResultController extends Controller
     public function export(Request $request, Exam $exam)
     {
         abort_unless($request->user()->can('results.approve') || $request->user()->can('results.publish'), 403);
-        $format = in_array($request->query('format'), ['xlsx', 'csv', 'pdf'], true) ? $request->query('format') : 'csv';
+        $format = in_array($request->query('format'), ['xlsx', 'csv', 'pdf', 'json'], true) ? $request->query('format') : 'csv';
         $this->audit->record('results.exported', $exam, ['rows' => Result::where('exam_id', $exam->id)->count(), 'format' => $format]);
         $columns = ['Matric number', 'Name', 'Raw', 'Max', 'Final', 'Grade', 'Status'];
         $rows = Result::with('user:id,name,identifier')->where('exam_id', $exam->id)->orderBy('id')->get()
             ->map(fn ($r) => [$r->user?->identifier, $r->user?->name, $r->raw_score, $r->max_score, $r->final_score, $r->grade, $r->status])->all();
         $exporter = app(\App\Services\Reports\Exporter::class);
+
+        if ($format === 'json') {
+            // for other systems: one object per result, with the exam and the grading scale used
+            $scale = \App\Support\Policy::scale(data_get($exam->settings, 'grading_scale') ?: null);
+
+            return response()->streamDownload(function () use ($exam, $scale) {
+                echo json_encode([
+                    'exam' => ['id' => $exam->id, 'code' => $exam->code, 'title' => $exam->title, 'type' => $exam->type, 'total_mark' => (float) $exam->total_mark, 'pass_mark' => $exam->pass_mark !== null ? (float) $exam->pass_mark : null],
+                    'grading_scale' => $scale, 'exported_at' => now()->toIso8601String(),
+                    'results' => Result::with('user:id,name,identifier,email')->where('exam_id', $exam->id)->orderBy('id')->get()->map(fn ($r) => [
+                        'matric_number' => $r->user?->identifier, 'name' => $r->user?->name, 'email' => $r->user?->email,
+                        'raw_score' => $r->raw_score !== null ? (float) $r->raw_score : null, 'max_score' => $r->max_score !== null ? (float) $r->max_score : null,
+                        'final_score' => $r->final_score !== null ? (float) $r->final_score : null, 'grade' => $r->grade,
+                        'grade_point' => $r->grade !== null ? (float) ($scale['points'][$r->grade] ?? 0) : null, 'status' => $r->status, 'published_at' => $r->published_at?->toIso8601String(),
+                    ])->all(),
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }, 'results-'.$exam->id.'.json', ['Content-Type' => 'application/json']);
+        }
 
         return match ($format) {
             'xlsx' => $exporter->xlsx('results-'.$exam->id, 'Results', $columns, $rows),

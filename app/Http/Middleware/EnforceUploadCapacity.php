@@ -26,7 +26,11 @@ class EnforceUploadCapacity
         $tenant = $this->context->get();
         // every uploaded file is screened (blocked types, disguised programs, antivirus when configured)
         foreach ($request->is(...self::EXEMPT) ? [] : Arr::dot($request->allFiles()) as $field => $f) {
-            if ($f instanceof UploadedFile && $f->isValid()) {
+            if ($f instanceof UploadedFile && $f->isValid() && $request->is('admin/safe-exam-browser/installers')) {
+                // Safe Exam Browser installers are programs by nature: the exams office's upload is only
+                // checked by the antivirus (the controller accepts installer types only, for exams staff only)
+                $this->scanner->antivirus($f->getRealPath(), $f->getClientOriginalName(), (string) preg_replace('/\.\d+$/', '', $field));
+            } elseif ($f instanceof UploadedFile && $f->isValid()) {
                 $this->scanner->check($f->getRealPath(), $f->getClientOriginalName(), (string) preg_replace('/\.\d+$/', '', $field));
             }
         }

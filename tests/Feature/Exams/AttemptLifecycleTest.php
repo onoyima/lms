@@ -3,6 +3,7 @@
 namespace Tests\Feature\Exams;
 
 use App\Models\Attempt;
+use App\Support\Exams\ExamSettings;
 use App\Models\Result;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -119,6 +120,11 @@ class AttemptLifecycleTest extends TestCase
         $this->startAs($this->candidate($this->sitting($exam)));
         $this->travel(10)->minutes();
 
+        // the server heard nothing from this computer before time ran out: it may be offline with answers
+        // on it, so the attempt waits for the exam's offline sync window before it is closed
+        $this->artisan('exams:sweep')->assertSuccessful();
+        $this->assertSame('in_progress', Attempt::first()->status);
+        $this->travel(ExamSettings::SETTINGS['offline_sync_minutes'])->minutes();
         $this->artisan('exams:sweep')->assertSuccessful();
         $this->assertSame('auto_submitted', Attempt::first()->status);
     }

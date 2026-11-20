@@ -105,6 +105,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $attemptKey = fn ($request) => (string) (\App\Services\Exams\AttemptToken::attemptId((string) $request->bearerToken()) ?? $request->ip());
         \Illuminate\Support\Facades\RateLimiter::for('exam-api', fn ($request) => \Illuminate\Cache\RateLimiting\Limit::perMinute(300)->by('a:'.$attemptKey($request)));
+        \Illuminate\Support\Facades\RateLimiter::for('exam-recording', fn ($request) => \Illuminate\Cache\RateLimiting\Limit::perMinute(90)->by('r:'.$attemptKey($request)));
         \Illuminate\Support\Facades\RateLimiter::for('exam-evidence', fn ($request) => \Illuminate\Cache\RateLimiting\Limit::perMinute(30)->by('e:'.$attemptKey($request)));
         \Illuminate\Support\Facades\RateLimiter::for('integration', fn ($request) => \Illuminate\Cache\RateLimiting\Limit::perMinute(120)->by('k:'.substr((string) $request->bearerToken(), 0, 11).$request->ip()));
         \Illuminate\Support\Facades\RateLimiter::for('exam-identity', fn ($request) => \Illuminate\Cache\RateLimiting\Limit::perMinute(12)->by('i:'.$attemptKey($request)));

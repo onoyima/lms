@@ -95,12 +95,44 @@ class CandidateExamController extends Controller
     public function start(Request $request, ExamCandidate $candidate, AttemptService $attempts): JsonResponse
     {
         abort_unless($candidate->user_id === $request->user()->id, 403);
-        $data = $request->validate(['pin' => ['nullable', 'string', 'max:20'], 'consent' => ['boolean']]);
+        $data = $request->validate([
+            'pin' => ['nullable', 'string', 'max:20'], 'consent' => ['boolean'],
+            'checks' => ['sometimes', 'array'], 'checks.*' => ['boolean'],
+            'check_details' => ['sometimes', 'array', 'max:20'], 'check_details.*' => ['nullable', 'string', 'max:200'],
+            'off' => ['sometimes', 'nullable', 'array'], 'off.from' => ['required_with:off', 'integer'], 'off.to' => ['required_with:off', 'integer'], 'off.kind' => ['nullable', 'in:off,asleep'],
+        ]);
+
+        // Pre-exam checks chosen for this exam must all have passed on the candidate's screen before a new
+        // attempt starts (a reload of an attempt already under way does not repeat them). The room scan is
+        // done just after starting, before the paper is shown.
+        $exam = $candidate->session->exam;
+        $required = array_values(array_diff(ExamSettings::forCandidate($exam->proctoring, $candidate->user_id, $exam->id)['pre_checks'], ['room_scan']));
+        $resuming = Attempt::where('exam_candidate_id', $candidate->id)->whereIn('status', Attempt::OPEN)->exists();
+        $passed = array_keys(array_filter((array) ($data['checks'] ?? [])));
+        $missing = $resuming ? [] : array_values(array_diff($required, $passed));
+        if ($missing) {
+            return response()->json([
+                'message' => 'Finish these checks before starting: '.implode(', ', array_map(fn ($c) => ExamSettings::PRE_CHECKS[$c][0], $missing)).'.',
+                'reason' => 'pre_checks', 'missing' => $missing,
+            ], 422);
+        }
+
+        // coming back after the computer went off: give the time back before the attempt is touched
+        if ($resuming && ! empty($data['off']) && ($open = Attempt::where('exam_candidate_id', $candidate->id)->where('status', 'in_progress')->latest('id')->first())) {
+            $attempts->creditDeviceOff($open, $data['off']);
+        }
 
         try {
             [$attempt, $token, $resumed] = $attempts->start($candidate, $request, $data['pin'] ?? null, (bool) ($data['consent'] ?? false));
         } catch (ExamException $e) {
             return $e->render();
+        }
+        if (! $resumed && $required) {
+            \App\Models\ProctoringEvent::insert([
+                'tenant_id' => $attempt->tenant_id, 'attempt_id' => $attempt->id, 'type' => 'pre_checks_passed', 'severity' => 0,
+                'data' => json_encode(['checks' => $required, 'details' => array_slice((array) ($data['check_details'] ?? []), 0, 20)]),
+                'client_time' => null, 'created_at' => now()->format('Y-m-d H:i:s.v'),
+            ]);
         }
 
         return response()->json(['token' => $token, 'resumed' => $resumed, 'attempt' => $attempts->state($attempt)]);

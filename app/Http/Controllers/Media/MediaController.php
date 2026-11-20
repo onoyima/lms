@@ -52,11 +52,17 @@ class MediaController extends Controller
         $a = $request->attributes->get('attempt');
         abort_unless($a->isOpen(), 409);
         $sources = $this->sources($a);
-        if (! $sources || ! $this->live->enabled() || ! $this->subscribed($a)) {
+        if (! $sources || ! $this->subscribed($a)) {
             return response()->json(['enabled' => false]);
         }
+        // what the browser records by itself when there is no media server, or when it cannot be reached
+        $plan = app(\App\Services\Media\BrowserRecordings::class)->plan($a);
+        $record = ($plan['camera'] || $plan['screen']) ? $plan : null;
+        if (! $this->live->enabled()) {
+            return response()->json(['enabled' => false, 'record' => $record]);
+        }
 
-        return response()->json(['enabled' => true, 'url' => $this->live->url(), 'token' => $this->live->candidateToken($a, $sources), 'sources' => $sources]);
+        return response()->json(['enabled' => true, 'url' => $this->live->url(), 'token' => $this->live->candidateToken($a, $sources), 'sources' => $sources, 'record' => $record]);
     }
 
     /** A one-time link (as a QR code) that turns the candidate's phone into a second camera (Target 111-124). */

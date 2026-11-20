@@ -7,6 +7,10 @@ const typeLabels: Record<string, string> = {
     single_choice: 'Single answer',
     multiple_choice: 'Multiple answers',
     true_false: 'True / false',
+    multi_true_false: 'Multiple true / false',
+    ordering: 'Put in order',
+    fill_blank: 'Fill in the blanks',
+    file_upload: 'File upload',
     matching: 'Matching',
     numeric: 'Numeric',
     short_answer: 'Short answer',
@@ -57,7 +61,7 @@ export function QuestionView({
                     {options.map((o) => (
                         <li
                             key={o.label}
-                            className={`flex items-start gap-3 rounded-xl border p-3 ${o.correct ? 'border-brand/60 bg-brand-soft' : 'border-border'}`}
+                            className={`flex items-start gap-3 rounded-xl border p-3 ${o.correct && type !== 'multi_true_false' ? 'border-brand/60 bg-brand-soft' : 'border-border'}`}
                         >
                             <span
                                 className={`flex size-7 shrink-0 items-center justify-center rounded-lg text-sm font-semibold ${o.correct ? 'bg-brand text-brand-foreground' : 'bg-muted'}`}
@@ -65,7 +69,9 @@ export function QuestionView({
                                 {o.label}
                             </span>
                             <RichContent html={o.html} className="flex-1 pt-0.5" />
-                            {o.correct && <Check className="mt-1 size-4 text-brand" aria-label="Correct answer" />}
+                            {type === 'multi_true_false' ? (
+                                <span className={`mt-0.5 rounded-md px-2 py-0.5 text-xs font-bold ${o.correct ? 'bg-status-good/15 text-status-good' : 'bg-status-critical/10 text-status-critical'}`}>{o.correct ? 'True' : 'False'}</span>
+                            ) : o.correct && <Check className="mt-1 size-4 text-brand" aria-label="Correct answer" />}
                         </li>
                     ))}
                 </ol>

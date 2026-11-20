@@ -104,7 +104,7 @@ class SecurityIsolationTest extends TestCase
         $this->assertSame(5, $e->limit('students', $this->tenant->fresh()));
         $this->assertSame(3000, $e->limit('students', $this->other->fresh()));
         $this->other->update(['brand_color' => '#aa0000']);
-        $this->get('http://rival.test/login')->assertSee('--brand: #aa0000', false);
+        $this->get('http://rival.test/login')->assertSee('--inst: #aa0000', false);
         $this->flushSession();
         $this->get(config('app.url').'/login')->assertDontSee('#aa0000', false)->assertSee(e(\App\Support\Platform\PlatformSettings::brand()['short_name']).'</title>', false); // the platform's own address shows the platform
     }

@@ -100,7 +100,7 @@ return new class extends Migration
             $table->string('internal_user_id', 100);
             $table->string('name', 190)->nullable();
             $table->string('role', 12)->nullable();            // MODERATOR / VIEWER as BigBlueButton saw it
-            $table->timestamp('joined_at', 3);
+            $table->dateTime('joined_at', 3);
             $table->timestamp('left_at', 3)->nullable();
             $table->unsignedInteger('seconds')->default(0);
             $table->boolean('closed_by_meeting_end')->default(false);

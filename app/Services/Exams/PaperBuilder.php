@@ -56,7 +56,7 @@ class PaperBuilder
                 $chosen = $chosen->filter(fn ($p) => in_array($p[0]->id, $kept, true))->values();
             }
             if ($settings['shuffle_questions']) {
-                $chosen = $this->shuffle($chosen->all());
+                $chosen = $this->keepPassagesTogether($this->shuffle($chosen->all()));
             }
             foreach ($chosen as [$q]) {
                 $picked->put($q->id, true);
@@ -85,8 +85,22 @@ class PaperBuilder
                     if ($settings['shuffle_options'] && in_array($q->type, ['single_choice', 'multiple_choice'], true)) {
                         $options = $this->shuffle($options->all());
                     }
+                    if ($q->type === 'ordering' && $options->count() > 1) {
+                        // the items are always mixed up, and never shown already in the right order
+                        $right = $options->pluck('id')->all();
+                        for ($try = 0; $try < 5 && $options->pluck('id')->all() === $right; $try++) {
+                            $options = $this->shuffle($options->all());
+                        }
+                        if ($options->pluck('id')->all() === $right) {
+                            $options = $options->reverse()->values();
+                        }
+                    }
                     $key = match ($q->type) {
                         'single_choice', 'multiple_choice', 'true_false' => ['options' => $q->options->where('is_correct', true)->pluck('id')->values()->all()],
+                        // multiple true/false: each statement is true or false on its own
+                        'multi_true_false' => ['tf' => $q->options->mapWithKeys(fn ($o) => [(string) $o->id => (bool) $o->is_correct])->all()],
+                        'ordering' => ['order' => $q->options->sortBy('position')->pluck('id')->values()->all()],
+                        'fill_blank' => ['blanks' => $q->accepted_answers['blanks'] ?? []],
                         'numeric' => $q->numeric_answer,
                         'matching' => ['pairs' => $q->matching['answer'] ?? []],
                         'short_answer' => $q->accepted_answers ?: null,
@@ -113,7 +127,14 @@ class PaperBuilder
                         'options' => $options->values()->map(fn ($o, $i) => ['id' => $o->id, 'label' => chr(65 + $i), 'html' => $o->body_html])->all(),
                         // matching: right-hand items are shuffled and their keys never reveal the answer
                         'matching' => $matching,
+                        'blanks' => $q->type === 'fill_blank' ? Question::blankNumbers((string) $q->stem_html) : null,
+                        'file' => $q->type === 'file_upload' ? array_replace(['kinds' => ['image', 'pdf', 'document'], 'max_mb' => 10], (array) ($q->accepted_answers['file'] ?? [])) : null,
+                        'passage_id' => $q->passage_id,
                     ];
+                    if ($q->passage_id && ! isset($paper['passages'][$q->passage_id])) {
+                        $passage = \App\Models\QuestionPassage::find($q->passage_id);
+                        $paper['passages'][$q->passage_id] = $passage ? ['title' => $passage->title, 'html' => $passage->body_html] : null;
+                    }
                 }
                 $paper['sections'][] = $paperSection;
             }
@@ -156,6 +177,26 @@ class PaperBuilder
     }
 
     /** Deterministic per attempt (seeded), so a rebuild after a crash gives the same paper. */
+    /** After shuffling, questions on the same passage stay together (in their set order), where the first of them fell. */
+    private function keepPassagesTogether(Collection $chosen): Collection
+    {
+        $byPassage = $chosen->filter(fn ($p) => $p[0]->passage_id)->groupBy(fn ($p) => $p[0]->passage_id)
+            ->map(fn ($g) => $g->sortBy(fn ($p) => $p[0]->pivot?->position ?? $p[0]->id)->values());
+        $out = collect();
+        $done = [];
+        foreach ($chosen as $p) {
+            $pid = $p[0]->passage_id;
+            if (! $pid) {
+                $out->push($p);
+            } elseif (! isset($done[$pid])) {
+                $done[$pid] = true;
+                $byPassage[$pid]->each(fn ($x) => $out->push($x));
+            }
+        }
+
+        return $out->values();
+    }
+
     private function shuffle(array $items): Collection
     {
         for ($i = count($items) - 1; $i > 0; $i--) {

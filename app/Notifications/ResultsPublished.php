@@ -15,12 +15,17 @@ class ResultsPublished extends Notification
 
     public function via(object $notifiable): array
     {
-        return \App\Support\NotificationCategories::filter($notifiable, 'results', config('mail.default') && config('mail.default') !== 'log' && config('mail.default') !== 'array' ? ['database', 'mail'] : ['database']);
+        return \App\Support\NotificationCategories::filter($notifiable, 'results', config('mail.default') && config('mail.default') !== 'log' && config('mail.default') !== 'array' ? ['database', 'mail', \App\Notifications\Channels\SmsChannel::class] : ['database', \App\Notifications\Channels\SmsChannel::class]);
     }
 
     public function toArray(object $notifiable): array
     {
         return ['title' => 'Result published', 'category' => 'results', 'body' => "Your result for {$this->exam->title} is available.", 'exam_id' => $this->exam->id];
+    }
+
+    public function toSms(object $notifiable): string
+    {
+        return "Your result for {$this->exam->title} is now available. Sign in to see it.";
     }
 
     public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage

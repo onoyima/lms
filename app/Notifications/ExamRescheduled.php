@@ -16,7 +16,7 @@ class ExamRescheduled extends Notification
 
     public function via(object $notifiable): array
     {
-        return \App\Support\NotificationCategories::filter($notifiable, 'exams', ['database', 'mail']);
+        return \App\Support\NotificationCategories::filter($notifiable, 'exams', ['database', 'mail', \App\Notifications\Channels\SmsChannel::class]);
     }
 
     private function now(): string
@@ -28,6 +28,11 @@ class ExamRescheduled extends Notification
     {
         return ['title' => 'Exam time changed', 'category' => 'exams', 'exam_session_id' => $this->session->id,
             'body' => $this->session->exam->title.' is now '.$this->now().' (was '.$this->was.').'];
+    }
+
+    public function toSms(object $notifiable): string
+    {
+        return 'Exam time changed: '.$this->session->exam->title.' is now '.$this->now().' (was '.$this->was.').';
     }
 
     public function toMail(object $notifiable): MailMessage

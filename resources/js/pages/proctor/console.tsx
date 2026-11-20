@@ -16,7 +16,7 @@ type AttemptRow = {
 type Row = { candidate_id: number; name: string; identifier: string | null; seat: string | null; attendance: string; checked_in: boolean; eligibility: string; attempt: AttemptRow | null };
 type Live = { server_time: string; session: { paused: boolean; status: string }; summary: Record<string, number>; proctors_offline: string[]; candidates: Row[] };
 type Timeline = { events: { id: number; type: string; severity: number; created_at: string; data: unknown }[]; messages: { id: number; direction: string; kind: string; body: string; created_at: string; acknowledged_at: string | null }[]; evidence: { id: number; kind: string; captured_at: string }[]; incidents: { id: number; title: string; severity: string; status: string }[];
-    recordings?: { id: number; kind: string; status: string; duration_seconds: number | null; started_at: string | null }[];
+    recordings?: { id: number; kind: string; status: string; duration_seconds: number | null; started_at: string | null; browser?: boolean; pieces?: number; missing?: number; has_start?: boolean }[];
     identity?: { checks: { id: number; kind: string; result: string; evidence_file_id: number | null; created_at: string }[]; reference: { status: string; enrolment: boolean; id: boolean } | null } };
 
 /** Live proctor console: refreshes every 5 seconds; highest-risk and help requests first. */
@@ -237,7 +237,7 @@ export default function Console({ session, canManage, isChief, layout: initialLa
                             </dl>
                         )}
                         {canManage && (
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex min-w-0 max-w-full flex-wrap gap-2">
                                 {live?.session.paused ? (
                                     <Button size="sm" onClick={() => sessionAct('resume')}><Play className="size-4" /> Resume everyone</Button>
                                 ) : (
@@ -278,7 +278,7 @@ export default function Console({ session, canManage, isChief, layout: initialLa
                         {liveMode === 'unavailable' && <span className="text-[#fbbf24]">Live video is not set up — showing the latest pictures.</span>}
                         <details className="ml-auto">
                             <summary className="cursor-pointer text-white/50">Who to call</summary>
-                            <div className="absolute right-4 z-30 mt-2 max-w-md rounded-lg border border-white/10 bg-[#16191d] p-3"><IncidentContacts contacts={contacts} /></div>
+                            <div className="absolute right-4 z-30 md:right-6 mt-2 w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-white/10 bg-[#16191d] p-3"><IncidentContacts contacts={contacts} /></div>
                         </details>
                     </div>
                 </div>
@@ -311,7 +311,7 @@ export default function Console({ session, canManage, isChief, layout: initialLa
                 )}
 
                 {/* the wall */}
-                <div className={`grid grid-cols-2 gap-1 p-1 md:p-2 ${GRID[layout.columns] ?? GRID[4]}`}>
+                <div className={`grid grid-cols-2 gap-1.5 p-3 md:gap-2 md:p-4 ${GRID[layout.columns] ?? GRID[4]}`}>
                     {rows.map((r) => {
                         const a = r.attempt;
                         const help = (a?.help.length ?? 0) > 0;
@@ -498,7 +498,12 @@ act(selected.attempt!.id, 'terminate', { body });
                                                 {timeline.recordings.map((r, i, all) => (
                                                     <p key={r.id} className="flex items-center justify-between">
                                                         <span>{r.kind} · part {all.filter((x) => x.kind === r.kind).length - all.slice(0, i).filter((x) => x.kind === r.kind).length}{r.started_at ? ` · from ${new Date(r.started_at).toLocaleTimeString()}` : ''}{r.duration_seconds ? ` · ${Math.round(r.duration_seconds / 60)} min` : ''}</span>
-                                                        {r.status === 'complete' ? <a className="text-brand" href={`/proctor/recordings/${r.id}`} target="_blank" rel="noreferrer">Play</a> : <Status value={r.status} />}
+                                                        <span className="flex items-center gap-2">
+                                                            {r.browser && !!r.missing && <span className="text-status-warning" title="Pieces that never arrived show as a jump in the video">{r.missing} missing</span>}
+                                                            {r.browser && r.has_start === false ? <span className="text-muted-foreground">start not received yet</span>
+                                                                : r.status === 'complete' || r.browser ? <a className="text-brand" href={`/proctor/recordings/${r.id}`} target="_blank" rel="noreferrer">{r.status === 'complete' ? 'Play' : 'Play so far'}</a>
+                                                                    : <Status value={r.status} />}
+                                                        </span>
                                                     </p>
                                                 ))}
                                             </div>

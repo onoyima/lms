@@ -35,6 +35,19 @@ class PlatformSettings
         'rate_key_per_minute' => 600,
         'rate_tenant_per_minute' => 60000,
         'maintenance_message' => '',
+        // AI the platform provides to institutions (off until a key is set); the key is kept encrypted
+        'ai_provider' => 'anthropic',
+        'ai_base_url' => '',
+        'ai_model' => '',
+        'ai_key' => '',
+        'ai_shared' => true,               // institutions without their own key may use this one
+        // text messages the platform provides (off until a key is set; the key is kept encrypted)
+        'sms_provider' => 'termii',
+        'sms_username' => '',
+        'sms_key' => '',
+        'sms_sender' => '',
+        'sms_url' => '',
+        'sms_shared' => false,
     ];
 
     /** @var array{0: float, 1: array}|null read once per request (and at most every 30 s in long-running workers) */

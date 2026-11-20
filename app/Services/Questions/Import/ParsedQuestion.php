@@ -28,6 +28,9 @@ class ParsedQuestion
     /** @var list<array{left:string, right:string}> matching pairs */
     public array $pairs = [];
 
+    /** @var list<array{answers: list<string>}> fill-in-the-blank answers, by blank */
+    public array $blanks = [];
+
     /** @var list<string> accepted short answers */
     public array $accepted = [];
 
@@ -52,6 +55,7 @@ class ParsedQuestion
             'tolerance' => $this->tolerance,
             'pairs' => $this->pairs,
             'accepted' => $this->accepted,
+            'blanks' => $this->blanks,
             'warnings' => $this->warnings,
         ];
     }

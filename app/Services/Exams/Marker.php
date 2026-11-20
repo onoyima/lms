@@ -32,6 +32,7 @@ class Marker
         $total = 0.0;
         $max = 0.0;
         $needsMarking = false;
+        $scores = []; // written in one statement at the end (submits come in bursts at the deadline)
 
         foreach ($questions as $q) {
             $mark = (float) $q->mark;
@@ -43,6 +44,9 @@ class Marker
             $score = match ($q->type) {
                 'single_choice', 'true_false' => $this->choice($response, $key, $mark, false, $settings),
                 'multiple_choice' => $this->choice($response, $key, $mark, $settings['partial_credit'], $settings),
+                'multi_true_false' => $this->trueFalseSet($response, $key, $mark, $settings),
+                'ordering' => $this->ordering($response, $key, $mark, $settings['partial_credit']),
+                'fill_blank' => $this->blanks($response, $key, $mark),
                 'numeric' => $this->numeric($response, $key, $mark),
                 'matching' => $this->matching($response, $key, $mark, $settings['partial_credit']),
                 'short_answer' => $key && ! empty($key['answers']) ? $this->shortAnswer($response, $key, $mark) : null,
@@ -56,15 +60,16 @@ class Marker
                     $needsMarking = true;
                 } else {
                     // blank essay: zero, nothing to mark
-                    $this->storeScore($attempt->id, $q->question_id, 0.0, $answer !== null);
+                    $scores[$q->question_id] = 0.0;
                 }
 
                 continue;
             }
 
             $total += $score;
-            $this->storeScore($attempt->id, $q->question_id, $score, $answer !== null);
+            $scores[$q->question_id] = $score;
         }
+        $this->storeScores($attempt->id, $scores);
 
         $attempt->forceFill(['score_raw' => round(max(0, $total), 2), 'score_max' => $max, 'needs_marking' => $needsMarking])->save();
         $this->refreshResult($exam, $attempt->user_id);
@@ -90,6 +95,90 @@ class Marker
         }
 
         return -abs((float) $settings['negative_marking']);
+    }
+
+    /**
+     * Multiple true/false: each statement is worth an equal share of the mark. A wrong statement loses
+     * the exam's negative mark shared the same way; a statement left blank scores nothing. With
+     * "all or nothing" the question scores only when every statement is right.
+     */
+    private function trueFalseSet(?array $response, ?array $key, float $mark, array $settings): float
+    {
+        $answer = (array) ($key['tf'] ?? []);
+        $given = (array) ($response['tf'] ?? []);
+        if (! $answer || ! $given) {
+            return 0.0;
+        }
+        $n = count($answer);
+        $right = 0;
+        $wrong = 0;
+        foreach ($answer as $id => $truth) {
+            if (! array_key_exists((string) $id, $given)) {
+                continue;
+            }
+            (bool) $given[(string) $id] === (bool) $truth ? $right++ : $wrong++;
+        }
+        if (($settings['mtf_scoring'] ?? 'per_statement') === 'all_or_nothing') {
+            return $right === $n ? $mark : ($wrong ? -abs((float) $settings['negative_marking']) : 0.0);
+        }
+
+        return round(max(-$mark, $mark * $right / $n - abs((float) $settings['negative_marking']) * $wrong / $n), 2);
+    }
+
+    /** Ordering: all in the right order for the mark; with partial credit, each item in its right place earns its share. */
+    private function ordering(?array $response, ?array $key, float $mark, bool $partial): float
+    {
+        $right = array_map('intval', (array) ($key['order'] ?? []));
+        $given = array_map('intval', (array) ($response['order'] ?? []));
+        if (! $right || ! $given) {
+            return 0.0;
+        }
+        if ($given === $right) {
+            return $mark;
+        }
+        if (! $partial) {
+            return 0.0;
+        }
+        $hits = count(array_filter($right, fn ($id, $i) => ($given[$i] ?? null) === $id, ARRAY_FILTER_USE_BOTH));
+
+        return round($mark * $hits / count($right), 2);
+    }
+
+    /**
+     * Fill in the blanks: each blank earns an equal share. A blank is right when it matches one of its
+     * accepted answers (spaces, case and a trailing full stop ignored unless case-sensitive), or is a
+     * number within the blank's tolerance.
+     */
+    private function blanks(?array $response, ?array $key, float $mark): float
+    {
+        $blanks = array_values((array) ($key['blanks'] ?? []));
+        $given = (array) ($response['blanks'] ?? []);
+        if (! $blanks || ! $given) {
+            return 0.0;
+        }
+        $norm = fn ($s) => preg_replace('/\s+/u', ' ', trim(rtrim(trim((string) $s), '.')));
+        $right = 0;
+        foreach ($blanks as $i => $b) {
+            $answer = $given[(string) ($i + 1)] ?? null;
+            if ($answer === null || trim((string) $answer) === '') {
+                continue;
+            }
+            if (isset($b['value']) && is_numeric(str_replace(',', '.', (string) $answer))) {
+                if (abs((float) str_replace(',', '.', (string) $answer) - (float) $b['value']) <= abs((float) ($b['tolerance'] ?? 0)) + 1e-9) {
+                    $right++;
+                }
+
+                continue;
+            }
+            foreach ((array) ($b['answers'] ?? []) as $ok) {
+                if (! empty($b['case_sensitive']) ? $norm($answer) === $norm($ok) : mb_strtolower($norm($answer)) === mb_strtolower($norm($ok))) {
+                    $right++;
+                    break;
+                }
+            }
+        }
+
+        return round($mark * $right / count($blanks), 2);
     }
 
     /** Matching: each correct pair earns its share (or all-or-nothing when partial credit is off). */
@@ -133,12 +222,18 @@ class Marker
         return abs((float) $response['number'] - (float) $key['value']) <= $tolerance + 1e-9 ? $mark : 0.0;
     }
 
-    private function storeScore(int $attemptId, int $questionId, float $score, bool $exists): void
+    /** All of an attempt's automatic scores in one statement; unanswered questions get a row with no response. */
+    private function storeScores(int $attemptId, array $scores): void
     {
-        if ($exists) {
-            DB::table('attempt_answers')->where('attempt_id', $attemptId)->where('question_id', $questionId)->update(['score' => $score]);
-        } else {
-            DB::table('attempt_answers')->insert(['attempt_id' => $attemptId, 'question_id' => $questionId, 'response' => null, 'client_seq' => 0, 'score' => $score]);
+        if (! $scores) {
+            return;
+        }
+        $rows = [];
+        foreach ($scores as $qid => $score) {
+            $rows[] = ['attempt_id' => $attemptId, 'question_id' => (int) $qid, 'response' => null, 'client_seq' => 0, 'score' => $score];
+        }
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('attempt_answers')->upsert($chunk, ['attempt_id', 'question_id'], ['score']);
         }
     }
 
@@ -248,7 +343,7 @@ class Marker
             'raw_score' => $raw,
             'max_score' => $max,
             'final_score' => $final,
-            'grade' => $this->grade($outOf > 0 ? $final / $outOf * 100 : 0),
+            'grade' => $this->grade($outOf > 0 ? $final / $outOf * 100 : 0, data_get($exam->settings, 'grading_scale') ?: null),
             'status' => in_array($result->status, ['moderated', 'approved', 'published', 'withheld'], true) && $result->exists ? $result->status : ($pending ? 'pending_marking' : 'draft'),
         ]);
         if ($result->isDirty() && $result->exists) {
@@ -260,8 +355,8 @@ class Marker
     }
 
     /** Nigerian university 5-point scale by default; institutions can override in tenant settings. */
-    public function grade(float $percent): string
+    public function grade(float $percent, ?string $scale = null): string
     {
-        return \App\Support\Policy::grade($percent);
+        return \App\Support\Policy::grade($percent, $scale);
     }
 }

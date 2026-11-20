@@ -1,5 +1,5 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Field, formatDateTime, inputClass, PageHeader, Status, Table, Td, textareaClass } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
@@ -13,8 +13,8 @@ type Sitting = { id: number; name: string | null; mode: string; status: string; 
 type ExamData = {
     id: number; title: string; code: string | null; type: string; category: string; kind: string; parent_exam_id: number | null; status: string; instructions: string | null;
     total_mark: string | null; pass_mark: string | null; duration_minutes: number; max_attempts: number; score_policy: string; marking_policy: string;
-    version: number; course_id: number | null; semester_id: number | null; channels: string[];
-    settings: Record<string, unknown> & { seb?: { config_key?: string; browser_exam_keys?: string[]; quit_password?: string } };
+    version: number; course_id: number | null; semester_id: number | null; channels: string[]; grading_scales?: string[]; certificate_template_id?: number | null; certificate_templates?: { id: number; name: string; kind: string; min_percent: number }[]; pre_check_options?: { key: string; label: string; hint: string }[];
+    settings: Record<string, unknown> & { seb?: { config_key?: string; browser_exam_keys?: string[]; quit_password?: string; has_settings_password?: boolean } };
     proctoring: Record<string, unknown>; is_panel: boolean; can_edit: boolean;
 };
 
@@ -58,18 +58,26 @@ export default function ExamShow(props: {
     courses: { id: number; code: string; title: string }[]; semesters: { id: number; name: string; academic_session: { name: string } | null }[];
     topics: string[]; staff: { id: number; name: string; email: string }[];
     examinerAccounts: ExaminerAccount[]; examinerAccountsEnd: string | null;
-    parent: { id: number; title: string } | null; followUps: { id: number; title: string; kind: string; status: string }[];
+    parent: { id: number; title: string } | null; group?: { id: number; title: string } | null; followUps: { id: number; title: string; kind: string; status: string }[];
     anomalies?: Anomaly[];
 }) {
     const { exam } = props;
     const { flash } = usePage().props;
-    const [tab, setTab] = useState<(typeof tabs)[number]>(exam.is_panel ? 'Paper' : 'Paper');
+    // ?tab=paper|rules|sittings|examiners opens a tab directly (links from the exam's papers overview)
+    const wanted = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null;
+    const fromQuery = ({ overview: 'Overview', paper: 'Paper', rules: 'Rules & proctoring', sittings: 'Sittings', examiners: 'Examiners' } as Record<string, (typeof tabs)[number]>)[wanted ?? ''];
+    const [tab, setTab] = useState<(typeof tabs)[number]>(fromQuery ?? 'Paper');
     const act = (action: string, comment?: string) => router.post(`/exams/${exam.id}/transition`, { action, comment }, { preserveScroll: true });
 
     return (
         <>
             <Head title={exam.title} />
             <div className="flex flex-col gap-6 p-6 md:p-10">
+                {props.group && (
+                    <Link href={`/exam-groups/${props.group.id}`} className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                        <ArrowLeft className="size-4" /> {props.group.title}
+                    </Link>
+                )}
                 <PageHeader
                     eyebrow={`${exam.type} · ${exam.category}${exam.kind !== 'regular' ? ` · ${exam.kind}` : ''} · version ${exam.version}`}
                     title={exam.title}
@@ -328,7 +336,7 @@ function Blueprint({ exam, section, topics }: { exam: ExamData; section: Section
                     </select>
                     <select className={inputClass} value={r.type ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { type: e.target.value || null })}>
                         <option value="">Any type</option>
-                        {['single_choice', 'multiple_choice', 'true_false', 'numeric', 'short_answer', 'essay'].map((t) => (
+                        {['single_choice', 'multiple_choice', 'true_false', 'multi_true_false', 'matching', 'ordering', 'fill_blank', 'numeric', 'short_answer', 'essay', 'file_upload'].map((t) => (
                             <option key={t}>{t}</option>
                         ))}
                     </select>
@@ -448,16 +456,46 @@ const proctorLabels: Record<string, string> = {
     single_session: 'One active window per candidate', low_bandwidth: 'Low-bandwidth mode', gaze_tracking: 'Looking-away alerts (head turned from the screen)', close_banned_apps: 'Desktop app closes screen-sharing and remote-control apps',
 };
 
+/** The checks a candidate must pass before this exam can start: all, some, or none. */
+function PreCheckPicker({ options, value, onChange }: { options: { key: string; label: string; hint: string }[]; value: string[]; onChange: (v: string[]) => void }) {
+    const set = new Set(value);
+
+    return (
+        <section className="surface p-6 lg:col-span-2">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <p className="eyebrow mb-1">Before the exam starts</p>
+                    <p className="text-sm text-muted-foreground">The candidate cannot start until every chosen check has passed on their screen. Works for remote and hall exams.</p>
+                </div>
+                <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => onChange(options.map((o) => o.key))}>Select all</Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => onChange([])}>None</Button>
+                </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {options.map((o) => (
+                    <label key={o.key} className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm transition-colors ${set.has(o.key) ? 'border-brand/50 bg-brand/[.06]' : 'border-border hover:border-brand/30'}`}>
+                        <input type="checkbox" className="mt-0.5" checked={set.has(o.key)} onChange={(e) => onChange(e.target.checked ? [...value, o.key] : value.filter((k) => k !== o.key))} />
+                        <span><b className="block font-medium">{o.label}</b><span className="text-xs text-muted-foreground">{o.hint}</span></span>
+                    </label>
+                ))}
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">{value.length === 0 ? 'No checks: candidates start straight away.' : `${value.length} of ${options.length} checks chosen.`}</p>
+        </section>
+    );
+}
+
 function RulesEditor({ exam }: { exam: ExamData }) {
     const [settings, setSettings] = useState(exam.settings);
     const [proctoring, setProctoring] = useState(exam.proctoring);
     const [channels, setChannels] = useState(exam.channels ?? ['web', 'desktop', 'seb']);
-    const [seb, setSeb] = useState({ config_key: exam.settings.seb?.config_key ?? '', browser_exam_keys: (exam.settings.seb?.browser_exam_keys ?? []).join('\n'), quit_password: exam.settings.seb?.quit_password ?? '' });
+    const [certificate, setCertificate] = useState<number | ''>(exam.certificate_template_id ?? '');
+    const [seb, setSeb] = useState({ config_key: exam.settings.seb?.config_key ?? '', browser_exam_keys: (exam.settings.seb?.browser_exam_keys ?? []).join('\n'), quit_password: exam.settings.seb?.quit_password ?? '', settings_password: '', clear_settings_password: false });
     const toggle = (obj: Record<string, unknown>, set: (v: Record<string, unknown>) => void, key: string) => set({ ...obj, [key]: !obj[key] });
     const save = () =>
         router.put(`/exams/${exam.id}`, {
-            settings, proctoring, channels,
-            seb: { config_key: seb.config_key || null, browser_exam_keys: seb.browser_exam_keys.split(/\s+/).filter(Boolean), quit_password: seb.quit_password || null },
+            settings, proctoring, channels, certificate_template_id: certificate || null,
+            seb: { config_key: seb.config_key || null, browser_exam_keys: seb.browser_exam_keys.split(/\s+/).filter(Boolean), quit_password: seb.quit_password || null, settings_password: seb.settings_password || null, clear_settings_password: seb.clear_settings_password || null },
         } as never, { preserveScroll: true });
 
     return (
@@ -473,6 +511,24 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                 <div className="mt-3 grid grid-cols-2 gap-3">
                     <Field label="Negative mark per wrong answer">
                         <input type="number" step="0.25" min={0} className={inputClass} value={Number(settings.negative_marking ?? 0)} onChange={(e) => setSettings({ ...settings, negative_marking: Number(e.target.value) })} />
+                    </Field>
+                    <Field label="Certificate or badge">
+                        <select className={inputClass} value={certificate} onChange={(e) => setCertificate(e.target.value ? Number(e.target.value) : '')}>
+                            <option value="">None</option>
+                            {(exam.certificate_templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name} ({t.kind}, from {t.min_percent}%)</option>)}
+                        </select>
+                    </Field>
+                    <Field label="Grading scale">
+                        <select className={inputClass} value={String(settings.grading_scale ?? '')} onChange={(e) => setSettings({ ...settings, grading_scale: e.target.value })}>
+                            <option value="">The institution's main scale</option>
+                            {(exam.grading_scales ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                    </Field>
+                    <Field label="Multiple true/false scoring">
+                        <select className={inputClass} value={String(settings.mtf_scoring ?? 'per_statement')} onChange={(e) => setSettings({ ...settings, mtf_scoring: e.target.value })}>
+                            <option value="per_statement">Each statement earns its share</option>
+                            <option value="all_or_nothing">Marks only when every statement is right</option>
+                        </select>
                     </Field>
                     <Field label="Autosave every (s)">
                         <input type="number" min={3} className={inputClass} value={Number(settings.autosave_seconds ?? 10)} onChange={(e) => setSettings({ ...settings, autosave_seconds: Number(e.target.value) })} />
@@ -505,7 +561,7 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                     </label>
                 ))}
                 <div className="mt-3 grid grid-cols-3 gap-3">
-                    <Field label="Warnings allowed">
+                    <Field label="Warnings (strikes) allowed">
                         <input type="number" min={1} className={inputClass} value={Number(proctoring.violation_threshold ?? 5)} onChange={(e) => setProctoring({ ...proctoring, violation_threshold: Number(e.target.value) })} />
                     </Field>
                     <Field label="Then">
@@ -527,6 +583,19 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                     </Field>
                     <Field label="Repeat the face check every (min, 0 = entry only)">
                         <input type="number" min={0} className={inputClass} value={Number(proctoring.identity_recheck_minutes ?? 0)} onChange={(e) => setProctoring({ ...proctoring, identity_recheck_minutes: Number(e.target.value) })} />
+                    </Field>
+                </div>
+            </section>
+            <PreCheckPicker options={exam.pre_check_options ?? []} value={Array.isArray(proctoring.pre_checks) ? (proctoring.pre_checks as string[]) : []} onChange={(v) => setProctoring({ ...proctoring, pre_checks: v })} />
+            <section className="surface p-6 lg:col-span-2">
+                <p className="eyebrow mb-1">Connection and power cuts</p>
+                <p className="mb-4 text-sm text-muted-foreground">Candidates who lose the internet keep writing; their answers stay on their computer and are sent when it returns. Time is given back only when the computer itself went off.</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                    <Field label="Time given back for a computer that went off (minutes, whole exam; 0 = none)">
+                        <input type="number" min={0} max={240} className={inputClass} value={Number(settings.power_cut_minutes ?? 30)} onChange={(e) => setSettings({ ...settings, power_cut_minutes: Number(e.target.value) })} />
+                    </Field>
+                    <Field label="Wait for a disconnected computer after time is up (minutes)">
+                        <input type="number" min={10} max={4320} className={inputClass} value={Number(settings.offline_sync_minutes ?? 120)} onChange={(e) => setSettings({ ...settings, offline_sync_minutes: Number(e.target.value) })} />
                     </Field>
                 </div>
             </section>
@@ -552,9 +621,17 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                         <Field label="Browser Exam Keys" hint="One per line (per SEB version/OS)">
                             <textarea className={`${textareaClass} font-mono`} value={seb.browser_exam_keys} onChange={(e) => setSeb({ ...seb, browser_exam_keys: e.target.value })} />
                         </Field>
-                        <Field label="SEB quit password">
+                        <Field label="SEB quit password" hint="Empty: the institution's quit password">
                             <input className={inputClass} value={seb.quit_password} onChange={(e) => setSeb({ ...seb, quit_password: e.target.value })} />
                         </Field>
+                        <Field label="SEB password for this exam" hint={exam.settings.seb?.has_settings_password ? 'Set. Type a new one to change it.' : "Empty: the school's SEB password (Safe Exam Browser page)"}>
+                            <input type="password" autoComplete="new-password" className={inputClass} value={seb.settings_password} onChange={(e) => setSeb({ ...seb, settings_password: e.target.value, clear_settings_password: false })} />
+                        </Field>
+                        {exam.settings.seb?.has_settings_password && (
+                            <label className="flex items-center gap-2 text-sm md:col-span-3">
+                                <input type="checkbox" checked={seb.clear_settings_password} onChange={(e) => setSeb({ ...seb, clear_settings_password: e.target.checked })} /> Use the school's SEB password instead of this exam's own
+                            </label>
+                        )}
                     </div>
                 )}
             </section>
@@ -590,9 +667,14 @@ function Sittings({ exam, sessions }: { exam: ExamData; sessions: Sitting[] }) {
                             <Status value={s.status} />
                         </Td>
                         <Td>
-                            <Link href={`/proctor/sessions/${s.id}`} className="text-brand">
-                                Console
-                            </Link>
+                            <span className="flex flex-wrap gap-3">
+                                <Link href={`/proctor/sessions/${s.id}`} className="text-brand">
+                                    Console
+                                </Link>
+                                <button type="button" className="text-brand" title="A link and code students can open to start this sitting" onClick={() => router.post(`/sessions/${s.id}/share`)}>
+                                    Share link
+                                </button>
+                            </span>
                         </Td>
                     </tr>
                 ))}

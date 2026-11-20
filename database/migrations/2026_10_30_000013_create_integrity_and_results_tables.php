@@ -142,7 +142,7 @@ return new class extends Migration
             $table->decimal('discrimination', 5, 4)->nullable(); // upper-lower 27% index
             $table->decimal('point_biserial', 5, 4)->nullable();
             $table->json('option_counts')->nullable();
-            $table->timestamp('computed_at');
+            $table->dateTime('computed_at');
             $table->unique(['exam_id', 'question_id']);
         });
 

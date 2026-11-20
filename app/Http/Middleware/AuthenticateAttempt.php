@@ -28,6 +28,15 @@ class AuthenticateAttempt
             return response()->json(['message' => 'Your exam session is not valid. Open the exam again.', 'reason' => 'invalid_token'], 401);
         }
         if (! AttemptToken::matches($attempt, $token)) {
+            // The exam moved to another window or computer. Answers this one wrote before the move (for
+            // example while it was offline) may still be on it: it may send them once, and they only fill
+            // questions the candidate has not answered elsewhere. Nothing newer is ever overwritten.
+            if (str_ends_with($request->path(), 'exam/attempt/answers')) {
+                $request->attributes->set('attempt', $attempt);
+                $request->attributes->set('superseded', true);
+
+                return $next($request);
+            }
             $this->log($request, 'token_rejected', ['reason' => 'superseded', 'attempt' => $attempt->id], $attempt->user_id);
 
             return response()->json(['message' => 'This exam was opened in another window or device. Only the newest one can continue.', 'reason' => 'session_moved'], 409);

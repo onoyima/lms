@@ -16,7 +16,7 @@ return new class extends Migration
     {
         Schema::create('system_metrics', function (Blueprint $table) {
             $table->id();
-            $table->timestamp('minute')->unique();
+            $table->dateTime('minute')->unique();
             $table->json('data'); // requests, errors, p95, cpu, memory, db, queue, candidates…
         });
 
@@ -26,7 +26,7 @@ return new class extends Migration
             $table->string('level', 8);          // warning, critical
             $table->string('message', 500);
             $table->decimal('value', 12, 2)->nullable();
-            $table->timestamp('opened_at');
+            $table->dateTime('opened_at');
             $table->timestamp('resolved_at')->nullable();
             $table->timestamp('acknowledged_at')->nullable();
             $table->foreignId('acknowledged_by')->nullable()->constrained('users')->nullOnDelete();
@@ -54,7 +54,7 @@ return new class extends Migration
             $table->foreignId('network_device_id')->constrained()->cascadeOnDelete();
             $table->boolean('ok');
             $table->unsignedInteger('latency_ms')->nullable();
-            $table->timestamp('checked_at')->index();
+            $table->dateTime('checked_at')->index();
         });
 
         Schema::create('dr_drills', function (Blueprint $table) {
@@ -64,7 +64,7 @@ return new class extends Migration
             $table->unsignedInteger('rto_seconds')->nullable();   // how long recovery took
             $table->unsignedInteger('rpo_seconds')->nullable();   // how much data could be lost
             $table->foreignId('started_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('started_at');
+            $table->dateTime('started_at');
             $table->timestamp('finished_at')->nullable();
         });
 

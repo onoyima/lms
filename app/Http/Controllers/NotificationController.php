@@ -76,17 +76,21 @@ class NotificationController extends Controller
 
         return Inertia::render('settings/notifications', [
             'categories' => collect(NotificationCategories::ALL)->map(fn ($c, $k) => ['key' => $k, 'label' => $c[0], 'about' => $c[1], 'mandatory' => $c[2],
-                'app' => $c[2] ? true : (bool) ($prefs[$k]['app'] ?? true), 'mail' => $c[2] ? true : (bool) ($prefs[$k]['mail'] ?? true)])->values(),
+                'app' => $c[2] ? true : (bool) ($prefs[$k]['app'] ?? true), 'mail' => $c[2] ? true : (bool) ($prefs[$k]['mail'] ?? true),
+                'sms' => (bool) ($prefs[$k]['sms'] ?? in_array($k, NotificationCategories::SMS_BY_DEFAULT, true))])->values(),
+            // texts only when the institution has SMS and this person has given a mobile number (Profile)
+            'sms' => \App\Services\Sms\SmsSender::enabled() ? ['phone' => $request->user()->phone] : null,
         ]);
     }
 
     public function savePreferences(Request $request): RedirectResponse
     {
-        $data = $request->validate(['prefs' => ['required', 'array'], 'prefs.*.app' => ['boolean'], 'prefs.*.mail' => ['boolean']]);
+        $data = $request->validate(['prefs' => ['required', 'array'], 'prefs.*.app' => ['boolean'], 'prefs.*.mail' => ['boolean'], 'prefs.*.sms' => ['boolean']]);
         $out = [];
         foreach (NotificationCategories::ALL as $k => [, , $mandatory]) {
             if (! $mandatory && isset($data['prefs'][$k])) {
-                $out[$k] = ['app' => (bool) ($data['prefs'][$k]['app'] ?? true), 'mail' => (bool) ($data['prefs'][$k]['mail'] ?? true)];
+                $out[$k] = ['app' => (bool) ($data['prefs'][$k]['app'] ?? true), 'mail' => (bool) ($data['prefs'][$k]['mail'] ?? true)]
+                    + (isset($data['prefs'][$k]['sms']) ? ['sms' => (bool) $data['prefs'][$k]['sms']] : []);
             }
         }
         $request->user()->forceFill(['notification_preferences' => $out])->save();

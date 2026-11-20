@@ -22,7 +22,7 @@ return new class extends Migration
             $table->string('ip', 45)->nullable();
             $table->char('prev_hash', 64)->nullable();
             $table->char('hash', 64);
-            $table->timestamp('created_at', 6);
+            $table->dateTime('created_at', 6)->useCurrent();
 
             $table->index(['tenant_id', 'id']);
             $table->index(['subject_type', 'subject_id']);

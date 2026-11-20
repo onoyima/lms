@@ -25,7 +25,7 @@ const ROLES = {
     'admin@veritas.local': ['/dashboard', '/admin/people', '/admin/academics', '/admin/reports', '/admin/policy', '/admin/audit', '/exams', '/exam-board', '/exam-calendar', '/question-bank', '/meetings', '/meeting-reports', '/venues', '/exam-network', '/notifications', '/help'],
     'lecturer@veritas.local': ['/dashboard', '/learn/courses', '/learn/calendar', '/learn/grades', '/messages', '/meetings', '/meetings/create', '/meeting-reports', '/exam-board', '/marking', '/question-bank/import'],
     'student@veritas.local': ['/dashboard', '/learn/courses', '/learn/calendar', '/learn/registration', '/my/exams', '/my/results', '/messages', '/meetings', '/notifications', '/settings/profile'],
-    'examofficer@veritas.local': ['/dashboard', '/exams', '/exam-board', '/results/1', '/proctor'],
+    'examofficer@veritas.local': ['/dashboard', '/exams', '/exams/quick', '/exam-board', '/results/1', '/proctor'],
 };
 
 async function signIn(browser, email) {
@@ -125,10 +125,16 @@ try {
                 await begin.click();
                 await page.waitForTimeout(2500);
             }
-            const option = page.getByRole('radio').or(page.getByRole('checkbox', { name: /^A/ })).first();
+            // the first question may be objective (pick an option) or written (type an answer)
+            const option = page.getByRole('radio').or(page.getByRole('checkbox', { name: /^A/ })).or(page.getByRole('textbox')).first();
             await option.waitFor({ timeout: 20000 }).catch(() => {});
             if (await option.count()) {
-                await option.click();
+                if ((await option.evaluate((el) => el.tagName)) === 'TEXTAREA' || (await option.getAttribute('type')) === 'text') {
+                    await option.fill('Osmosis is the movement of water across a semi-permeable membrane.');
+                    await page.waitForTimeout(1200);
+                } else {
+                    await option.click();
+                }
                 await page.waitForTimeout(500);
                 (await page.getByText(/[1-9]\d* answered/).count()) ? ok('student answers a question') : fail('student answers', 'answer count did not change');
                 await page.getByRole('button', { name: 'Zoom in' }).click();
@@ -137,7 +143,7 @@ try {
                 await page.getByRole('button', { name: /^Submit exam/ }).click();
                 const dialog = page.getByRole('dialog');
                 (await dialog.isVisible()) ? ok('submit asks for confirmation') : fail('submit confirmation', 'no dialog');
-                (await dialog.getByText(/have not answered these questions/i).count()) ? ok('confirmation lists unanswered questions') : fail('confirmation', 'no unanswered list');
+                (await dialog.getByText(/have not answered these questions|Every question has an answer/i).count()) ? ok('confirmation says what is still unanswered') : fail('confirmation', 'no unanswered summary');
                 await dialog.getByRole('button', { name: 'Go back to my exam' }).click();
                 (await dialog.count()) === 0 ? ok('student goes back to the paper') : fail('go back', 'dialog stayed open');
             } else {

@@ -18,7 +18,6 @@ use App\Models\Coupon;
 use App\Models\SubscriptionEvent;
 use App\Models\TenantAddon;
 use App\Support\Platform\PlatformSettings;
-use App\Services\Media\ImageCompressor;
 use App\Services\Modules\ModuleRegistry;
 use App\Services\Tenancy\TenantProvisioner;
 use App\Support\Tenancy\TenantContext;
@@ -288,7 +287,7 @@ class PlatformController extends Controller
         $data = $request->validate([
             'key' => ['required', 'alpha_dash', 'max:40', Rule::unique('plans', 'key')->ignore($plan?->id)], 'name' => ['required', 'string', 'max:80'],
             'tagline' => ['nullable', 'string', 'max:120'], 'description' => ['nullable', 'string', 'max:500'],
-            'modules' => ['array'], 'modules.*' => ['string'], 'currency' => ['required', 'in:NGN,USD,GHS,KES,ZAR'],
+            'modules' => ['array'], 'modules.*' => ['string'], 'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Za-z]{3}$/'],
             'price_monthly' => ['required', 'numeric', 'min:0'], 'price_yearly' => ['required', 'numeric', 'min:0'], 'student_limit' => ['nullable', 'integer', 'min:1'],
             'price_quarterly' => ['nullable', 'numeric', 'min:0'], 'price_biannual' => ['nullable', 'numeric', 'min:0'],
             'trial_days' => ['nullable', 'integer', 'min:0', 'max:365'], 'grace_days' => ['nullable', 'integer', 'min:0', 'max:180'],
@@ -296,6 +295,7 @@ class PlatformController extends Controller
             'addon_prices' => ['array'], 'addon_prices.*.per' => ['nullable', 'integer', 'min:1'], 'addon_prices.*.price' => ['nullable', 'numeric', 'min:0'],
             'features' => ['array', 'max:12'], 'features.*' => ['string', 'max:120'], 'is_public' => ['boolean'], 'highlighted' => ['boolean'], 'sort' => ['nullable', 'integer'],
         ]);
+        $data['currency'] = strtoupper($data['currency']);
         foreach ($data['modules'] ?? [] as $m) {
             abort_unless($this->modules->exists($m), 422, "Unknown module $m");
         }
@@ -426,7 +426,7 @@ class PlatformController extends Controller
 
     public function settings(): Response
     {
-        return Inertia::render('platform/settings', ['settings' => PlatformSettings::all()]);
+        return Inertia::render('platform/settings', ['settings' => array_filter(PlatformSettings::all(), fn ($k) => ! str_starts_with($k, 'ai_') && ! str_starts_with($k, 'sms_'), ARRAY_FILTER_USE_KEY)]);
     }
 
     public function saveSettings(Request $request): RedirectResponse
@@ -513,20 +513,18 @@ class PlatformController extends Controller
             array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email']))]);
     }
 
-    public function saveBranding(Request $request, ImageCompressor $images): RedirectResponse
+    public function saveBranding(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'brand_name' => ['required', 'string', 'max:120'], 'brand_short_name' => ['nullable', 'string', 'max:40'], 'brand_tagline' => ['nullable', 'string', 'max:80'],
             'brand_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'], 'support_email' => ['nullable', 'email', 'max:190'],
-            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp'], 'favicon' => ['nullable', 'file', 'mimes:png,ico'],
+            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'], 'favicon' => ['nullable', 'file', 'mimes:png,ico', 'max:256'],
             'remove_logo' => ['boolean'], 'remove_favicon' => ['boolean'],
         ]);
         $values = array_map(fn ($v) => strip_tags((string) ($v ?? '')), array_intersect_key($data, array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email'])));
         foreach (['logo' => 'brand_logo_path', 'favicon' => 'brand_favicon_path'] as $field => $key) {
             if ($request->hasFile($field)) {
-                $values[$key] = $field === 'favicon'
-                    ? $images->storeAsFavicon($request->file($field), 'platform', 'public')
-                    : $images->store($request->file($field), 'platform', 'public', ['max_width' => 1024, 'max_height' => 1024]);
+                $values[$key] = $request->file($field)->store('platform', 'public');
             } elseif ($request->boolean('remove_'.$field)) {
                 $values[$key] = '';
             }
@@ -550,13 +548,14 @@ class PlatformController extends Controller
     {
         $data = $request->validate([
             'code' => ['required', 'alpha_dash', 'max:40', Rule::unique('coupons', 'code')->ignore($coupon?->id)], 'description' => ['nullable', 'string', 'max:190'],
-            'kind' => ['required', 'in:percent,fixed'], 'value' => ['required', 'numeric', 'min:0.01'], 'currency' => ['required', 'in:NGN,USD,GHS,KES,ZAR'],
+            'kind' => ['required', 'in:percent,fixed'], 'value' => ['required', 'numeric', 'min:0.01'], 'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Za-z]{3}$/'],
             'plan_ids' => ['array'], 'plan_ids.*' => ['integer', 'exists:plans,id'], 'cycles' => ['array'], 'cycles.*' => [Billing::cycleRule()],
             'max_redemptions' => ['nullable', 'integer', 'min:1'], 'per_tenant' => ['required', 'integer', 'min:1', 'max:100'],
             'starts_at' => ['nullable', 'date'], 'ends_at' => ['nullable', 'date', 'after_or_equal:starts_at'], 'active' => ['boolean'],
         ]);
         abort_if($data['kind'] === 'percent' && $data['value'] > 100, 422, 'A percentage cannot be more than 100.');
         $data['code'] = mb_strtoupper($data['code']);
+        $data['currency'] = strtoupper($data['currency']);
         $data['value'] = $data['kind'] === 'percent' ? (int) $data['value'] : (int) round($data['value'] * 100);
         $data['plan_ids'] = array_map('intval', $data['plan_ids'] ?? []) ?: null;
         $data['cycles'] = ($data['cycles'] ?? []) ?: null;

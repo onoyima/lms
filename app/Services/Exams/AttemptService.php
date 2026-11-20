@@ -204,12 +204,21 @@ class AttemptService
     public function save(Attempt $attempt, array $items): array
     {
         $this->expireIfDue($attempt);
-        $this->guardWritable($attempt);
+
+        // Answers that arrive after time is up are kept if they were written in time on the candidate's
+        // computer (it was offline, or the save was still on its way). Nothing written in time is lost.
+        $late = $this->acceptsLateSync($attempt);
+        $tooLate = [];
+        if ($late) {
+            [$items, $tooLate] = $this->writtenInTime($attempt, $items);
+        } else {
+            $this->guardWritable($attempt);
+        }
 
         $meta = $this->questionMeta($attempt);
 
         $rows = [];
-        $rejected = [];
+        $rejected = $tooLate;
         foreach (array_slice($items, 0, 200) as $item) {
             $qid = (int) ($item['question_id'] ?? 0);
             if (! isset($meta[$qid])) {
@@ -218,6 +227,10 @@ class AttemptService
                 continue;
             }
             $response = $this->normaliseResponse($meta[$qid][0], $item['response'] ?? null, $meta[$qid][1]);
+            // a file answer must be a file this candidate uploaded for this question
+            if (is_array($response) && isset($response['file']) && ! DB::table('attempt_files')->where('id', $response['file']['id'])->where('attempt_id', $attempt->id)->where('question_id', $qid)->exists()) {
+                $response = false;
+            }
             if ($response === false) {
                 $rejected[] = $qid;
 
@@ -240,8 +253,188 @@ class AttemptService
                 'last_seen_at' => now()->format('Y-m-d H:i:s.v'),
             ]);
         }
+        if ($late && ($rows || $tooLate)) {
+            $this->afterLateSync($attempt, count($rows), count($tooLate));
+        }
+        if ($late && ! $rows) {
+            throw new ExamException('This attempt has been submitted.', 'closed', 409);
+        }
 
         return ['saved' => array_column($rows, 'question_id'), 'rejected' => $rejected, 'remaining' => $attempt->remainingSeconds()];
+    }
+
+    /**
+     * Answers from a window the exam has moved away from: kept only for questions with no answer yet,
+     * and only if written in time. Used so an offline computer that was replaced loses nothing.
+     */
+    public function saveMissing(Attempt $attempt, array $items): array
+    {
+        $have = DB::table('attempt_answers')->where('attempt_id', $attempt->id)->whereNotNull('response')->pluck('question_id')->all();
+        $fill = array_values(array_filter($items, fn ($i) => ! in_array((int) ($i['question_id'] ?? 0), $have, true) && ! empty($i['at'])));
+        if (! $fill) {
+            return ['saved' => [], 'rejected' => array_map(fn ($i) => (int) ($i['question_id'] ?? 0), $items)];
+        }
+        if (in_array($attempt->status, Attempt::CLOSED, true) && ! $this->acceptsLateSync($attempt)) {
+            return ['saved' => [], 'rejected' => array_map(fn ($i) => (int) ($i['question_id'] ?? 0), $items)];
+        }
+        [$fill] = $this->writtenInTime($attempt, $fill);
+        $meta = $this->questionMeta($attempt);
+        $rows = [];
+        foreach ($fill as $item) {
+            $qid = (int) $item['question_id'];
+            $response = isset($meta[$qid]) ? $this->normaliseResponse($meta[$qid][0], $item['response'] ?? null, $meta[$qid][1]) : false;
+            if ($response === false || $response === null) {
+                continue;
+            }
+            $rows[] = ['attempt_id' => $attempt->id, 'question_id' => $qid, 'response' => json_encode($response), 'client_seq' => 0, 'flagged' => (bool) ($item['flagged'] ?? false), 'answered_at' => now()->format('Y-m-d H:i:s.v')];
+        }
+        if ($rows) {
+            // client_seq 0 and only where no row has an answer: insert, or fill an empty row
+            foreach ($rows as $r) {
+                $done = DB::table('attempt_answers')->where('attempt_id', $r['attempt_id'])->where('question_id', $r['question_id'])->whereNull('response')
+                    ->update(['response' => $r['response'], 'flagged' => $r['flagged'], 'answered_at' => $r['answered_at']]);
+                if (! $done && ! DB::table('attempt_answers')->where('attempt_id', $r['attempt_id'])->where('question_id', $r['question_id'])->exists()) {
+                    DB::table('attempt_answers')->insertOrIgnore($r);
+                }
+            }
+            DB::table('attempts')->where('id', $attempt->id)->update([
+                'answered_count' => DB::raw('(SELECT COUNT(*) FROM attempt_answers WHERE attempt_answers.attempt_id = '.(int) $attempt->id.' AND attempt_answers.response IS NOT NULL)'),
+            ]);
+            $this->event($attempt, 'moved_window_answers', ['kept' => count($rows)], 2);
+            if (in_array($attempt->fresh()->status, Attempt::CLOSED, true)) {
+                $this->afterLateSync($attempt->fresh(), count($rows), 0);
+            }
+        }
+        $kept = array_column($rows, 'question_id');
+
+        return ['saved' => array_map(fn ($i) => (int) $i['question_id'], $items), 'kept' => $kept];
+    }
+
+    /**
+     * True when time is up (the attempt was closed for time, or is past its deadline) but answers written
+     * before the end may still arrive: within the exam's offline sync window after closing.
+     */
+    public function acceptsLateSync(Attempt $attempt): bool
+    {
+        if ($attempt->status !== 'auto_submitted' || ! in_array($attempt->submit_reason, ['timeout', 'session_closed'], true) || ! $attempt->submitted_at) {
+            return false;
+        }
+        $mins = ExamSettings::settings($attempt->exam->settings)['offline_sync_minutes'];
+
+        return $attempt->submitted_at->copy()->addMinutes($mins)->isFuture();
+    }
+
+    /**
+     * Split answers into those written before time was up (by the candidate's computer clock, corrected
+     * to the server's) and those written after. Answers without a time cannot be placed and are refused.
+     *
+     * @return array{0: list<array>, 1: list<int>}
+     */
+    private function writtenInTime(Attempt $attempt, array $items): array
+    {
+        $end = $attempt->deadline_at->copy()->addSeconds((int) ($attempt->session?->grace_seconds ?? 30));
+        $endsAt = $end;
+        if ($attempt->submit_reason === 'session_closed' && $attempt->submitted_at && $attempt->submitted_at->copy()->addSeconds(5)->lt($end)) {
+            $endsAt = $attempt->submitted_at->copy()->addSeconds(5); // closed early by the exams office
+        }
+        $ok = [];
+        $late = [];
+        foreach ($items as $item) {
+            $at = self::clientTime($item['at'] ?? null);
+            if ($at && $at->lte($endsAt) && $at->gte($attempt->started_at->copy()->subMinute()) && $at->lte(now()->addMinute())) {
+                $ok[] = $item;
+            } else {
+                $late[] = (int) ($item['question_id'] ?? 0);
+            }
+        }
+
+        return [$ok, $late];
+    }
+
+    /** Answers written in time reached the server after closing: mark again and record it for the exams office. */
+    private function afterLateSync(Attempt $attempt, int $kept, int $refused): void
+    {
+        DB::transaction(function () use ($attempt, $kept, $refused) {
+            $locked = Attempt::whereKey($attempt->id)->lockForUpdate()->first();
+            $answers = DB::table('attempt_answers')->where('attempt_id', $locked->id)->orderBy('question_id')->get(['question_id', 'response']);
+            $locked->forceFill(['submission_hash' => hash('sha256', $locked->id.'|'.json_encode($answers))])->save();
+            $this->event($locked, 'late_sync', ['kept' => $kept, 'refused' => $refused], $refused ? 3 : 2);
+            if ($kept) {
+                $this->marker->markAttempt($locked);
+            }
+        });
+        $attempt->refresh();
+    }
+
+    /** A client time: milliseconds since 1970 (already corrected to the server clock) or an ISO date. */
+    public static function clientTime(mixed $v): ?Carbon
+    {
+        try {
+            return match (true) {
+                is_int($v) || (is_string($v) && ctype_digit($v)) => Carbon::createFromTimestampMs((int) $v),
+                is_string($v) && $v !== '' => Carbon::parse($v),
+                default => null,
+            };
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * The candidate's computer went off (power cut, crash, flat battery) or to sleep: give the time back,
+     * up to the exam's limit. The computer reports when it was last running and when it came back; the
+     * server only credits time in which it heard nothing from the candidate and no answer was written,
+     * and never the same gap twice.
+     *
+     * @param  array{from:int|string, to:int|string, kind?:string}  $off
+     * @return int seconds given back
+     */
+    public function creditDeviceOff(Attempt $attempt, array $off, array $items = []): int
+    {
+        $from = self::clientTime($off['from'] ?? null);
+        $to = self::clientTime($off['to'] ?? null);
+        if (! $from || ! $to || $attempt->status !== 'in_progress') {
+            return 0;
+        }
+
+        return DB::transaction(function () use ($attempt, $from, $to, $off, $items) {
+            $a = Attempt::whereKey($attempt->id)->lockForUpdate()->first();
+            if ($a->status !== 'in_progress') {
+                return 0;
+            }
+            $rules = ExamSettings::settings($a->exam->settings);
+            $left = $rules['power_cut_minutes'] * 60 - (int) $a->device_off_seconds;
+            if ($left <= 0) {
+                return 0;
+            }
+            $to = $to->min(now());
+            foreach (array_filter([$a->last_seen_at, $a->started_at, $a->device_off_until]) as $floor) {
+                $from = $from->max($floor);
+            }
+            // an answer written in the gap means the computer was running then
+            foreach ($items as $item) {
+                $at = self::clientTime($item['at'] ?? null);
+                if ($at && $at->gt($from) && $at->lt($to)) {
+                    $from = $at->copy();
+                }
+            }
+            $gap = (int) floor(($to->getTimestampMs() - $from->getTimestampMs()) / 1000);
+            if ($gap < 20) {
+                return 0;
+            }
+            $credit = min($gap, $left);
+            $a->forceFill([
+                'deadline_at' => $a->deadline_at->copy()->addSeconds($credit),
+                'device_off_seconds' => (int) $a->device_off_seconds + $credit,
+                'device_off_until' => $to,
+            ])->save();
+            $kind = ($off['kind'] ?? '') === 'asleep' ? 'device_asleep' : 'device_off';
+            $this->event($a, $kind, ['from' => $from->toIso8601String(), 'to' => $to->toIso8601String(), 'gap_seconds' => $gap, 'credited_seconds' => $credit], 2);
+            \Illuminate\Support\Facades\Cache::forget("attempt:{$a->id}:meta");
+            $attempt->forceFill(['deadline_at' => $a->deadline_at, 'device_off_seconds' => $a->device_off_seconds, 'device_off_until' => $a->device_off_until])->syncOriginal();
+
+            return $credit;
+        });
     }
 
     /** One statement for the whole batch; the newest client_seq wins (MySQL/MariaDB and SQLite). */
@@ -335,8 +528,15 @@ class AttemptService
             }
         }
 
-        $messages = CandidateMessage::where('attempt_id', $attempt->id)->where('direction', 'to_candidate')->whereNull('acknowledged_at')
-            ->orderBy('id')->limit(10)->get(['id', 'kind', 'body', 'created_at']);
+        $messages = collect();
+        // look when a message was flagged, and in any case every two minutes (in case the cache was cleared)
+        if (\Illuminate\Support\Facades\Cache::get(self::messageFlag($attempt->id)) || \Illuminate\Support\Facades\Cache::add(self::messageFlag($attempt->id).':chk', 1, 120)) {
+            $messages = CandidateMessage::where('attempt_id', $attempt->id)->where('direction', 'to_candidate')->whereNull('acknowledged_at')
+                ->orderBy('id')->limit(10)->get(['id', 'kind', 'body', 'created_at']);
+            if ($messages->isEmpty()) {
+                \Illuminate\Support\Facades\Cache::forget(self::messageFlag($attempt->id));
+            }
+        }
 
         return ['attempt' => $this->state($attempt), 'messages' => $messages];
     }
@@ -394,14 +594,35 @@ class AttemptService
     {
         $n = 0;
         Attempt::query()->withoutGlobalScopes()->where('status', 'in_progress')->where('deadline_at', '<', now()->subSeconds(30))
-            ->orderBy('id')->limit(500)->get()->each(function (Attempt $a) use (&$n) {
-                app(\App\Support\Tenancy\TenantContext::class)->run($a->tenant, function () use ($a, &$n) {
-                    $this->submit($a, 'timeout');
-                    $n++;
-                });
+            ->chunkById(500, function ($chunk) use (&$n) {
+                foreach ($chunk as $a) {
+                    app(\App\Support\Tenancy\TenantContext::class)->run($a->tenant, function () use ($a, &$n) {
+                        if ($this->heldForSync($a)) {
+                            return;
+                        }
+                        $this->submit($a, 'timeout');
+                        $n++;
+                    });
+                }
             });
 
         return $n;
+    }
+
+    /**
+     * The server lost contact with this candidate before time ran out (no internet, or the computer went
+     * off). Their answers may be waiting on their computer, and time may be due back, so the attempt
+     * stays open for the exam's offline sync window instead of closing at the deadline.
+     */
+    public function heldForSync(Attempt $attempt): bool
+    {
+        $seen = $attempt->last_seen_at ?? $attempt->started_at;
+        if (! $seen || $seen->gte($attempt->deadline_at->copy()->subSeconds(45))) {
+            return false;
+        }
+        $mins = ExamSettings::settings($attempt->exam->settings)['offline_sync_minutes'];
+
+        return $attempt->deadline_at->copy()->addMinutes($mins)->isFuture();
     }
 
     // ── Proctor / exams office actions ────────────────────────────────────────
@@ -483,7 +704,19 @@ class AttemptService
             'answered' => $attempt->answered_count,
             'violations' => $attempt->violation_count,
             'session_paused' => (bool) $attempt->session?->paused_at,
+            'grace_seconds' => (int) ($attempt->session?->grace_seconds ?? 30),
+            'pace' => \App\Support\Exams\ServerPace::factor(),
+            // time that may still be given back if the computer goes off (power cut, crash)
+            'power_cut_left' => max(0, ExamSettings::settings($attempt->exam?->settings)['power_cut_minutes'] * 60 - (int) $attempt->device_off_seconds),
+            'violation_threshold' => (int) ExamSettings::proctoring($attempt->exam?->proctoring)['violation_threshold'],
+            'violation_action' => (string) ExamSettings::proctoring($attempt->exam?->proctoring)['violation_action'],
         ];
+    }
+
+    /** Cache key that says "there may be unread messages for this attempt" (saves a query on most check-ins). */
+    public static function messageFlag(int $attemptId): string
+    {
+        return "attempt:$attemptId:msg";
     }
 
     public function expireIfDue(Attempt $attempt): void
@@ -550,6 +783,54 @@ class AttemptService
             }
 
             return ['options' => $ids];
+        }
+        if ($type === 'ordering') {
+            // {"order": [option ids in the candidate's order]}: every item exactly once
+            $order = array_map('intval', array_values((array) ($response['order'] ?? [])));
+            if (! $order) {
+                return null;
+            }
+            $ids = array_map('intval', $optionIds);
+            $a = $order;
+            $b = $ids;
+            sort($a);
+            sort($b);
+
+            return $a === $b ? ['order' => $order] : false;
+        }
+        if ($type === 'fill_blank') {
+            // {"blanks": {"1": "text", "2": "text"}}
+            $blanks = [];
+            foreach ((array) ($response['blanks'] ?? []) as $n => $v) {
+                if (! preg_match('/^\d{1,2}$/', (string) $n) || (! is_string($v) && ! is_numeric($v)) || mb_strlen((string) $v) > 500) {
+                    return false;
+                }
+                if (trim((string) $v) !== '') {
+                    $blanks[(string) $n] = (string) $v;
+                }
+            }
+
+            return $blanks ? ['blanks' => $blanks] : null;
+        }
+        if ($type === 'file_upload') {
+            $id = (int) ($response['file']['id'] ?? 0);
+
+            return $id > 0 ? ['file' => ['id' => $id, 'name' => mb_substr((string) ($response['file']['name'] ?? ''), 0, 200), 'size' => (int) ($response['file']['size'] ?? 0)]] : null;
+        }
+        if ($type === 'multi_true_false') {
+            // {"tf": {"<statement id>": true|false}}; a statement left out is unanswered
+            $tf = [];
+            foreach ((array) ($response['tf'] ?? []) as $id => $v) {
+                if ($v === null || $v === '') {
+                    continue;
+                }
+                if (! in_array((string) $id, array_map('strval', $optionIds), true) || ! is_bool($v)) {
+                    return false;
+                }
+                $tf[(string) $id] = $v;
+            }
+
+            return $tf ? ['tf' => $tf] : null;
         }
         if ($type === 'matching') {
             $pairs = [];

@@ -17,9 +17,11 @@ Route::prefix('exam/attempt')->middleware([AuthenticateAttempt::class, 'throttle
     Route::post('heartbeat', [ExamApiController::class, 'heartbeat']);
     Route::post('submit', [ExamApiController::class, 'submit']);
     Route::post('evidence', [ExamApiController::class, 'evidence'])->middleware('throttle:exam-evidence');
+    Route::post('file', [ExamApiController::class, 'file'])->middleware('throttle:exam-evidence');
     Route::post('messages/{message}/ack', [ExamApiController::class, 'acknowledge']);
     Route::post('help', [ExamApiController::class, 'help']);
     Route::post('identity', [ExamApiController::class, 'identity'])->middleware('throttle:exam-identity');
+    Route::post('recording', [ExamApiController::class, 'recording'])->middleware('throttle:exam-recording');
     Route::post('media-token', [\App\Http\Controllers\Media\MediaController::class, 'candidate'])->middleware('throttle:exam-identity');
     Route::post('phone-link', [\App\Http\Controllers\Media\MediaController::class, 'phoneLink'])->middleware('throttle:exam-identity');
 });

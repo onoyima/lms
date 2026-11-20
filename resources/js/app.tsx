@@ -1,4 +1,5 @@
 import { createInertiaApp, router } from '@inertiajs/react';
+import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
 import AppLayout from '@/layouts/app-layout';
@@ -25,7 +26,7 @@ createInertiaApp({
     title: (title) => (title && brand ? `${title} - ${brand}` : title || brand),
     layout: (name) => {
         switch (true) {
-            case name === 'welcome' || name === 'suspended' || name === 'maintenance' || name === 'candidate/exam-room' || name === 'candidate/phone' || name === 'verify' || name === 'meetings/room' || name === 'meetings/guest':
+            case name === 'welcome' || name === 'suspended' || name === 'maintenance' || name === 'candidate/exam-room' || name === 'candidate/phone' || name === 'verify' || name === 'meetings/room' || name === 'meetings/guest' || name === 'exam-link' || name === 'shop/index' || name === 'shop/checkout':
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;
@@ -40,6 +41,7 @@ createInertiaApp({
         return (
             <TooltipProvider delayDuration={0}>
                 {app}
+                <Toaster />
             </TooltipProvider>
         );
     },

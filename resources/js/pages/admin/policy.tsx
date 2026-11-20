@@ -80,6 +80,8 @@ export default function Policy({ policy, eventTypes, defaultSeverity, proctoring
                         <label className="grid gap-1 text-xs">Lowest passing grade<select className={inputClass} value={p.pass_grade_min} onChange={(e) => set('pass_grade_min', e.target.value)}>{Object.keys(p.grading_scale).map((g) => <option key={g}>{g}</option>)}</select></label>
                     </section>
 
+                    <OtherScales value={p.grading_scales ?? {}} onChange={(v) => set('grading_scales', v)} />
+
                     <section className="surface grid content-start gap-3 p-6">
                         <p className="eyebrow">Accounts and sign-in</p>
                         <label className="grid gap-1 text-xs">University email domains (comma-separated; empty allows any)
@@ -186,5 +188,56 @@ export default function Policy({ policy, eventTypes, defaultSeverity, proctoring
                 </section>
             </div>
         </>
+    );
+}
+
+type Scale = { grades: Record<string, number>; points: Record<string, number>; pass: string };
+const scaleText = (sc: Scale) => Object.entries(sc.grades).map(([g, from]) => `${g}=${from}:${sc.points?.[g] ?? 0}`).join(', ');
+const parseScale = (text: string, pass: string): Scale => {
+    const grades: Record<string, number> = {};
+    const points: Record<string, number> = {};
+
+    for (const part of text.split(',')) {
+        const m = /^\s*([^=\s]+)\s*=\s*([\d.]+)\s*(?::\s*([\d.]+))?\s*$/.exec(part);
+
+        if (m) {
+            grades[m[1]] = Number(m[2]);
+            points[m[1]] = Number(m[3] ?? 0);
+        }
+    }
+
+    return { grades, points, pass };
+};
+
+/** Other grading scales (postgraduate, pass/fail, percentage bands…) that an exam can use instead of the main one. */
+function OtherScales({ value, onChange }: { value: Record<string, Scale>; onChange: (v: Record<string, Scale>) => void }) {
+    const [name, setName] = useState('');
+    const rows = Object.entries(value);
+
+    return (
+        <section className="surface grid content-start gap-3 p-6">
+            <p className="eyebrow">Other grading scales</p>
+            <p className="text-xs text-muted-foreground">An exam can use one of these instead of the main scale (Exam › Rules). Write each grade as <span className="font-mono">grade=from%:points</span>, e.g. <span className="font-mono">A=70:4, B=60:3, C=50:2, F=0:0</span>.</p>
+            {rows.map(([n, sc]) => (
+                <div key={n} className="grid gap-2 rounded-xl border border-border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                        <b className="text-sm">{n}</b>
+                        <button type="button" className="text-xs text-status-critical" onClick={() => {
+                            const next = { ...value };
+                            delete next[n];
+                            onChange(next);
+                        }}>Remove</button>
+                    </div>
+                    <input className={inputClass} defaultValue={scaleText(sc)} onBlur={(e) => onChange({ ...value, [n]: parseScale(e.target.value, sc.pass) })} aria-label={`Grades of ${n}`} />
+                    <label className="flex items-center gap-2 text-xs">Lowest passing grade
+                        <select className={`${inputClass} w-24`} value={sc.pass} onChange={(e) => onChange({ ...value, [n]: { ...sc, pass: e.target.value } })}>{Object.keys(sc.grades).map((g) => <option key={g}>{g}</option>)}</select>
+                    </label>
+                </div>
+            ))}
+            <div className="flex flex-wrap gap-2">
+                <input className={`${inputClass} min-w-0 flex-1`} placeholder="Name, e.g. Postgraduate" value={name} onChange={(e) => setName(e.target.value)} />
+                <Button type="button" variant="outline" disabled={!name.trim() || !!value[name.trim()]} onClick={() => (onChange({ ...value, [name.trim()]: parseScale('A=70:4, B=60:3, C=50:2, F=0:0', 'C') }), setName(''))}>Add scale</Button>
+            </div>
+        </section>
     );
 }

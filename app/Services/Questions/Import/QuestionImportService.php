@@ -55,6 +55,76 @@ class QuestionImportService
     }
 
     /**
+     * AI reading: page pictures (photos, scans, or a PDF the browser turned into pictures) or a Word
+     * file. Stored now; read in the background (ReadPaperWithAi); the review page waits for it.
+     *
+     * @param  list<UploadedFile>  $pages
+     */
+    public function uploadForAi(array $pages, ?UploadedFile $word, ?int $courseId, int $userId, string $name): QuestionImport
+    {
+        $dir = 'question-imports/'.Str::uuid();
+        if ($word) {
+            $stored = $word->storeAs($dir, 'original.docx', 'local');
+            $format = 'ai-docx';
+        } else {
+            foreach (array_values($pages) as $i => $p) {
+                $ext = strtolower($p->getClientOriginalExtension() ?: 'png');
+                $p->storeAs($dir.'/pages', sprintf('%03d.%s', $i + 1, in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true) ? $ext : 'png'), 'local');
+            }
+            $stored = $dir.'/pages';
+            $format = 'ai-pages';
+        }
+        $import = QuestionImport::create([
+            'user_id' => $userId, 'course_id' => $courseId, 'original_name' => mb_substr($name, 0, 250),
+            'stored_path' => $stored, 'format' => $format, 'status' => 'reading',
+        ]);
+        $this->audit->record('question_import.ai_started', $import, ['file' => $import->original_name, 'pages' => count($pages)]);
+        \App\Jobs\ReadPaperWithAi::dispatch($import->id, (int) $import->tenant_id);
+
+        return $import;
+    }
+
+    /** AI writes new questions from a brief (topic, types, count, optional notes); reviewed like an upload. */
+    public function writeWithAi(array $brief, ?int $courseId, int $userId): QuestionImport
+    {
+        $dir = 'question-imports/'.Str::uuid();
+        Storage::disk('local')->put($dir.'/brief.json', json_encode($brief, JSON_UNESCAPED_UNICODE));
+        $import = QuestionImport::create([
+            'user_id' => $userId, 'course_id' => $courseId, 'original_name' => mb_substr('AI: '.($brief['topic'] ?? 'questions'), 0, 250),
+            'stored_path' => $dir.'/brief.json', 'format' => 'ai-gen', 'status' => 'reading',
+        ]);
+        $this->audit->record('question_import.ai_writing', $import, ['topic' => $brief['topic'] ?? null, 'count' => $brief['count'] ?? null]);
+        \App\Jobs\ReadPaperWithAi::dispatch($import->id, (int) $import->tenant_id);
+
+        return $import;
+    }
+
+    /** Called by the background job: read, tidy and keep the result for the review page. */
+    public function readWithAi(QuestionImport $import, \App\Services\Ai\PaperReader $reader): void
+    {
+        $base = dirname($import->stored_path);
+        if ($import->format === 'ai-gen') {
+            $read = app(\App\Services\Ai\QuestionWriter::class)->write($import, json_decode(Storage::disk('local')->get($import->stored_path), true) ?: []);
+        } elseif ($import->format === 'ai-docx') {
+            $mediaTmp = Storage::disk('local')->path($base.'/media');
+            $converted = $this->converter->toHtml(Storage::disk('local')->path($import->stored_path), 'sci-docx', $mediaTmp);
+            $html = $this->sanitizer->clean($this->publishMedia($converted['html'], $converted['media'], $mediaTmp, $import));
+            $read = $reader->readHtml($import, $html);
+        } else {
+            $pages = collect(Storage::disk('local')->files($import->stored_path))->sort()->values()->all();
+            $read = $reader->readPages($import, $pages);
+        }
+        $result = [
+            'questions' => array_map(fn ($q) => $this->cleanParsed($q), $read['questions']),
+            'warnings' => $read['warnings'],
+        ];
+        Storage::disk('local')->put($base.'/parsed.json', json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $import->update(['status' => $result['questions'] ? 'parsed' : 'failed', 'question_count' => count($result['questions']),
+            'warnings' => $result['warnings'] ?: ($result['questions'] ? null : ['No questions were found. Check that the pictures show the question paper clearly.'])]);
+        $this->audit->record('question_import.ai_read', $import, ['questions' => count($result['questions']), 'tokens_in' => $read['usage']['input'], 'tokens_out' => $read['usage']['output']]);
+    }
+
+    /**
      * @return array{questions: list<array>, warnings: list<string>}
      */
     public function parse(QuestionImport $import): array
@@ -62,6 +132,9 @@ class QuestionImportService
         $cache = dirname($import->stored_path).'/parsed.json';
         if (Storage::disk('local')->exists($cache)) {
             return json_decode(Storage::disk('local')->get($cache), true);
+        }
+        if (str_starts_with($import->format, 'ai-')) {
+            return ['questions' => [], 'warnings' => []]; // still being read
         }
 
         $absolute = Storage::disk('local')->path($import->stored_path);
@@ -103,7 +176,12 @@ class QuestionImportService
                     'status' => 'draft',
                     'numeric_answer' => $q['type'] === 'numeric' ? ['value' => (float) str_replace(',', '.', (string) $q['answer_text']), 'tolerance' => (float) ($q['tolerance'] ?? 0)] : null,
                     'matching' => $q['type'] === 'matching' ? Question::buildMatching($q['pairs'] ?? [], fn ($h) => $this->sanitizer->clean(e($h))) : null,
-                    'accepted_answers' => $q['type'] === 'short_answer' && ! empty($q['accepted']) ? ['answers' => array_values(array_unique($q['accepted'])), 'case_sensitive' => false] : null,
+                    'accepted_answers' => match (true) {
+                        $q['type'] === 'short_answer' && ! empty($q['accepted']) => ['answers' => array_values(array_unique($q['accepted'])), 'case_sensitive' => false],
+                        $q['type'] === 'fill_blank' => ['blanks' => array_values((array) ($q['blanks'] ?? []))],
+                        $q['type'] === 'file_upload' => ['file' => ['kinds' => ['image', 'pdf', 'document'], 'max_mb' => 10]],
+                        default => null,
+                    },
                     'outcome' => $q['outcome'] ?? null,
                 ]);
                 foreach ($q['options'] as $i => $o) {
