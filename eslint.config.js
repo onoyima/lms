@@ -117,6 +117,10 @@ export default [
             'resources/js/components/ui/*',
             'resources/js/routes/**',
             'resources/js/wayfinder/**',
+            // separate Node programs (desktop exam app, browser test suites, load tools) with their own checks
+            'desktop/**',
+            'tests/e2e/**',
+            'tools/**',
         ],
     },
     prettier, // Turn off all rules that might conflict with Prettier
