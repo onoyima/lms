@@ -34,6 +34,11 @@ class BrowserRecordings
             'camera_kbps' => max(50, (int) $c['camera_kbps']),
             'screen_kbps' => max(50, (int) $c['screen_kbps']),
             'chunk_seconds' => max(2, min(60, (int) $c['chunk_seconds'])),
+            // record in the browser even when live video is on (no recording load on the media server)
+            'always' => ($c['where'] ?? 'browser') !== 'media_server',
+            // progressive / on_submit (keep pieces until submitted) / triggered (short clips) / stream
+            'mode' => $p['recording_mode'],
+            'clip_seconds' => 20,
         ];
     }
 
@@ -44,7 +49,13 @@ class BrowserRecordings
             return true;
         }
 
-        return $a->submitted_at && $a->submitted_at->gt(now()->subMinutes((int) config('platform.recording.accept_after_submit_minutes', 120)));
+        // recordings uploaded after submitting may take longer to arrive
+        $minutes = (int) config('platform.recording.accept_after_submit_minutes', 120);
+        if (ExamSettings::forCandidate($a->exam?->proctoring, $a->user_id, $a->exam_id)['recording_mode'] === 'on_submit') {
+            $minutes = max($minutes, 24 * 60);
+        }
+
+        return $a->submitted_at && $a->submitted_at->gt(now()->subMinutes($minutes));
     }
 
     public function allowedKind(Attempt $a, string $kind): bool

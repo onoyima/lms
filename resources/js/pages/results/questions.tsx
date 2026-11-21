@@ -74,7 +74,7 @@ export default function QuestionResults({ exam, questions, scripts }: { exam: { 
                                     {q.topic && <span className="rounded-md border border-border px-2 py-0.5">{q.topic}</span>}
                                     {q.reports > 0 && <span className="flex items-center gap-1 rounded-md bg-status-warning/15 px-2 py-0.5 font-semibold text-status-warning"><AlertTriangle className="size-3" /> {q.reports} report{q.reports === 1 ? '' : 's'}</span>}
                                 </div>
-                                <RichContent html={q.stem_html ?? ''} className="text-sm" />
+                                <RichContent html={(q.stem_html ?? '').replace(/\[\[(\d{1,2})\]\]/g, '<span class="blank-chip">($1)</span>')} className="text-sm" />
                                 <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
                                     <div><dt className="text-xs text-muted-foreground">Students</dt><dd className="font-semibold tabular-nums">{q.seen}</dd></div>
                                     <div><dt className="text-xs text-muted-foreground">Answered</dt><dd className="font-semibold tabular-nums">{q.answered}</dd></div>

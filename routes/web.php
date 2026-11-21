@@ -18,6 +18,14 @@ use App\Http\Controllers\WellKnownController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [\App\Http\Controllers\LandingController::class, 'show'])->name('home');
+// the public demo: pick a role and look around (sample data, replaced every night)
+Route::get('demo', [\App\Http\Controllers\DemoController::class, 'show'])->name('demo');
+Route::post('demo/{role}', [\App\Http\Controllers\DemoController::class, 'enter'])->where('role', '[a-z]+')->middleware('throttle:20,1,demoin')->name('demo.enter');
+
+// a lab computer opens a computer check by its link; no sign-in needed
+Route::get('check/{code}', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'run'])->where('code', '[a-z0-9]{8}')->middleware('throttle:120,1,ccrun')->name('check.run');
+Route::get('check/{code}/payload', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'payload'])->where('code', '[a-z0-9]{8}')->middleware('throttle:120,1,ccpay')->name('check.payload');
+Route::post('check/{code}/report', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'report'])->where('code', '[a-z0-9]{8}')->middleware('throttle:60,1,ccrep')->name('check.report');
 Route::post('apply', [\App\Http\Controllers\LandingController::class, 'apply'])->middleware('throttle:5,10,apply')->name('apply.store');
 
 // Sign in with a one-time code (email or text message) instead of a password
@@ -477,6 +485,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('sessions/{session}/proctors', [SessionController::class, 'assignProctor'])->name('sessions.proctors.store');
         Route::delete('sessions/{session}/proctors/{assignment}', [SessionController::class, 'removeProctor'])->name('sessions.proctors.destroy');
 
+        Route::get('computer-checks', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'index'])->name('computer-checks.index');
+        Route::post('computer-checks', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'store'])->name('computer-checks.store');
+        Route::get('computer-checks/{check}', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'show'])->name('computer-checks.show');
+        Route::get('computer-checks/{check}/rows', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'rows'])->name('computer-checks.rows');
+        Route::post('computer-checks/{check}/close', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'close'])->name('computer-checks.close');
+        Route::post('computer-checks/{check}/approve', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'approve'])->name('computer-checks.approve');
         Route::get('exam-network', [\App\Http\Controllers\Exam\NetworkController::class, 'index'])->name('exams.network')->middleware('module:cbt_halls');
         Route::get('exam-network/history', [\App\Http\Controllers\Exam\NetworkController::class, 'batch'])->name('exams.network.history')->middleware('module:cbt_halls');
         Route::put('exam-network', [\App\Http\Controllers\Exam\NetworkController::class, 'saveAddress'])->name('exams.network.save')->middleware('module:cbt_halls');
@@ -528,6 +542,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('proctor/availability', [\App\Http\Controllers\Exam\SchedulingController::class, 'saveAvailability'])->name('proctor.availability');
         Route::delete('proctor/availability/{id}', [\App\Http\Controllers\Exam\SchedulingController::class, 'deleteAvailability'])->name('proctor.availability.delete');
         Route::post('proctor/sessions/{session}/action', [ProctorController::class, 'sessionAction'])->name('proctor.session-action');
+        Route::post('proctor/sessions/{session}/batches', [ProctorController::class, 'batchSize'])->name('proctor.batches');
+        Route::post('proctor/sessions/{session}/batches/assign', [ProctorController::class, 'batchAssign'])->name('proctor.batches.assign');
 
         Route::get('incidents', [IncidentController::class, 'index'])->name('incidents.index');
         Route::post('incidents', [IncidentController::class, 'store'])->name('incidents.store');

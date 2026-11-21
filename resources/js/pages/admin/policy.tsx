@@ -156,6 +156,18 @@ export default function Policy({ policy, eventTypes, defaultSeverity, proctoring
                         <p className="pl-6 text-xs text-muted-foreground">Off: whoever sets the paper publishes it in one step. On: the paper is submitted, and someone else approves or returns it.</p>
                     </div>
                     <div className="grid gap-1 border-t pt-4 text-sm">
+                        <label className="grid gap-1">
+                            <span className="font-medium">How exams record the camera and screen</span>
+                            <select className="h-10 w-full max-w-xl rounded-[10px] border border-input bg-card px-3" value={String(p.recording_mode ?? 'progressive')} onChange={(e) => set('recording_mode', e.target.value)}>
+                                <option value="stream">Live streaming: supervisors can watch live, and it is recorded as it goes (most server and internet use)</option>
+                                <option value="progressive">Recorded on each computer and uploaded as it goes (no live watching)</option>
+                                <option value="on_submit">Recorded on each computer and uploaded after submitting (least internet during the exam)</option>
+                                <option value="triggered">Short clips only when something happens (least storage)</option>
+                            </select>
+                        </label>
+                        <p className="text-xs text-muted-foreground">Only for exams that record at all. Each exam can choose differently on its Rules tab.</p>
+                    </div>
+                    <div className="grid gap-1 border-t pt-4 text-sm">
                         <label className="flex items-center gap-2"><input type="checkbox" checked={!!p.auto_rollover} onChange={(e) => set('auto_rollover', e.target.checked)} /> Close each semester and start the next one automatically, using the dates in the academic calendar</label>
                         <label className="flex items-center gap-2 pl-6"><input type="checkbox" checked={p.auto_rollover_copy_content !== false} disabled={!p.auto_rollover} onChange={(e) => set('auto_rollover_copy_content', e.target.checked)} /> Copy last session's course content into the new semester's courses</label>
                         <p className="text-xs text-muted-foreground">A semester only closes once all its results are released; administrators are told if it is waiting.</p>

@@ -66,7 +66,35 @@ class ProctorController extends Controller
                 'done' => json_decode(DB::table('proctor_trainings')->where('exam_session_id', $session->id)->where('user_id', $request->user()->id)->value('tasks') ?? '[]', true),
             ] : null,
             'layout' => array_replace(self::LAYOUT, (array) data_get($request->user()->preferences, 'proctor_layout', [])),
+            'batching' => [
+                'sizes' => \App\Services\Proctoring\ProctorBatches::SIZES,
+                'can_arrange' => $request->user()->can('exams.manage') || $this->isChief($request, $session),
+                'proctors' => ProctorAssignment::where('exam_session_id', $session->id)->with('user:id,name')->get()
+                    ->map(fn ($p) => ['user_id' => $p->user_id, 'name' => $p->user?->name, 'role' => $p->role, 'batches' => array_map('intval', (array) $p->batches)])->values(),
+            ],
         ]);
+    }
+
+    /** Split the sitting into live-proctoring batches of N candidates (or one group). */
+    public function batchSize(Request $request, ExamSession $session, \App\Services\Proctoring\ProctorBatches $batches): JsonResponse
+    {
+        abort_unless($request->user()->can('exams.manage') || $this->isChief($request, $session), 403);
+        $data = $request->validate(['size' => ['nullable', 'integer', 'min:2', 'max:1000']]);
+        $batches->resize($session, $data['size'] ?? null);
+        $this->audit->record('proctor.batches_resized', $session, ['size' => $data['size'] ?? null]);
+
+        return response()->json(['ok' => true, 'batches' => $batches->list($session->fresh())]);
+    }
+
+    /** Give batches to particular supervisors, so each watches their own. */
+    public function batchAssign(Request $request, ExamSession $session, \App\Services\Proctoring\ProctorBatches $batches): JsonResponse
+    {
+        abort_unless($request->user()->can('exams.manage') || $this->isChief($request, $session), 403);
+        $data = $request->validate(['assign' => ['required', 'array'], 'assign.*' => ['array'], 'assign.*.*' => ['integer', 'min:1', 'max:1000']]);
+        $batches->assign($session, $data['assign']);
+        $this->audit->record('proctor.batches_assigned', $session, ['assign' => $data['assign']]);
+
+        return response()->json(['ok' => true, 'batches' => $batches->list($session)]);
     }
 
     public function startTraining(Request $request, \App\Services\Proctoring\TrainingSandbox $sandbox): RedirectResponse
@@ -105,12 +133,27 @@ class ProctorController extends Controller
         $assignment = $this->authorizeSession($request, $session);
         $assignment?->forceFill(['last_seen_at' => now()])->saveQuietly();
 
-        $mine = $assignment && in_array($assignment->role, ['proctor', 'invigilator'], true) && ! $request->boolean('all')
+        // without batches, a proctor sees the candidates given to them; with batches, the batch decides
+        $mine = $assignment && ! $session->proctor_batch_size && in_array($assignment->role, ['proctor', 'invigilator'], true) && ! $request->boolean('all')
             ? DB::table('proctor_candidate')->where('proctor_assignment_id', $assignment->id)->pluck('exam_candidate_id') : null;
+
+        // batches: a supervisor sees one batch at a time, and only the batches they may watch
+        $batcher = app(\App\Services\Proctoring\ProctorBatches::class);
+        $allowed = $session->proctor_batch_size ? $batcher->allowedFor($request->user(), $session, $assignment) : null;
+        $batch = null;
+        if ($session->proctor_batch_size && $request->query('batch') !== 'all') {
+            $batch = max(1, (int) $request->query('batch', $allowed[0] ?? 1));
+            if ($allowed !== null && ! in_array($batch, $allowed, true)) {
+                $batch = $allowed[0];
+            }
+        } elseif ($session->proctor_batch_size && $allowed !== null) {
+            $batch = $allowed[0]; // "all batches" is for those who may watch every batch
+        }
 
         $candidates = ExamCandidate::query()->where('exam_session_id', $session->id)
             ->when($mine, fn ($q) => $q->whereIn('id', $mine))
-            ->with(['user:id,name,identifier', 'seat:id,label'])->get(['id', 'user_id', 'seat_id', 'attendance', 'checked_in_at', 'eligibility', 'extra_time_minutes']);
+            ->when($batch, fn ($q) => $q->where('proctor_batch', $batch))
+            ->with(['user:id,name,identifier', 'seat:id,label'])->get(['id', 'user_id', 'seat_id', 'attendance', 'checked_in_at', 'eligibility', 'extra_time_minutes', 'proctor_batch']);
 
         $attempts = Attempt::where('exam_session_id', $session->id)->whereIn('exam_candidate_id', $candidates->pluck('id'))
             ->orderBy('attempt_no')->get()->keyBy('exam_candidate_id');
@@ -130,7 +173,7 @@ class ProctorController extends Controller
             $offline = $a && $a->isOpen() && (! $a->last_seen_at || $a->last_seen_at->diffInSeconds($now) > 45);
 
             return [
-                'candidate_id' => $c->id,
+                'candidate_id' => $c->id, 'batch' => $c->proctor_batch,
                 'name' => $c->user?->name, 'identifier' => $c->user?->identifier, 'seat' => $c->seat?->label,
                 'attendance' => $c->attendance, 'checked_in' => (bool) $c->checked_in_at, 'eligibility' => $c->eligibility,
                 'attempt' => $a ? [
@@ -162,6 +205,10 @@ class ProctorController extends Controller
                 'alerts' => $rows->sum(fn ($r) => $r['attempt']['incidents'] ?? 0),
             ],
             'proctors_offline' => $proctorsOffline,
+            'batching' => [
+                'size' => $session->proctor_batch_size, 'current' => $batch, 'allowed' => $allowed,
+                'list' => $session->proctor_batch_size ? $batcher->list($session) : [],
+            ],
             'candidates' => $rows,
         ]);
     }

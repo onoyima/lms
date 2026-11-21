@@ -46,6 +46,23 @@ function AnnouncementBanner() {
     ));
 }
 
+/** Shown on every page of the public demo. */
+function DemoBanner() {
+    const demo = (usePage().props as { demo?: boolean }).demo;
+
+    if (!demo) {
+        return null;
+    }
+
+    return (
+        <div role="note" className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-4 py-2.5 text-sm md:mx-6">
+            <span className="flex-1"><strong>Public demo.</strong> Sample data only; nothing is sent to anyone and everything resets every night.</span>
+            <a href="/demo" className="rounded-md border border-current/20 px-3 py-1 font-medium hover:bg-black/5">Try another role</a>
+            <a href="/#apply" className="rounded-md bg-brand px-3 py-1 font-medium text-brand-foreground">Apply for your institution</a>
+        </div>
+    );
+}
+
 /** Shown on every page while the platform team is signed in as this user for support. */
 function SupportBanner() {
     const s = (usePage().props as { impersonation?: { by: string; expires_at: string } | null }).impersonation;
@@ -73,6 +90,7 @@ export default function AppLayout({
     return (
         <AppLayoutTemplate breadcrumbs={breadcrumbs}>
             <SupportBanner />
+            <DemoBanner />
             <AnnouncementBanner />
             <MaintenanceBanner />
             {children}

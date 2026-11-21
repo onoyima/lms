@@ -191,6 +191,7 @@ class ExamUpgradeTest extends TestCase
     public function test_recording_carries_on_in_a_new_part_after_an_interruption_and_stops_at_submit(): void
     {
         config(['platform.livekit' => ['url' => 'wss://media.test', 'api_url' => 'https://media.test', 'key' => 'APIkey1', 'secret' => str_repeat('s', 40), 'recordings_path' => '/recordings']]);
+        config(['platform.recording.where' => 'media_server']);
         $this->setUpPlatform();
         $c = $this->candidate($this->sitting($this->cbtExam(['proctoring' => ['require_consent' => false, 'live_video' => true, 'record_video' => true]])));
         $token = $this->startAs($c)->json('token');

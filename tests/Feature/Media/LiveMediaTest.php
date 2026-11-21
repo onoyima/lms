@@ -21,6 +21,7 @@ class LiveMediaTest extends TestCase
     {
         parent::setUp();
         config(['platform.livekit' => ['url' => 'wss://media.test', 'api_url' => 'https://media.test', 'key' => 'APIkey1', 'secret' => str_repeat('s', 40), 'recordings_path' => '/recordings']]);
+        config(['platform.recording.where' => 'media_server']); // these tests cover recording on the media server
     }
 
     private function claims(string $jwt): array
@@ -30,7 +31,7 @@ class LiveMediaTest extends TestCase
 
     private function liveExam(array $p = [])
     {
-        return $this->cbtExam(['proctoring' => array_merge(['require_consent' => false, 'live_video' => true, 'record_video' => true, 'microphone' => true, 'second_camera' => true], $p)]);
+        return $this->cbtExam(['proctoring' => array_merge(['require_consent' => false, 'recording_mode' => 'stream', 'live_video' => true, 'record_video' => true, 'microphone' => true, 'second_camera' => true], $p)]);
     }
 
     private function hook(array $event)

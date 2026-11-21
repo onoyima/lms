@@ -253,4 +253,16 @@ class ExamApiController extends Controller
 
         return response()->json(['ok' => true], 201);
     }
+
+    /** The exam screen tells the exams office about a computer problem (script error, answers not saving, storage full). */
+    public function problem(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'kind' => ['required', 'in:script_error,save_failed,storage_full,server_error,camera_error'],
+            'message' => ['nullable', 'string', 'max:300'],
+        ]);
+        app(\App\Services\Exams\ComputerHealth::class)->problem($this->attempt($request), $request, $data['kind'], (string) ($data['message'] ?? ''));
+
+        return response()->json(['ok' => true]);
+    }
 }

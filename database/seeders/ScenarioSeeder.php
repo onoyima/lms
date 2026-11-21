@@ -49,9 +49,9 @@ class ScenarioSeeder extends Seeder
     public function run(): void
     {
         $this->password = env('SEED_ADMIN_PASSWORD') ?: 'ChangeMe!2026';
-        $tenant = Tenant::where('slug', 'veritas')->firstOrFail();
+        $tenant = Tenant::where('slug', SampleInstitution::$slug)->firstOrFail();
         app(TenantContext::class)->run($tenant, function () use ($tenant) {
-            $admin = User::where('email', 'admin@veritas.local')->firstOrFail();
+            $admin = User::where('email', SampleInstitution::email('admin'))->firstOrFail();
             auth()->setUser($admin);
             $staff = $this->people();
             $venues = $this->campuses();
@@ -63,8 +63,10 @@ class ScenarioSeeder extends Seeder
             $this->operations($tenant);
             auth()->forgetUser();
         });
-        $this->platform();
-        $this->monitoring();
+        if (! SampleInstitution::$institutionOnly) {
+            $this->platform();
+            $this->monitoring();
+        }
         $this->command?->info('Scenario data seeded. Every role signs in as <role>@veritas.local with the demo password.');
     }
 
@@ -88,13 +90,13 @@ class ScenarioSeeder extends Seeder
         ];
         $staff = [];
         foreach ($roles as $key => [$name, $role]) {
-            $staff[$key] = $this->user("$key@veritas.local", $name, 'staff', 'STAFF/'.str_pad((string) (100 + count($staff)), 4, '0', STR_PAD_LEFT), [$role]);
+            $staff[$key] = $this->user(SampleInstitution::email($key), $name, 'staff', 'STAFF/'.str_pad((string) (100 + count($staff)), 4, '0', STR_PAD_LEFT), [$role]);
         }
         $first = ['Chinedu', 'Aisha', 'Tobi', 'Ngozi', 'Emeka', 'Halima', 'Femi', 'Zainab', 'Ifeoma', 'Musa', 'Bisi', 'Uche', 'Kelechi', 'Fatima', 'Dayo', 'Amaka', 'Sani', 'Yemi', 'Obinna', 'Hauwa'];
         $last = ['Okoro', 'Abubakar', 'Adeleke', 'Nnaji', 'Ogunleye', 'Suleiman', 'Ibe', 'Lawal', 'Eze', 'Danladi'];
         $programme = \App\Models\Programme::where('code', 'BSC-CHM')->first();
         foreach (range(2, 21) as $n) {
-            $u = $this->user(sprintf('student%02d@veritas.local', $n), $first[$n - 2].' '.$last[$n % 10], 'student', sprintf('VUG/CHM/26/%04d', $n), ['student']);
+            $u = $this->user(SampleInstitution::email(sprintf('student%02d', $n)), $first[$n - 2].' '.$last[$n % 10], 'student', sprintf('VUG/CHM/26/%04d', $n), ['student']);
             \App\Models\StudentProfile::updateOrCreate(['user_id' => $u->id], ['programme_id' => $programme?->id, 'level' => 100, 'academic_status' => 'active', 'entry_year' => 2026]);
         }
 
@@ -147,8 +149,8 @@ class ScenarioSeeder extends Seeder
         $h->save('policy', array_replace($p, [
             'max_exams_per_day' => 2,
             'incident_contacts' => [
-                ['role' => 'Exams officer', 'name' => 'Mrs. Funke Adeyemi', 'phone' => '0803 000 1111', 'email' => 'examofficer@veritas.local', 'hours' => 'Exam days 7am–6pm'],
-                ['role' => 'ICT on call', 'name' => 'Mr. Tunde Bakare', 'phone' => '0803 000 2222', 'email' => 'ict@veritas.local', 'hours' => 'Exam days 7am–8pm'],
+                ['role' => 'Exams officer', 'name' => 'Mrs. Funke Adeyemi', 'phone' => '0803 000 1111', 'email' => SampleInstitution::email('examofficer'), 'hours' => 'Exam days 7am–6pm'],
+                ['role' => 'ICT on call', 'name' => 'Mr. Tunde Bakare', 'phone' => '0803 000 2222', 'email' => SampleInstitution::email('ict'), 'hours' => 'Exam days 7am–8pm'],
                 ['role' => 'Chief invigilator', 'name' => 'Mr. Yusuf Danjuma', 'phone' => '0803 000 3333', 'hours' => 'During sittings'],
             ],
             'exam_day_notice' => "Bring your ID card and exam slip.\nPhones and smart watches go in the bag area at the front of the hall.",
@@ -277,10 +279,10 @@ class ScenarioSeeder extends Seeder
     private function operations(Tenant $tenant): void
     {
         if (! DB::table('mail_logs')->where('tenant_id', $tenant->id)->exists()) {
-            foreach ([['student02@veritas.local', 'Exam timetable published', 'sent', null], ['student03@veritas.local', 'Your request: approved', 'sent', null],
-                ['student04@veritas.local', 'Problem set 1 marked', 'bounced', 'Mailbox full'], ['old.address@yahoo.example', 'Exam slip ready', 'failed', 'Connection to the mail server timed out']] as $i => [$to, $subj, $st, $err]) {
+            foreach ([[SampleInstitution::email('student02'), 'Exam timetable published', 'sent', null], [SampleInstitution::email('student03'), 'Your request: approved', 'sent', null],
+                [SampleInstitution::email('student04'), 'Problem set 1 marked', 'bounced', 'Mailbox full'], ['old.address@yahoo.example', 'Exam slip ready', 'failed', 'Connection to the mail server timed out']] as $i => [$to, $subj, $st, $err]) {
                 DB::table('mail_logs')->insert(['tenant_id' => $tenant->id, 'to' => $to, 'subject' => $subj, 'kind' => 'App\\Notifications\\LmsNotice', 'status' => $st, 'error' => $err,
-                    'message_id' => Str::random(24).'@veritas.local', 'created_at' => now()->subHours(6 - $i), 'updated_at' => now()->subHours(6 - $i)]);
+                    'message_id' => Str::random(24).'@'.SampleInstitution::$domain, 'created_at' => now()->subHours(6 - $i), 'updated_at' => now()->subHours(6 - $i)]);
             }
         }
         foreach ([['Main gate card readers', ['attendance.write'], ['10.20.0.0/16']], ['Registry data warehouse', ['analytics.read'], ['10.0.5.20']], ['Student information system', ['sis.write', 'results.read'], ['10.0.5.21']]] as [$name, $scopes, $ips]) {

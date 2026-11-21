@@ -36,7 +36,7 @@ export default function Script({ exam, attempt, items, pending, needsApproval }:
                                     {it.dropped ? 'taken out' : `${it.score ?? 0} / ${it.mark}`}{it.award_all ? ' · full marks for all' : ''}
                                 </span>
                             </div>
-                            <RichContent html={it.stem_html ?? ''} className="text-sm" />
+                            <RichContent html={(it.stem_html ?? '').replace(/\[\[(\d{1,2})\]\]/g, '<span class="blank-chip">($1)</span>')} className="text-sm" />
                             {editing === it.question_id ? (
                                 <Correct examId={exam.id} attemptId={attempt.id} item={it} needsApproval={needsApproval} onDone={() => setEditing(null)} />
                             ) : (

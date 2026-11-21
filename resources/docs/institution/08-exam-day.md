@@ -18,6 +18,18 @@ Proctoring > open the sitting's console. You see each candidate's status, answer
 - Message or warn a candidate from the console. Pausing a candidate, or the whole sitting (*Emergency pause*), needs the chief invigilator or exams officer.
 - Power or network failure: record a *technical* incident. Answers are kept; time lost is restored (see below).
 
+## Live batches
+
+For large sittings, split the candidates into **batches** (Batch size on the console: 20, 30, 50, 60, 100, 200…). Each batch has its own live-video room, so a supervisor watches one batch at a time and the media server only carries the batches being watched. Switch batches with one click.
+
+- **Give batches to supervisors** (exams office or chief invigilator): tick the batches each supervisor watches. A supervisor with batches sees only those; the chief invigilator and the exams office can open any batch.
+- **Recording does not depend on watching.** Every candidate's camera (and screen, where the exam asks) is recorded by their own browser and uploaded in pieces, whether or not their batch is on anyone's screen.
+- Candidates added later join the last batch. Re-batching during a sitting moves candidates' live video to their new room without interrupting them.
+
+## AI alerts
+
+Face, looking-away, noise and covered-camera alerts are confirmed over several frames and seconds on the candidate's computer before they are reported, and the picture is kept. They never count as warning strikes, so they cannot lock or submit an exam; they open a review item for a person.
+
 ## When the internet or the power goes
 
 - **Internet lost:** the candidate sees a red notice and keeps writing. Every answer is saved on their computer (twice, so even a crash keeps it) and sent automatically, in order, when the connection returns. Their clock keeps running, because they are still writing. If they reload the page or restart the browser while offline, the exam reopens from the computer.

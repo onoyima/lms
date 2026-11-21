@@ -13,8 +13,11 @@ type AttemptRow = {
     id: number; status: string; channel: string; client_status: string; remaining: number; answered: number; total: number; violations: number; risk: number;
     last_seen: string | null; snapshot_id: number | null; incidents: number; help: { id: number; body: string }[];
 };
-type Row = { candidate_id: number; name: string; identifier: string | null; seat: string | null; attendance: string; checked_in: boolean; eligibility: string; attempt: AttemptRow | null };
-type Live = { server_time: string; session: { paused: boolean; status: string }; summary: Record<string, number>; proctors_offline: string[]; candidates: Row[] };
+type Row = { candidate_id: number; batch?: number | null; name: string; identifier: string | null; seat: string | null; attendance: string; checked_in: boolean; eligibility: string; attempt: AttemptRow | null };
+type Batch = { n: number; total: number; writing: number; first: string | null; last: string | null; supervisors: { id: number; name: string }[] };
+type Batching = { size: number | null; current: number | null; allowed: number[] | null; list: Batch[] };
+type Live = { server_time: string; session: { paused: boolean; status: string }; summary: Record<string, number>; proctors_offline: string[]; candidates: Row[]; batching?: Batching };
+type BatchSetup = { sizes: number[]; can_arrange: boolean; proctors: { user_id: number; name: string; role: string; batches: number[] }[] };
 type Timeline = { events: { id: number; type: string; severity: number; created_at: string; data: unknown }[]; messages: { id: number; direction: string; kind: string; body: string; created_at: string; acknowledged_at: string | null }[]; evidence: { id: number; kind: string; captured_at: string }[]; incidents: { id: number; title: string; severity: string; status: string }[];
     recordings?: { id: number; kind: string; status: string; duration_seconds: number | null; started_at: string | null; browser?: boolean; pieces?: number; missing?: number; has_start?: boolean }[];
     identity?: { checks: { id: number; kind: string; result: string; evidence_file_id: number | null; created_at: string }[]; reference: { status: string; enrolment: boolean; id: boolean } | null } };
@@ -85,24 +88,18 @@ function LinkFigures({ tile }: { tile: Tile }) {
 type Layout = { columns: number; cameras: boolean; sort: 'risk' | 'seat' | 'name' | 'progress'; only_flagged: boolean; compact: boolean };
 const GRID: Record<number, string> = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-2 lg:grid-cols-3', 4: 'sm:grid-cols-3 lg:grid-cols-4', 6: 'sm:grid-cols-4 lg:grid-cols-6', 8: 'sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8' };
 
-export default function Console({ session, canManage, isChief, layout: initialLayout, training, contacts = [] }: { session: { id: number; exam: string; name: string | null; venue: string | null; mode: string; starts_at: string; ends_at: string }; canManage: boolean; isChief: boolean; layout: Layout; training: { tasks: Record<string, string>; done: string[] } | null; contacts?: IncidentContact[] }) {
+export default function Console({ session, canManage, isChief, layout: initialLayout, training, contacts = [], batching: setup }: { session: { id: number; exam: string; name: string | null; venue: string | null; mode: string; starts_at: string; ends_at: string }; canManage: boolean; isChief: boolean; layout: Layout; training: { tasks: Record<string, string>; done: string[] } | null; contacts?: IncidentContact[]; batching?: BatchSetup }) {
     const [layout, setLayoutState] = useState<Layout>(initialLayout);
     const [tiles, setTiles] = useState<Tile[]>([]);
     const [liveMode, setLiveMode] = useState<'off' | 'connecting' | 'on' | 'unavailable'>('off');
     const [listening, setListening] = useState<string | null>(null);
     const liveRoom = useRef<{ disconnect: () => Promise<void> } | null>(null);
-    const toggleLive = async () => {
-        if (liveRoom.current) {
-            await liveRoom.current.disconnect();
-            liveRoom.current = null;
-            setTiles([]);
-            setLiveMode('off');
-
-            return;
-        }
-
+    // the batch on screen: live video, pictures and the list show this batch only
+    const [batch, setBatchState] = useState<number | null>(null);
+    const batchRef = useRef<number | null>(null);
+    const connectLive = async (forBatch: number | null) => {
         setLiveMode('connecting');
-        const res = await fetch(`/proctor/sessions/${session.id}/media-token`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+        const res = await fetch(`/proctor/sessions/${session.id}/media-token${forBatch ? `?batch=${forBatch}` : ''}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
         const data = res.ok ? ((await res.json()) as { enabled: boolean; url?: string; token?: string }) : null;
 
         if (!data?.enabled || !data.url || !data.token) {
@@ -118,6 +115,13 @@ export default function Console({ session, canManage, isChief, layout: initialLa
             setLiveMode('unavailable');
         }
     };
+    const stopLive = async () => {
+        await liveRoom.current?.disconnect();
+        liveRoom.current = null;
+        setTiles([]);
+        setLiveMode('off');
+    };
+    const toggleLive = async () => (liveRoom.current ? stopLive() : connectLive(batchRef.current));
     useEffect(() => () => void liveRoom.current?.disconnect(), []);
     const tileFor = (attemptId: number | undefined, source: string, phone = false) =>
         attemptId ? tiles.find((t) => t.identity === `c-${attemptId}${phone ? '-phone' : ''}` && t.source === source) : undefined;
@@ -133,11 +137,27 @@ export default function Console({ session, canManage, isChief, layout: initialLa
     const [error, setError] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
-        const res = await fetch(`/proctor/sessions/${session.id}/live${canManage ? '?all=1' : ''}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+        const q = new URLSearchParams();
+
+        if (canManage) {
+            q.set('all', '1');
+        }
+
+        if (batchRef.current) {
+            q.set('batch', String(batchRef.current));
+        }
+
+        const res = await fetch(`/proctor/sessions/${session.id}/live?${q}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
 
         if (res.ok) {
-            setLive(await res.json());
+            const data = (await res.json()) as Live;
+            setLive(data);
             setError(null);
+
+            if (data.batching?.current !== batchRef.current) {
+                batchRef.current = data.batching?.current ?? null;
+                setBatchState(batchRef.current);
+            }
         } else {
             setError('Lost connection to the server — retrying.');
         }
@@ -157,6 +177,42 @@ export default function Console({ session, canManage, isChief, layout: initialLa
 
         fetch(`/proctor/attempts/${selected.attempt.id}/timeline`, { headers: { Accept: 'application/json' } }).then(async (r) => r.ok && setTimeline(await r.json()));
     }, [selected, live]);
+
+    /** Switch to another batch: the list refreshes and live video moves to that batch's room. */
+    const showBatch = async (n: number) => {
+        batchRef.current = n;
+        setBatchState(n);
+        setSelected(null);
+        const wasLive = !!liveRoom.current;
+
+        if (wasLive) {
+            await stopLive();
+        }
+
+        await refresh();
+
+        if (wasLive) {
+            await connectLive(n);
+        }
+    };
+    const [arranging, setArranging] = useState(false);
+    const [given, setGiven] = useState<Record<number, number[]>>(() => Object.fromEntries((setup?.proctors ?? []).map((p) => [p.user_id, p.batches])));
+    const resize = async (size: number | null) => {
+        if (liveRoom.current) {
+            await stopLive();
+        }
+
+        await sendJson(`/proctor/sessions/${session.id}/batches`, 'POST', { size });
+        batchRef.current = null;
+        setBatchState(null);
+        await refresh();
+    };
+    const toggleGiven = (userId: number, n: number) => setGiven((g) => ({ ...g, [userId]: (g[userId] ?? []).includes(n) ? (g[userId] ?? []).filter((b) => b !== n) : [...(g[userId] ?? []), n].sort((a, b) => a - b) }));
+    const saveGiven = async () => {
+        await sendJson(`/proctor/sessions/${session.id}/batches/assign`, 'POST', { assign: given });
+        setArranging(false);
+        refresh();
+    };
 
     const act = async (attemptId: number, action: string, extra: Record<string, unknown> = {}) => {
         await sendJson(`/proctor/attempts/${attemptId}/action`, 'POST', { action, ...extra });
@@ -273,7 +329,7 @@ export default function Console({ session, canManage, isChief, layout: initialLa
                         <label className="flex items-center gap-1.5"><input type="checkbox" checked={layout.compact} onChange={(e) => setLayout({ compact: e.target.checked })} /> Hide details</label>
                         <Button size="sm" className={liveMode === 'on' ? 'bg-[#dc2626] text-white hover:bg-[#b91c1c]' : 'border border-white/20 bg-transparent text-white hover:bg-white/10'} onClick={toggleLive} disabled={liveMode === 'connecting'}>
                             <span className={`size-2 rounded-full ${liveMode === 'on' ? 'animate-pulse bg-white' : 'bg-white/40'}`} />
-                            {liveMode === 'on' ? `Live · ${new Set(tiles.map((t) => t.identity)).size} streams` : liveMode === 'connecting' ? 'Connecting…' : 'Watch live'}
+                            {liveMode === 'on' ? `Live${batch ? ` · batch ${batch}` : ''} · ${new Set(tiles.map((t) => t.identity)).size} streams` : liveMode === 'connecting' ? 'Connecting…' : batch ? `Watch batch ${batch} live` : 'Watch live'}
                         </Button>
                         {liveMode === 'unavailable' && <span className="text-[#fbbf24]">Live video is not set up — showing the latest pictures.</span>}
                         <details className="ml-auto">
@@ -282,6 +338,69 @@ export default function Console({ session, canManage, isChief, layout: initialLa
                         </details>
                     </div>
                 </div>
+
+                {/* batches: watch one batch at a time; the exams office or chief invigilator arranges them */}
+                {(!!live?.batching?.size || setup?.can_arrange) && (
+                    <div className="mx-4 mt-3 grid gap-2 rounded-lg border border-white/10 bg-white/[.03] p-3 text-xs md:mx-6">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-white">Live batches</span>
+                            {live?.batching?.size ? (
+                                <span className="text-white/50">{live.batching.size} candidates each · {live.batching.list.length} batches · recording continues for every candidate</span>
+                            ) : (
+                                <span className="text-white/50">Everyone is in one group. Split large sittings so each supervisor watches one batch at a time.</span>
+                            )}
+                            {setup?.can_arrange && (
+                                <span className="ml-auto flex items-center gap-2">
+                                    <label className="flex items-center gap-1.5">
+                                        Batch size
+                                        <select aria-label="Batch size" className="h-8 rounded-md border border-white/15 bg-[#16191d] px-1.5 text-white" value={live?.batching?.size ?? ''} onChange={(e) => resize(e.target.value ? Number(e.target.value) : null)}>
+                                            <option value="">One group</option>
+                                            {[...new Set([...setup.sizes, ...(live?.batching?.size ? [live.batching.size] : [])])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n} per batch</option>)}
+                                        </select>
+                                    </label>
+                                    {!!live?.batching?.size && setup.proctors.length > 0 && (
+                                        <Button size="sm" variant="outline" className="h-8 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white" onClick={() => setArranging((v) => !v)}>Give batches to supervisors</Button>
+                                    )}
+                                </span>
+                            )}
+                        </div>
+                        {!!live?.batching?.list.length && (
+                            <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Batches">
+                                {live.batching.list.map((b) => {
+                                    const mayWatch = live.batching?.allowed === null || live.batching?.allowed?.includes(b.n);
+                                    const on = batch === b.n;
+
+                                    return (
+                                        <button key={b.n} role="tab" aria-selected={on} disabled={!mayWatch} onClick={() => showBatch(b.n)}
+                                            className={`grid min-w-[8.5rem] gap-0.5 rounded-lg border px-2.5 py-1.5 text-left transition ${on ? 'border-[#60a5fa] bg-[#1e3a5f] text-white' : 'border-white/10 bg-white/[.04] text-white/80 hover:bg-white/10'} disabled:cursor-not-allowed disabled:opacity-35`}>
+                                            <span className="flex items-center justify-between gap-2 font-semibold">Batch {b.n}<span className="font-normal text-white/60 tabular-nums">{b.writing}/{b.total} writing</span></span>
+                                            <span className="truncate font-mono text-[10px] text-white/50">{b.first}{b.last && b.last !== b.first ? ` – ${b.last}` : ''}</span>
+                                            <span className="truncate text-[10px] text-white/60">{b.supervisors.length ? b.supervisors.map((x) => x.name).join(', ') : 'No supervisor given'}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        {arranging && setup && (
+                            <div className="grid gap-2 rounded-md border border-white/10 bg-[#16191d] p-3">
+                                <p className="text-white/60">Tick the batches each supervisor watches. A supervisor with batches sees only those; the chief invigilator and the exams office can open any batch.</p>
+                                {setup.proctors.map((p) => (
+                                    <div key={p.user_id} className="flex flex-wrap items-center gap-1.5">
+                                        <span className="w-44 truncate text-white">{p.name} <span className="text-white/40">({p.role})</span></span>
+                                        {(live?.batching?.list ?? []).map((b) => {
+                                            const on = (given[p.user_id] ?? []).includes(b.n);
+
+                                            return (
+                                                <button key={b.n} onClick={() => toggleGiven(p.user_id, b.n)} aria-pressed={on} className={`size-8 rounded-md border text-xs font-semibold ${on ? 'border-[#60a5fa] bg-[#2563eb] text-white' : 'border-white/15 text-white/70 hover:bg-white/10'}`}>{b.n}</button>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                                <div className="flex gap-2"><Button size="sm" onClick={saveGiven}>Save</Button><Button size="sm" variant="outline" className="border-white/20 bg-transparent text-white" onClick={() => setArranging(false)}>Cancel</Button></div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {training && (
                     <div className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/15 p-3 text-sm md:mx-6">

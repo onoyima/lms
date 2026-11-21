@@ -13,9 +13,17 @@ use Inertia\Response;
 /** The public website: what the platform does, prices, and the form to apply. */
 class LandingController extends Controller
 {
-    public function show(): Response
+    public function show(Request $request): Response
     {
+        // the platform administrator chooses the design; they (only) can preview the others with ?design=
+        $design = (string) \App\Support\Platform\PlatformSettings::all()['landing_design'];
+        if ($request->user()?->isPlatformAdmin() && in_array($request->query('design'), ['paper', 'campus', 'midnight'], true)) {
+            $design = (string) $request->query('design');
+        }
+
         return Inertia::render('welcome', [
+            'demo' => (bool) \App\Support\Platform\PlatformSettings::all()['demo_enabled'],
+            'design' => in_array($design, ['paper', 'campus', 'midnight'], true) ? $design : 'paper',
             'plans' => Plan::where('is_public', true)->orderBy('sort')->get()->map(fn (Plan $p) => [
                 'id' => $p->id, 'key' => $p->key, 'name' => $p->name, 'tagline' => $p->tagline, 'description' => $p->description,
                 'monthly' => $p->price_monthly ? Billing::money((int) $p->price_monthly, $p->currency) : null,

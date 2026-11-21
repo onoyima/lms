@@ -25,15 +25,26 @@ class LiveKit
         return (string) config('platform.livekit.url');
     }
 
-    public function room(ExamSession $s): string
+    /** One room per sitting, or one per proctoring batch when the sitting is split into batches. */
+    public function room(ExamSession $s, ?int $batch = null): string
     {
-        return 'vt'.$s->tenant_id.'-s'.$s->id;
+        return 'vt'.$s->tenant_id.'-s'.$s->id.($batch ? '-b'.$batch : '');
+    }
+
+    /** The room this candidate publishes to: their batch's room. */
+    public function roomFor(Attempt $a): string
+    {
+        $batch = $a->session?->proctor_batch_size
+            ? (int) \App\Models\ExamCandidate::whereKey($a->exam_candidate_id)->value('proctor_batch') ?: null
+            : null;
+
+        return $this->room($a->session, $batch);
     }
 
     /** Candidate in an attempt: publish only, never subscribe to other candidates. */
     public function candidateToken(Attempt $a, array $sources): string
     {
-        return $this->token('c-'.$a->id, $a->user?->name ?? 'Candidate', $this->room($a->session), [
+        return $this->token('c-'.$a->id, $a->user?->name ?? 'Candidate', $this->roomFor($a), [
             'roomJoin' => true, 'canPublish' => true, 'canSubscribe' => false, 'canPublishData' => false,
             'canPublishSources' => array_values($sources),
         ], 3 * 3600, ['attempt' => $a->id, 'role' => 'candidate']);
@@ -42,15 +53,15 @@ class LiveKit
     /** The candidate's phone as a second camera. */
     public function phoneToken(Attempt $a): string
     {
-        return $this->token('c-'.$a->id.'-phone', ($a->user?->name ?? 'Candidate').' (phone)', $this->room($a->session), [
+        return $this->token('c-'.$a->id.'-phone', ($a->user?->name ?? 'Candidate').' (phone)', $this->roomFor($a), [
             'roomJoin' => true, 'canPublish' => true, 'canSubscribe' => false, 'canPublishData' => false, 'canPublishSources' => ['camera'],
         ], 3 * 3600, ['attempt' => $a->id, 'role' => 'phone']);
     }
 
     /** Proctors watch without being seen; they may speak to the room only when talk is allowed. */
-    public function proctorToken(ExamSession $s, int $userId, string $name): string
+    public function proctorToken(ExamSession $s, int $userId, string $name, ?int $batch = null): string
     {
-        return $this->token('p-'.$userId, $name, $this->room($s), [
+        return $this->token('p-'.$userId, $name, $this->room($s, $batch), [
             'roomJoin' => true, 'canPublish' => false, 'canSubscribe' => true, 'canPublishData' => false, 'hidden' => true,
         ], 8 * 3600, ['role' => 'proctor']);
     }
@@ -107,7 +118,7 @@ class LiveKit
         $identity = 'c-'.$a->id.($kind === 'phone' ? '-phone' : '');
         $file = trim((string) config('platform.livekit.recordings_path'), '/').'/t'.$a->tenant_id.'/a'.$a->id.'/'.$kind.'-{time}.mp4';
         $res = $this->twirp('StartParticipantEgress', [
-            'room_name' => $this->room($a->session), 'identity' => $identity,
+            'room_name' => $this->roomFor($a), 'identity' => $identity,
             'screen_share' => $kind === 'screen', 'preset' => 'H264_720P_30',
             'file_outputs' => [['filepath' => '/'.$file, 'file_type' => 'MP4']],
         ]);

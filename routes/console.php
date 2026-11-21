@@ -60,6 +60,8 @@ Artisan::command('system:health', function () {
 })->purpose('Show platform health');
 
 Schedule::command('exams:sweep')->everyMinute()->withoutOverlapping();
+// the public demo is wiped and refilled every night (only when the platform administrator has switched it on)
+Schedule::command('demo:reset')->dailyAt('03:30')->withoutOverlapping();
 
 // Wipe hall-computer approvals once each sitting is over, so the next exam starts with a clean list (rows stay as history)
 Artisan::command('exams:clear-computers', function () {

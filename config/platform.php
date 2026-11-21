@@ -50,6 +50,11 @@ return [
         'screen_kbps' => (int) env('RECORDING_SCREEN_KBPS', 200),
         'chunk_seconds' => (int) env('RECORDING_CHUNK_SECONDS', 10),
         'accept_after_submit_minutes' => 120, // pieces still queued in the browser may arrive after submitting
+        // Where recordings are made. "browser" (default): each candidate's browser records at a low bitrate and
+        // uploads short pieces, so every candidate is recorded whether or not a supervisor is watching, and the
+        // media server only carries the batch being watched. "media_server": LiveKit records on the server
+        // (heavier: the server decodes and encodes every recorded stream).
+        'where' => env('RECORDING_WHERE', 'browser'),
     ],
 
     // Backups: where to write them (use a different disk or a mounted share), how long to keep them,

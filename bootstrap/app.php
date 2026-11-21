@@ -48,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\RequireTwoFactor::class,
             \App\Http\Middleware\EnforcePlatformBoundary::class,
             \App\Http\Middleware\SuspendedInstitutionGate::class,
+            \App\Http\Middleware\DemoGuard::class,
             \App\Http\Middleware\EnforceUploadCapacity::class,
             \App\Http\Middleware\PlatformMaintenance::class,
             \App\Http\Middleware\SupportSessionGuard::class,

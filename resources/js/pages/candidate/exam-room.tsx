@@ -8,7 +8,7 @@ import { RichContent } from '@/components/rich-content';
 import { Toaster } from '@/components/ui/sonner';
 import { ExamStore, keepExamPageOffline } from '@/lib/exam-store';
 import type { Snapshot, StoredAnswer } from '@/lib/exam-store';
-import { frameToJpeg, loadFace, readFace } from '@/lib/face';
+import { confirmFaces, frameToJpeg, loadFace, readFace } from '@/lib/face';
 import { publish } from '@/lib/live';
 import { PieceRecorder, RecordingUploader } from '@/lib/recorder';
 import type { RecordPlan } from '@/lib/recorder';
@@ -25,7 +25,7 @@ type Uploader = (questionId: number, file: File) => Promise<{ id: number; name: 
 const FILE_EXT: Record<string, string> = { image: '.jpg,.jpeg,.png,.webp,.heic', pdf: '.pdf', document: '.doc,.docx,.odt,.rtf,.txt', spreadsheet: '.xls,.xlsx,.ods,.csv', slides: '.ppt,.pptx,.odp', code: '.zip,.py,.java,.c,.cpp,.js,.ts,.php,.r,.m,.ipynb' };
 type Response = { options?: number[]; text?: string; number?: number; pairs?: Record<string, string>; tf?: Record<string, boolean>; order?: number[]; blanks?: Record<string, string>; file?: { id: number; name: string; size: number } } | null;
 type Answer = { response: Response; flagged: boolean; seq: number; at?: number };
-type AttemptState = { id: number; status: string; remaining_seconds: number; deadline_at: string; server_time: string; answered: number; violations: number; session_paused: boolean; grace_seconds?: number; pace?: number; power_cut_left?: number; violation_threshold?: number; violation_action?: string };
+type AttemptState = { id: number; status: string; remaining_seconds: number; deadline_at: string; server_time: string; answered: number; violations: number; session_paused: boolean; grace_seconds?: number; pace?: number; power_cut_left?: number; violation_threshold?: number; violation_action?: string; live_batch?: number | null };
 type Message = { id: number; kind: string; body: string };
 type Policy = Record<string, boolean | number | string>;
 type Props = {
@@ -80,7 +80,7 @@ export default function ExamRoom(props: Props) {
             {phase === 'check' && <SystemCheck {...props} stored={snap} off={off} onStarted={(t, offline) => (setToken(t), setStartedOffline(offline), setPhase('exam'))} />}
             {phase === 'exam' && token && snap && (
                 <Exam {...props} token={token} uploader={uploader} store={store} snap={snap} off={startedOffline ? off : null} startedOffline={startedOffline}
-                    onFinished={(r) => (setReceipt(r), setPhase('done'))} />
+                    onFinished={(r) => (uploader?.hold(false), setReceipt(r), setPhase('done'))} />
             )}
             {phase === 'done' && <Done receipt={receipt} waiting={waiting} />}
             <Toaster />
@@ -89,6 +89,9 @@ export default function ExamRoom(props: Props) {
 }
 
 type OffReport = { from: number; to: number; kind: 'off' | 'asleep' };
+
+/** Events that start a clip when the exam records only when something happens. */
+const TRIGGERS = ['tab_hidden', 'screen_left', 'fullscreen_exit', 'paste_blocked', 'multiple_displays', 'multiple_faces', 'face_absent', 'gaze_away', 'noise_detected', 'camera_obstructed', 'devtools_open', 'remote_desktop'];
 
 type DesktopBridge = { onEvent: (cb: (type: string, data?: Record<string, unknown>) => void) => () => void; examState: (s: 'open' | 'closed', opts?: { closeApps?: boolean }) => void };
 const desktop = typeof window !== 'undefined' ? (window as unknown as { examDesktop?: DesktopBridge }).examDesktop : undefined;
@@ -404,6 +407,10 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             // a proxy or a restarting server answers 502-504: that is not the exam server yet
             reach(res.status < 502 || res.status > 504);
 
+            if (res.status >= 500 && path !== 'problem') {
+                window.dispatchEvent(new CustomEvent('exam-server-error', { detail: `${path}: ${res.status}` }));
+            }
+
             return { ok: res.ok, status: res.status, data };
         } catch {
             reach(false);
@@ -411,6 +418,36 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             return { ok: false, status: 0, data: {} as T };
         }
     }, [auth, reach]);
+
+    /* Computer problems go to the exams office with this computer's IP (Computer checks page), at most one of a kind a minute */
+    const problemSent = useRef<Record<string, number>>({});
+    const reportProblem = useCallback((kind: string, message: string) => {
+        const key = `${kind}:${message.slice(0, 60)}`;
+
+        if (Date.now() - (problemSent.current[key] ?? 0) < 60000) {
+            return;
+        }
+
+        problemSent.current[key] = Date.now();
+        void fetch('/api/exam/attempt/problem', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...auth }, body: JSON.stringify({ kind, message: message.slice(0, 300) }) }).catch(() => undefined);
+    }, [auth]);
+    useEffect(() => {
+        const onError = (e: ErrorEvent) => reportProblem('script_error', `${e.message} (${(e.filename ?? '').split('/').pop()}:${e.lineno})`);
+        const onReject = (e: PromiseRejectionEvent) => reportProblem('script_error', String((e.reason as Error)?.message ?? e.reason));
+        const onStorage = () => reportProblem('storage_full', 'Answers could not be kept on this computer');
+        window.addEventListener('error', onError);
+        window.addEventListener('unhandledrejection', onReject);
+        window.addEventListener('exam-storage-failed', onStorage);
+        const onServer = (e: Event) => reportProblem((e as CustomEvent<string>).detail.startsWith('answers') ? 'save_failed' : 'server_error', (e as CustomEvent<string>).detail);
+        window.addEventListener('exam-server-error', onServer);
+
+        return () => {
+            window.removeEventListener('exam-server-error', onServer);
+            window.removeEventListener('error', onError);
+            window.removeEventListener('unhandledrejection', onReject);
+            window.removeEventListener('exam-storage-failed', onStorage);
+        };
+    }, [reportProblem]);
 
     /** Sends a question report; if the connection is down it waits and goes with the next try. */
     const sendReports = useCallback(async () => {
@@ -458,6 +495,11 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
 
     const record = useCallback((type: string, data?: Record<string, unknown>) => {
         events.current.push({ type, at: new Date().toISOString(), data });
+
+        // in the "only when something happens" recording mode, these start a short clip
+        if (TRIGGERS.includes(type)) {
+            window.dispatchEvent(new CustomEvent('exam-trigger', { detail: type }));
+        }
     }, []);
 
     /* The desktop exam app reports hardware checks (screens, HDMI/wireless, USB, VMs, remote access) and keeps the window locked while the exam is open */
@@ -630,8 +672,16 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
     }, []);
     const paperRef = useRef<unknown>(kept?.paper ?? null);
     const pace = useRef(1);
+    // the proctoring batch whose live room this computer is in; moved when the exams office re-batches the sitting
+    const liveBatch = useRef<{ joined: number | null; move: (() => void) | null }>({ joined: null, move: null });
     const applyBeat = useCallback((data: { attempt: AttemptState; messages?: Message[] }) => {
         lastBeat.current = Date.now();
+        const batch = data.attempt.live_batch ?? null;
+
+        if (batch !== null && liveBatch.current.joined !== null && batch !== liveBatch.current.joined) {
+            liveBatch.current.move?.();
+        }
+
         pace.current = Math.max(1, Math.min(4, Number(data.attempt.pace ?? 1)));
         setState(data.attempt);
         clock.current = new Date(data.attempt.server_time).getTime() - Date.now();
@@ -1032,12 +1082,62 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
 
             const track = stream.getVideoTracks()[0];
             track.addEventListener('ended', () => record('camera_off'));
-            track.addEventListener('mute', () => record('camera_obstructed'));
+            // a camera that stops sending frames for a moment is common; report it only if it stays that way
+            track.addEventListener('mute', () => window.setTimeout(() => track.muted && record('camera_obstructed', { muted: true }), 8000));
 
             camStream.current = stream;
             attachVideo(videoRef.current);
 
             const settingsAtStart = track.getSettings().deviceId;
+            /** Dark in n more frames, 1.5 s apart (a covered lens stays dark; a passing shadow does not). */
+            const stillDark = async (n: number) => {
+                for (let i = 0; i < n; i++) {
+                    await new Promise((r) => setTimeout(r, 1500));
+                    const v = videoRef.current;
+
+                    if (!v || v.readyState < 2) {
+                        return false;
+                    }
+
+                    const c = document.createElement('canvas');
+                    c.width = 160;
+                    c.height = 120;
+                    const x = c.getContext('2d');
+                    x?.drawImage(v, 0, 0, 160, 120);
+                    const d = x?.getImageData(0, 0, 160, 120).data;
+                    let t = 0;
+
+                    for (let j = 0; d && j < d.length; j += 400) {
+                        t += d[j] + d[j + 1] + d[j + 2];
+                    }
+
+                    if (!d || t / (d.length / 400) >= 30) {
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+            /** The frame behind an automatic alert is kept, so a person reviews the picture, not just the claim. */
+            const keepFrame = async (reason: string) => {
+                const v = videoRef.current;
+
+                if (!v || v.readyState < 2) {
+                    return;
+                }
+
+                const blob = await frameToJpeg(v);
+
+                if (!blob) {
+                    return;
+                }
+
+                const fd = new FormData();
+                fd.append('kind', 'snapshot');
+                fd.append('file', blob, `${reason}.jpg`);
+                fd.append('captured_at', new Date().toISOString());
+                await fetch('/api/exam/attempt/evidence', { method: 'POST', headers: { Accept: 'application/json', ...auth }, body: fd }).catch(() => undefined);
+            };
             const snap = async () => {
                 const v = videoRef.current;
 
@@ -1064,18 +1164,28 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                         sum += px[i] + px[i + 1] + px[i + 2];
                     }
 
-                    if (sum / (px.length / 400) < 30) {
-                        record('camera_obstructed');
+                    if (sum / (px.length / 400) < 30 && (await stillDark(3))) {
+                        // dark in three frames over a few seconds: covered lens, not a dim moment
+                        record('camera_obstructed', { confirmed: '3/3' });
+                        void keepFrame('camera_obstructed');
                     }
                 }
 
                 if (policy.face_detection && (await faceReady)) {
                     const reading = await readFace(canvas, false).catch(() => null);
 
-                    if (reading?.faces === 0) {
-                        record('face_absent');
-                    } else if (reading && reading.faces > 1) {
-                        record('multiple_faces', { faces: reading.faces });
+                    // one frame is never enough: a student bending for a pen, or someone walking past
+                    // behind, must not become an alert. Confirm over five frames, four must agree.
+                    if (reading && (reading.faces === 0 || reading.strong > 1) && videoRef.current) {
+                        const c = await confirmFaces(videoRef.current);
+
+                        if (c.frames >= 4 && c.absent >= 4) {
+                            record('face_absent', { confirmed: `${c.absent}/${c.frames}` });
+                            void keepFrame('face_absent');
+                        } else if (c.frames >= 4 && c.multiple >= 4) {
+                            record('multiple_faces', { faces: c.maxFaces, confirmed: `${c.multiple}/${c.frames}` });
+                            void keepFrame('multiple_faces');
+                        }
                     }
                 }
 
@@ -1120,13 +1230,16 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                     }
 
                     const r = await readFace(v, false).catch(() => null);
-                    const looking = r && r.faces > 0 && r.yaw !== null && r.pitch !== null && Math.abs(r.yaw) < 0.35 && Math.abs(r.pitch) < 0.4;
-                    away = looking || !r || r.faces === 0 ? 0 : away + 1; // no face is reported separately
+                    // only a clear, confident reading counts; looking down (paper, keyboard) is normal and ignored,
+                    // only turning well to the side or up, held for about 12 seconds, is reported
+                    const sure = r && r.faces === 1 && (r.score ?? 0) >= 0.7 && r.yaw !== null && r.pitch !== null;
+                    const turned = sure && (Math.abs(r.yaw ?? 0) >= 0.45 || (r.pitch ?? 0) <= -0.45);
+                    away = turned ? away + 1 : 0;
 
-                    if (away >= 3) {
-                        record('gaze_away', { yaw: r?.yaw, pitch: r?.pitch });
+                    if (away >= 4) {
+                        record('gaze_away', { yaw: r?.yaw, pitch: r?.pitch, seconds: 12 });
                         away = 0;
-                        quietUntil = Date.now() + 60000;
+                        quietUntil = Date.now() + 90000;
                     }
                 }, 3000);
             }
@@ -1186,6 +1299,8 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
         let lastPoor = 0;
         let watch: number | null = null;
         let browserRecording = false;
+        let moving = false;
+        const cleanups: (() => void)[] = [];
         // no media server: record camera (and screen) here and upload the pieces as the exam goes on
         const recordInBrowser = (plan: RecordPlan) => {
             if (browserRecording) {
@@ -1201,10 +1316,54 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                 return;
             }
 
+            // upload after submitting: pieces stay on this computer until the exam is handed in
+            uploader.hold(plan.mode === 'on_submit');
             const current: { camera: { stream: MediaStream | null; rec: PieceRecorder | null }; screen: { stream: MediaStream | null; rec: PieceRecorder | null } } = {
                 camera: { stream: null, rec: null },
                 screen: { stream: null, rec: null },
             };
+
+            if (plan.mode === 'triggered') {
+                // record a short clip of the camera (and screen) only when something happens, then stop
+                let clipUntil = 0;
+                const clip = async () => {
+                    const until = Date.now() + (plan.clip_seconds ?? 20) * 1000;
+                    const running = clipUntil > Date.now();
+                    clipUntil = until;
+
+                    if (running || stopped || finished.current) {
+                        return;
+                    }
+
+                    const started: PieceRecorder[] = [];
+
+                    for (const kind of [...(plan.camera ? ['camera' as const] : []), ...(plan.screen ? ['screen' as const] : [])]) {
+                        const source = kind === 'camera' ? camStream.current : screenStream.current;
+
+                        if (!source?.getVideoTracks().some((t) => t.readyState === 'live')) {
+                            continue;
+                        }
+
+                        const rec = new PieceRecorder(kind, source, kind === 'camera' ? plan.camera_kbps : plan.screen_kbps, Math.min(plan.chunk_seconds, 5), uploader, (why) => record('recording_failed', { kind, reason: why }));
+                        rec.start();
+                        started.push(rec);
+                    }
+
+                    setRecState(started.length ? 'recording' : 'failed');
+
+                    while (Date.now() < clipUntil && !stopped) {
+                        await new Promise((r) => setTimeout(r, 1000));
+                    }
+
+                    await Promise.all(started.map((r) => r.stop()));
+                };
+                const onTrigger = () => void clip();
+                window.addEventListener('exam-trigger', onTrigger);
+                cleanups.push(() => window.removeEventListener('exam-trigger', onTrigger));
+
+                return;
+            }
+
             const ensure = async () => {
                 if (stopped || finished.current) {
                     return;
@@ -1254,12 +1413,15 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                 return;
             }
 
-            const res = await api<{ enabled: boolean; url?: string; token?: string; sources?: string[]; record?: RecordPlan | null }>('media-token', 'POST');
+            const res = await api<{ enabled: boolean; url?: string; token?: string; sources?: string[]; record?: RecordPlan | null; batch?: number | null }>('media-token', 'POST');
 
-            if (res.ok && !res.data.enabled && res.data.record) {
+            if (res.ok && res.data.record && (!res.data.enabled || res.data.record.always)) {
+                // recorded here and uploaded in pieces, whether or not a supervisor is watching live
                 recordInBrowser(res.data.record);
 
-                return;
+                if (!res.data.enabled) {
+                    return;
+                }
             }
 
             if (!res.ok || !res.data.enabled || !res.data.url || !res.data.token) {
@@ -1302,6 +1464,14 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                         record('media_poor', { quality: q });
                     }
                 }, () => {
+                    if (moving) {
+                        // moved to another proctoring batch: join the new room straight away, nothing was lost
+                        moving = false;
+                        void connect(1);
+
+                        return;
+                    }
+
                     if (!stopped) {
                         setLiveState('lost');
                         record('media_disconnected');
@@ -1311,6 +1481,13 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                     }
                 });
                 liveRoom.current = room;
+                liveBatch.current = {
+                    joined: res.data.batch ?? null,
+                    move: () => {
+                        moving = true;
+                        void room?.disconnect();
+                    },
+                };
                 setLiveState('live');
             } catch {
                 setLiveState('lost');
@@ -1329,6 +1506,7 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
 
         return () => {
             stopped = true;
+            cleanups.forEach((f) => f());
             room?.disconnect();
 
             if (watch) {

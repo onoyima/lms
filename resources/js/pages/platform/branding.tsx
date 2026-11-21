@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { compressImage } from '@/lib/compress-image';
 import type { PlatformBrand } from '@/types/platform';
 
-type Settings = { brand_name: string; brand_short_name: string; brand_tagline: string; brand_color: string; support_email: string };
+type Settings = { brand_name: string; brand_short_name: string; brand_tagline: string; brand_color: string; support_email: string; landing_design: string; demo_enabled: boolean };
 
 /** The platform's own identity: shown on the public site, sign-in at the platform address, this console, platform emails and invoices. */
 export default function PlatformBranding({ brand, settings }: { brand: PlatformBrand; settings: Settings }) {
@@ -31,6 +31,19 @@ export default function PlatformBranding({ brand, settings }: { brand: PlatformB
                             <input type="color" aria-label="Pick colour" className="h-10 w-12 rounded-md border border-input" value={form.data.brand_color} onChange={(e) => form.setData('brand_color', e.target.value)} />
                             <input className={`${inputClass} font-mono`} value={form.data.brand_color} onChange={(e) => form.setData('brand_color', e.target.value)} />
                         </span>
+                    </Field>
+                    <Field label="Public website design" hint="How the home page looks to visitors. Preview each before saving.">
+                        <span className="flex flex-wrap items-center gap-2">
+                            <select className={`${inputClass} !w-auto`} value={form.data.landing_design || 'paper'} onChange={(e) => form.setData('landing_design', e.target.value)}>
+                                <option value="paper">Paper: light, quiet, exam slip</option>
+                                <option value="campus">Campus: photographs, blue, institutional</option>
+                                <option value="midnight">Midnight: dark, bold, orange accent</option>
+                            </select>
+                            <a href={`/?design=${form.data.landing_design || 'paper'}`} target="_blank" rel="noreferrer" className="text-sm text-brand underline">Preview</a>
+                        </span>
+                    </Field>
+                    <Field label="Public demo" hint="Visitors pick a role on /demo and look around Demo University. Sample data, reset every night; separate from every real institution.">
+                        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.data.demo_enabled} onChange={(e) => form.setData('demo_enabled', e.target.checked)} /> Offer the public demo</label>
                     </Field>
                     <div />
                     <Field label="Logo (PNG, JPG or WebP)" error={form.errors.logo}>

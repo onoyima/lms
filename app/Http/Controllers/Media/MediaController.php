@@ -58,11 +58,15 @@ class MediaController extends Controller
         // what the browser records by itself when there is no media server, or when it cannot be reached
         $plan = app(\App\Services\Media\BrowserRecordings::class)->plan($a);
         $record = ($plan['camera'] || $plan['screen']) ? $plan : null;
-        if (! $this->live->enabled()) {
+        // only the live-streaming mode sends video to the media server; the other modes record in the browser
+        $mode = ExamSettings::forCandidate($a->exam->proctoring, $a->user_id, $a->exam_id)['recording_mode'];
+        if (! $this->live->enabled() || $mode !== 'stream') {
             return response()->json(['enabled' => false, 'record' => $record]);
         }
 
-        return response()->json(['enabled' => true, 'url' => $this->live->url(), 'token' => $this->live->candidateToken($a, $sources), 'sources' => $sources, 'record' => $record]);
+        $batch = $a->session?->proctor_batch_size ? (int) \App\Models\ExamCandidate::whereKey($a->exam_candidate_id)->value('proctor_batch') : null;
+
+        return response()->json(['enabled' => true, 'url' => $this->live->url(), 'token' => $this->live->candidateToken($a, $sources), 'sources' => $sources, 'record' => $record, 'batch' => $batch ?: null]);
     }
 
     /** A one-time link (as a QR code) that turns the candidate's phone into a second camera (Target 111-124). */
@@ -104,13 +108,18 @@ class MediaController extends Controller
     /** Proctors and the exams office watch the sitting's room (hidden). */
     public function proctor(Request $request, ExamSession $session): JsonResponse
     {
-        abort_unless(ProctorAssignment::where('exam_session_id', $session->id)->where('user_id', $request->user()->id)->exists() || $request->user()->can('exams.manage')
+        $assignment = ProctorAssignment::where('exam_session_id', $session->id)->where('user_id', $request->user()->id)->first();
+        abort_unless($assignment || $request->user()->can('exams.manage')
             || \App\Support\Exams\ExamAccess::can($request->user(), $session->exam), 403);
         if (! $this->live->enabled()) {
             return response()->json(['enabled' => false]);
         }
+        // a sitting in batches is watched one batch at a time, and only the batches this person may watch
+        $batch = $session->proctor_batch_size ? max(1, (int) $request->query('batch', 1)) : null;
+        $batches = app(\App\Services\Proctoring\ProctorBatches::class);
+        abort_unless($batches->mayWatch($request->user(), $session, $assignment, $batch), 403, 'This batch is watched by another supervisor.');
 
-        return response()->json(['enabled' => true, 'url' => $this->live->url(), 'token' => $this->live->proctorToken($session, $request->user()->id, $request->user()->name)]);
+        return response()->json(['enabled' => true, 'url' => $this->live->url(), 'batch' => $batch, 'token' => $this->live->proctorToken($session, $request->user()->id, $request->user()->name, $batch)]);
     }
 
     /** Media-server webhooks: start recordings when tracks appear, note lost cameras, finish recordings. */
@@ -120,7 +129,7 @@ class MediaController extends Controller
         abort_unless($this->live->verifyWebhook($body, $request->header('Authorization')), 401);
         $e = json_decode($body, true) ?: [];
         $room = $e['room']['name'] ?? $e['egressInfo']['roomName'] ?? '';
-        if (! preg_match('/^vt(\d+)-s(\d+)$/', $room, $m)) {
+        if (! preg_match('/^vt(\d+)-s(\d+)(?:-b\d+)?$/', $room, $m)) {
             return response()->json(['ok' => true]);
         }
 
@@ -138,7 +147,9 @@ class MediaController extends Controller
                     $p = ExamSettings::proctoring($attempt->exam->proctoring);
                     $source = strtoupper((string) ($e['track']['source'] ?? ''));
                     $kind = $phone ? 'phone' : ($source === 'SCREEN_SHARE' ? 'screen' : ($source === 'CAMERA' ? 'camera' : null));
-                    $wanted = $kind && (($kind === 'screen' && $p['record_screen']) || ($kind !== 'screen' && $p['record_video']));
+                    $wanted = $kind && (($kind === 'screen' && $p['record_screen']) || ($kind !== 'screen' && $p['record_video']))
+                        // recordings are made in the candidates' browsers unless the media server is set to record
+                        && config('platform.recording.where', 'browser') === 'media_server';
                     if ($wanted && ! MediaRecording::where('attempt_id', $attempt->id)->where('kind', $kind)->whereIn('status', ['starting', 'active'])->exists()) {
                         try {
                             $id = $this->live->startRecording($attempt, $kind);

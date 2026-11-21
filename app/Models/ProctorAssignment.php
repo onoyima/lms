@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ProctorAssignment extends Model
 {
-    protected $fillable = ['exam_session_id', 'user_id', 'role', 'max_candidates', 'last_seen_at', 'offline_alerted_at'];
+    protected $fillable = ['exam_session_id', 'user_id', 'role', 'max_candidates', 'last_seen_at', 'offline_alerted_at', 'batches'];
 
     protected function casts(): array
     {
         return [
             'last_seen_at' => 'datetime',
             'offline_alerted_at' => 'datetime',
+            'batches' => 'array',
         ];
     }
 

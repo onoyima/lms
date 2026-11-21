@@ -26,27 +26,30 @@ export function loadFace(): Promise<FaceApi> {
     return api;
 }
 
-export type FaceReading = { faces: number; descriptor: number[] | null; yaw: number | null; pitch: number | null; score: number | null };
+export type FaceReading = { faces: number; descriptor: number[] | null; yaw: number | null; pitch: number | null; score: number | null; strong: number };
 
 /** Analyse one frame. Only the largest face is described. */
-export async function readFace(source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement, withDescriptor = true): Promise<FaceReading> {
+export async function readFace(source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement, withDescriptor = true, minScore = 0.5): Promise<FaceReading> {
     const faceapi = await loadFace();
-    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: minScore });
     const all = withDescriptor
         ? await faceapi.detectAllFaces(source, options).withFaceLandmarks().withFaceDescriptors()
         : await faceapi.detectAllFaces(source, options).withFaceLandmarks();
 
     if (all.length === 0) {
-        return { faces: 0, descriptor: null, yaw: null, pitch: null, score: null };
+        return { faces: 0, descriptor: null, yaw: null, pitch: null, score: null, strong: 0 };
     }
 
     const main = all.reduce((a, b) => (a.detection.box.area > b.detection.box.area ? a : b));
+    // a face counts as a real second person only if the detector is sure of it and it is not tiny
+    // (a photo on the wall, a face far behind, or a reflection is usually small or uncertain)
+    const strong = all.filter((f) => f === main || (f.detection.score >= 0.65 && f.detection.box.area >= main.detection.box.area * 0.2)).length;
     const pose = headPose(main.landmarks.positions);
     const raw = 'descriptor' in main ? (main as { descriptor: Float32Array }).descriptor : null;
     // a template is only sent when exactly one face is in view
     const descriptor = raw && all.length === 1 ? Array.from(raw).map((v) => Math.round(v * 1e6) / 1e6) : null;
 
-    return { faces: all.length, descriptor, yaw: pose.yaw, pitch: pose.pitch, score: main.detection.score };
+    return { faces: all.length, descriptor, yaw: pose.yaw, pitch: pose.pitch, score: main.detection.score, strong };
 }
 
 /**
@@ -73,4 +76,39 @@ export function frameToJpeg(video: HTMLVideoElement, width = 480): Promise<Blob 
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.8));
+}
+
+/**
+ * Confirm what one frame suggested before anything is reported (false alarms cost trust): look at
+ * several more frames over a few seconds. "Absent" needs no face even with a more sensitive search;
+ * "another person" needs a confident, reasonably large second face in most frames.
+ */
+export async function confirmFaces(video: HTMLVideoElement, frames = 5, gapMs = 1200): Promise<{ frames: number; absent: number; multiple: number; maxFaces: number }> {
+    let absent = 0;
+    let multiple = 0;
+    let maxFaces = 0;
+    let seen = 0;
+
+    for (let i = 0; i < frames; i++) {
+        if (i) {
+            await new Promise((r) => setTimeout(r, gapMs));
+        }
+
+        if (video.readyState < 2) {
+            continue;
+        }
+
+        const r = await readFace(video, false, 0.3).catch(() => null);
+
+        if (!r) {
+            continue;
+        }
+
+        seen++;
+        absent += r.faces === 0 ? 1 : 0;
+        multiple += r.strong > 1 ? 1 : 0;
+        maxFaces = Math.max(maxFaces, r.strong);
+    }
+
+    return { frames: seen, absent, multiple, maxFaces };
 }

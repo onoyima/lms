@@ -11,9 +11,15 @@ class ExamCandidate extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['exam_session_id', 'user_id', 'seat_id', 'eligibility', 'eligibility_reason', 'extra_time_minutes', 'accommodations', 'pin_hash', 'attendance', 'checked_in_at', 'checked_in_by', 'checked_out_at', 'consent_given'];
+    protected $fillable = ['exam_session_id', 'user_id', 'seat_id', 'eligibility', 'eligibility_reason', 'extra_time_minutes', 'accommodations', 'pin_hash', 'attendance', 'checked_in_at', 'checked_in_by', 'checked_out_at', 'consent_given', 'proctor_batch'];
 
     protected $hidden = ['pin_hash'];
+
+    protected static function booted(): void
+    {
+        // a candidate added after the sitting was split into proctoring batches joins one
+        static::created(fn (self $c) => app(\App\Services\Proctoring\ProctorBatches::class)->place($c));
+    }
 
     protected function casts(): array
     {

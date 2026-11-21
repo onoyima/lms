@@ -20,13 +20,13 @@ class DemoSeeder extends Seeder
     public function run(): void
     {
         $this->call(DemoInstitutionSeeder::class); // the sample institution (Veritas University)
-        $tenant = Tenant::where('slug', 'veritas')->firstOrFail();
+        $tenant = Tenant::where('slug', SampleInstitution::$slug)->firstOrFail();
         app(TenantContext::class)->set($tenant);
         app(\Spatie\Permission\PermissionRegistrar::class)->setPermissionsTeamId($tenant->id);
 
         $password = env('SEED_ADMIN_PASSWORD') ?: 'ChangeMe!2026';
-        $officer = User::where('email', 'admin@veritas.local')->firstOrFail();
-        $student = User::firstOrNew(['email' => 'student@veritas.local']);
+        $officer = User::where('email', SampleInstitution::email('admin'))->firstOrFail();
+        $student = User::firstOrNew(['email' => SampleInstitution::email('student')]);
         $student->forceFill(['name' => 'Ada Student', 'password' => $password, 'user_type' => 'student', 'identifier' => 'VUG/CHM/26/0001', 'email_verified_at' => now()])->save();
         $student->syncRoles(['student']);
 
@@ -89,7 +89,7 @@ class DemoSeeder extends Seeder
     /** A small LMS: one semester, a course with notes, an assignment, a forum and a quiz. */
     private function lms(User $officer, User $student, string $password, array $questions): void
     {
-        $lecturer = User::firstOrNew(['email' => 'lecturer@veritas.local']);
+        $lecturer = User::firstOrNew(['email' => SampleInstitution::email('lecturer')]);
         $lecturer->forceFill(['name' => 'Dr. Ngozi Okeke', 'password' => $password, 'user_type' => 'staff', 'identifier' => 'STAFF/0042', 'email_verified_at' => now()])->save();
         $lecturer->syncRoles(['lecturer']);
 

@@ -5,7 +5,7 @@
  * them. The server stores a piece sent twice only once.
  */
 
-export type RecordPlan = { camera: boolean; screen: boolean; audio: boolean; camera_kbps: number; screen_kbps: number; chunk_seconds: number };
+export type RecordPlan = { camera: boolean; screen: boolean; audio: boolean; camera_kbps: number; screen_kbps: number; chunk_seconds: number; always?: boolean; mode?: 'stream' | 'progressive' | 'on_submit' | 'triggered'; clip_seconds?: number };
 
 type Piece = { id: string; attempt: number; key: string; kind: 'camera' | 'screen'; seq: number; offset: number; final: boolean; type: string; blob: Blob };
 
@@ -114,7 +114,17 @@ export type RecorderStatus = { recording: ('camera' | 'screen')[]; waiting: numb
 export class RecordingUploader {
     private busy = false;
     private stopped = false;
+    private held = false;
     private timer: number | null = null;
+
+    /** Keep pieces on this computer (the "upload after submitting" mode); releasing sends them all. */
+    hold(on: boolean) {
+        this.held = on;
+
+        if (!on) {
+            void this.drain();
+        }
+    }
 
     constructor(private attempt: number, private token: () => string, private onCount: (waiting: number) => void) {}
 
@@ -168,7 +178,7 @@ export class RecordingUploader {
                 const list = await pending(this.attempt);
                 this.onCount(list.length);
 
-                if (list.length === 0) {
+                if (list.length === 0 || this.held) {
                     return;
                 }
 

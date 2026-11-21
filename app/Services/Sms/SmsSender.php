@@ -64,6 +64,10 @@ class SmsSender
     /** @return bool sent */
     public function send(string $to, string $message, string $purpose, ?int $userId = null, ?Tenant $tenant = null, ?array $settings = null): bool
     {
+        // the public demo never sends text messages (it would use the platform's shared credit)
+        if (($tenant ?? tenant())?->isDemo()) {
+            return false;
+        }
         $s = $settings ?? self::settings($tenant);
         $number = self::normalise($to);
         if (! $s || ! $number) {

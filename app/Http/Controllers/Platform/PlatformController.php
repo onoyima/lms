@@ -511,7 +511,7 @@ class PlatformController extends Controller
     public function branding(): Response
     {
         return Inertia::render('platform/branding', ['brand' => PlatformSettings::brand(), 'settings' => array_intersect_key(PlatformSettings::all(),
-            array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email']))]);
+            array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email', 'landing_design', 'demo_enabled']))]);
     }
 
     public function saveBranding(Request $request, ImageCompressor $images): RedirectResponse
@@ -519,10 +519,12 @@ class PlatformController extends Controller
         $data = $request->validate([
             'brand_name' => ['required', 'string', 'max:120'], 'brand_short_name' => ['nullable', 'string', 'max:40'], 'brand_tagline' => ['nullable', 'string', 'max:80'],
             'brand_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'], 'support_email' => ['nullable', 'email', 'max:190'],
+            'landing_design' => ['nullable', 'in:paper,campus,midnight'], 'demo_enabled' => ['boolean'],
             'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp'], 'favicon' => ['nullable', 'file', 'mimes:png,ico'],
             'remove_logo' => ['boolean'], 'remove_favicon' => ['boolean'],
         ]);
-        $values = array_map(fn ($v) => strip_tags((string) ($v ?? '')), array_intersect_key($data, array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email'])));
+        $values = array_map(fn ($v) => strip_tags((string) ($v ?? '')), array_intersect_key($data, array_flip(['brand_name', 'brand_short_name', 'brand_tagline', 'brand_color', 'support_email', 'landing_design'])));
+        $values['demo_enabled'] = $request->boolean('demo_enabled');
         foreach (['logo' => 'brand_logo_path', 'favicon' => 'brand_favicon_path'] as $field => $key) {
             if ($request->hasFile($field)) {
                 $values[$key] = $field === 'favicon'
@@ -533,6 +535,10 @@ class PlatformController extends Controller
             }
         }
         PlatformSettings::put($values, $request->user()->id);
+        // switching the public demo on fills the demo institution straight away (after the page has answered)
+        if ($values['demo_enabled'] && ! \App\Models\Tenant::where('slug', 'demo')->exists()) {
+            dispatch(fn () => \Illuminate\Support\Facades\Artisan::call('demo:reset'))->afterResponse();
+        }
         $this->audit->record('platform.branding_saved', null, array_diff_key($values, ['brand_logo_path' => 1, 'brand_favicon_path' => 1]));
 
         return back()->with('success', 'Platform branding saved.');

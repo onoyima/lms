@@ -154,7 +154,7 @@ node tools/apibench.mjs https://exams.example.edu storage/app/loadtest.json 30 4
 - Content-Security-Policy with nonces, `frame-ancestors 'none'`, HSTS on https, `nosniff`; uploads are served through permission-checked routes, never from a public folder.
 - All rich text (questions, notes, forum posts, feedback) is sanitised on the server.
 - Rate limits: login, exam start, exam API (per attempt), evidence, submissions, forum posts, integration keys.
-- Separation of duties: exam papers need a second person to approve; course results need the HOD/Dean (not the course lecturer) to approve before release; result changes after publication need a second officer; released results are locked.
+- Separation of duties: exam papers can be set to need a second person's approval (Policy, off by default); course results need the HOD/Dean (not the course lecturer) to approve before release; result changes after publication need a second officer; released results are locked.
 - Failed and locked-out sign-ins, rejected exam tokens and API keys, 401/403/429 responses go to `security_events`; sign-in history is on People → Sign-ins.
 - Temporary roles end automatically (`roles:expire`, every 5 minutes). Admins cannot grant a role holding permissions they lack.
 - CI (`.github/workflows/ci.yml`) runs the tests and `composer audit` / `npm audit` on every change; Dependabot opens weekly update pull requests.

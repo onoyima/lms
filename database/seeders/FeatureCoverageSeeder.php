@@ -38,14 +38,16 @@ class FeatureCoverageSeeder extends Seeder
 
     public function run(): void
     {
-        $this->tenant = Tenant::where('slug', 'veritas')->firstOrFail();
-        $this->platform();
+        $this->tenant = Tenant::where('slug', SampleInstitution::$slug)->firstOrFail();
+        if (! SampleInstitution::$institutionOnly) {
+            $this->platform();
+        }
 
         app(TenantContext::class)->run($this->tenant, function () {
             app(\Spatie\Permission\PermissionRegistrar::class)->setPermissionsTeamId($this->tenant->id);
-            $this->admin = User::where('email', 'admin@veritas.local')->firstOrFail();
-            $this->student = User::where('email', 'student@veritas.local')->firstOrFail();
-            $this->lecturer = User::where('email', 'lecturer@veritas.local')->firstOrFail();
+            $this->admin = User::where('email', SampleInstitution::email('admin'))->firstOrFail();
+            $this->student = User::where('email', SampleInstitution::email('student'))->firstOrFail();
+            $this->lecturer = User::where('email', SampleInstitution::email('lecturer'))->firstOrFail();
             auth()->setUser($this->admin);
 
             $this->institution();
@@ -216,6 +218,15 @@ class FeatureCoverageSeeder extends Seeder
             $this->once('question_reports', ['attempt_id' => $row->attempt_id, 'question_id' => $row->question_id], ['tenant_id' => $tid, 'exam_id' => $row->exam_id,
                 'user_id' => $row->user_id, 'reason' => 'two_answers', 'note' => 'Options B and C both look right to me.', 'status' => 'open']);
         }
+        // a computer check of a lab before an exam: one computer ready, one without a camera
+        $check = $this->once('computer_checks', ['tenant_id' => $tid, 'code' => 'demolab1'], ['name' => 'CBT Lab 1, before the CBT exam',
+            'requirements' => json_encode(['camera']), 'opens_at' => now()->subHour()->format('Y-m-d H:i:s'), 'closes_at' => now()->addHours(11)->format('Y-m-d H:i:s'), 'created_by' => $this->admin->id]);
+        $ok = fn (array $fail = []) => json_encode(array_map(fn ($k) => ['key' => $k, 'ok' => ! in_array($k, $fail, true), 'warn' => false, 'detail' => in_array($k, $fail, true) ? 'Not available (no device found)' : 'Fine'], ['browser', 'storage', 'server', 'speed', 'clock', 'screen', 'camera']));
+        $this->once('computer_reports', ['computer_check_id' => $check, 'ip' => '10.10.1.21'], ['tenant_id' => $tid, 'kind' => 'check', 'label' => 'A-01', 'status' => 'pass', 'results' => $ok(),
+            'user_agent' => 'Mozilla/5.0 (Windows NT 10.0) Chrome/131.0', 'error_count' => 0, 'first_seen_at' => now()->format('Y-m-d H:i:s'), 'last_seen_at' => now()->format('Y-m-d H:i:s')]);
+        $this->once('computer_reports', ['computer_check_id' => $check, 'ip' => '10.10.1.22'], ['tenant_id' => $tid, 'kind' => 'check', 'label' => 'A-02', 'status' => 'fail', 'results' => $ok(['camera']),
+            'errors' => json_encode(['Camera works: Not available (no device found)']), 'user_agent' => 'Mozilla/5.0 (Windows NT 10.0) Chrome/131.0', 'error_count' => 1,
+            'first_seen_at' => now()->format('Y-m-d H:i:s'), 'last_seen_at' => now()->format('Y-m-d H:i:s')]);
     }
 
     private function once(string $table, array $unique, array $values = []): int
@@ -251,7 +262,7 @@ class FeatureCoverageSeeder extends Seeder
         $this->once('maintenance_windows', ['message' => 'Database upgrade'], ['tenant_id' => null, 'starts_at' => now()->addDays(10)->setTime(2, 0), 'ends_at' => now()->addDays(10)->setTime(3, 0), 'blocks_exams' => true, 'created_by' => $platformAdmin?->id]);
         $this->once('tenant_modules', ['tenant_id' => $this->tenant->id, 'module' => 'conferencing'], ['enabled' => true, 'reason' => 'Demo: live classes switched on for this institution', 'granted_by' => $platformAdmin?->id]);
         $this->once('tenant_addons', ['tenant_id' => $this->tenant->id, 'limit_key' => 'students'], ['quantity' => 500, 'status' => 'active', 'starts_at' => now()->subMonth(), 'ends_at' => now()->addYear(), 'note' => 'Extra 500 student seats', 'created_by' => $platformAdmin?->id]);
-        $this->once('support_sessions', ['tenant_id' => $this->tenant->id, 'reason' => 'Help the exams office set up a hall'], ['platform_user_id' => $platformAdmin?->id, 'target_user_id' => User::withoutGlobalScopes()->where('email', 'admin@veritas.local')->value('id'),
+        $this->once('support_sessions', ['tenant_id' => $this->tenant->id, 'reason' => 'Help the exams office set up a hall'], ['platform_user_id' => $platformAdmin?->id, 'target_user_id' => User::withoutGlobalScopes()->where('email', SampleInstitution::email('admin'))->value('id'),
             'ip' => '127.0.0.1', 'started_at' => now()->subDays(2), 'expires_at' => now()->subDays(2)->addMinutes(30), 'ended_at' => now()->subDays(2)->addMinutes(12)]);
         $this->once('backup_runs', ['kind' => 'database', 'status' => 'succeeded'], ['path' => 'backups/demo.sql.gz', 'bytes' => 1048576, 'sha256' => hash('sha256', 'demo'), 'message' => 'Demo backup']);
         // a shared live-class server run by the platform team (an example address: replace it with your own)
@@ -272,7 +283,7 @@ class FeatureCoverageSeeder extends Seeder
         $this->once('sso_identities', ['sso_provider_id' => $provider, 'user_id' => $this->lecturer->id], ['subject' => 'ngozi.okeke@example.test', 'last_login_at' => now()->subDays(3)]);
 
         $this->once('security_events', ['user_id' => $this->student->id, 'type' => 'login'], ['tenant_id' => $this->tenant->id, 'ip' => '10.10.4.21', 'path' => 'login', 'data' => json_encode(['ua' => 'Chrome on Windows']), 'created_at' => now()->subHour()]);
-        $this->once('security_events', ['user_id' => $this->student->id, 'type' => 'login_failed'], ['tenant_id' => $this->tenant->id, 'ip' => '10.10.4.21', 'path' => 'login', 'data' => json_encode(['email' => 'student@veritas.local']), 'created_at' => now()->subHours(2)]);
+        $this->once('security_events', ['user_id' => $this->student->id, 'type' => 'login_failed'], ['tenant_id' => $this->tenant->id, 'ip' => '10.10.4.21', 'path' => 'login', 'data' => json_encode(['email' => SampleInstitution::email('student')]), 'created_at' => now()->subHours(2)]);
         $this->once('access_reviews', ['tenant_id' => $this->tenant->id, 'started_by' => $this->admin->id], ['decisions' => json_encode([['user_id' => $this->lecturer->id, 'decision' => 'keep']]), 'completed_at' => now()->subDays(20)]);
         $apiKey = DB::table('api_keys')->where('tenant_id', $this->tenant->id)->value('id');
         $this->once('sync_runs', ['tenant_id' => $this->tenant->id, 'kind' => 'students'], ['api_key_id' => $apiKey, 'idempotency_key' => 'demo-sync-1', 'received' => 3, 'created' => 1, 'updated' => 2, 'failed' => 0]);
@@ -283,7 +294,9 @@ class FeatureCoverageSeeder extends Seeder
         $this->student->notifyNow(new \App\Notifications\LmsNotice('Problem set 1 is due in 5 days', 'CHM 101 · Submit your working as a PDF.', '/learn/courses', false));
         $this->admin->notifyNow(new \App\Notifications\LmsNotice('Invoice due soon', 'Your renewal invoice is due in 14 days.', '/institution/billing', false, category: 'billing'));
         $announcement = DB::table('platform_announcements')->where('title', 'Planned upgrade this Sunday')->value('id');
-        $this->once('announcement_dismissals', ['announcement_id' => $announcement, 'user_id' => $this->lecturer->id], ['created_at' => now()]);
+        if ($announcement) {
+            $this->once('announcement_dismissals', ['announcement_id' => $announcement, 'user_id' => $this->lecturer->id], ['created_at' => now()]);
+        }
     }
 
     private function people(): void
@@ -295,7 +308,7 @@ class FeatureCoverageSeeder extends Seeder
         if (! $this->lecturer->hasRole('chief_invigilator')) {
             $this->lecturer->assignRole('chief_invigilator');
         }
-        $other = User::where('email', 'student02@veritas.local')->first() ?? $this->student;
+        $other = User::where('email', SampleInstitution::email('student02'))->first() ?? $this->student;
         \App\Models\AccommodationProfile::firstOrCreate(['user_id' => $other->id], ['extra_time_percent' => 25, 'settings' => ['font_scale' => 1.25, 'high_contrast' => true],
             'approved_reference' => 'DSO/2026/014', 'approved_by' => $this->admin->id, 'valid_until' => now()->addYear()]);
         \App\Models\FaceProfile::firstOrCreate(['user_id' => $this->student->id], ['status' => 'pending', 'note' => 'Waiting for the student to enrol their face before the first proctored exam.']);
@@ -450,7 +463,7 @@ class FeatureCoverageSeeder extends Seeder
     private function proctoring(): void
     {
         $session = ExamSession::where('mode', 'hall')->whereHas('attempts')->orderBy('id')->first();
-        $proctor = User::where('email', 'proctor@veritas.local')->first() ?? $this->admin;
+        $proctor = User::where('email', SampleInstitution::email('proctor'))->first() ?? $this->admin;
         if ($session) {
             $assignment = $this->once('proctor_assignments', ['exam_session_id' => $session->id, 'user_id' => $proctor->id], ['role' => 'proctor', 'max_candidates' => 30, 'last_seen_at' => now()->subDays(3)]);
             foreach (ExamCandidate::where('exam_session_id', $session->id)->limit(10)->pluck('id') as $cid) {

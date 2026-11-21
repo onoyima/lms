@@ -85,6 +85,7 @@ class WholeSystemTest extends TestCase
     public function test_every_page_opens_without_a_server_error_for_everyone(): void
     {
         $errors = [];
+        $leaks = [];
         $opened = [];
         $closed = [];
         foreach ($this->pages() as [$uri, $route]) {
@@ -102,6 +103,11 @@ class WholeSystemTest extends TestCase
                     $errors[] = "$who GET /$uri → $status ".mb_substr(strip_tags((string) $res->getContent()), 0, 300);
                 } elseif ($status === 200) {
                     $opened[$uri] = true;
+                    // nothing secret may reach a page, where anyone can read it with "inspect"
+                    $page = html_entity_decode((string) $res->getContent(), ENT_QUOTES);
+                    if (preg_match('/"(password|remember_token|two_factor_secret|two_factor_recovery_codes|calendar_token|secret|client_secret|api_secret|ai_key|sms_key|key_hash|token_hash|pin_hash|access_pin_hash|secret_hash|api_key)"\s*:\s*"[^"]+"/', $page, $m)) {
+                        $leaks[] = "$who GET /$uri shows {$m[1]}";
+                    }
                 } else {
                     $closed[$uri][] = "$who:$status";
                 }
@@ -109,6 +115,7 @@ class WholeSystemTest extends TestCase
         }
 
         $this->assertSame([], $errors, "Pages that fail:\n".implode("\n", $errors));
+        $this->assertSame([], array_values(array_unique($leaks)), "Secrets on pages:\n".implode("\n", array_unique($leaks)));
         $never = array_diff_key($closed, $opened);
         if (getenv('SHOW_CLOSED')) {
             fwrite(STDERR, print_r($never, true));

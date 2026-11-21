@@ -68,6 +68,11 @@ class ExamSettings
         'low_bandwidth' => false,          // snapshots instead of video (Target 182)
         'close_banned_apps' => false,      // the desktop app closes remote-control and screen-capture apps (Target 120)
         'pre_checks' => [],                // checks that must pass before the exam can start (see PRE_CHECKS); empty = none
+        // how camera and screen recordings are made (only when the exam records at all):
+        //   institution = the institution's choice in Policy; stream = live to the media server, recorded as it goes;
+        //   progressive = recorded in the browser and uploaded as it goes; on_submit = recorded in the browser and
+        //   uploaded after the candidate submits; triggered = short clips only when something happens
+        'recording_mode' => 'institution',
     ];
 
     /**
@@ -120,9 +125,17 @@ class ExamSettings
 
     /** Events that count towards the violation threshold. */
     public const VIOLATIONS = [
-        'tab_hidden', 'screen_left', 'fullscreen_exit', 'paste_blocked', 'multiple_displays', 'multiple_faces', 'camera_off',
-        'camera_obstructed', 'screen_share_stopped', 'devtools_open', 'vm_detected', 'remote_desktop', 'identity_mismatch', 'wireless_display', 'camera_virtual',
+        'tab_hidden', 'screen_left', 'fullscreen_exit', 'paste_blocked', 'multiple_displays', 'camera_off',
+        'screen_share_stopped', 'devtools_open', 'vm_detected', 'remote_desktop', 'wireless_display', 'camera_virtual',
     ];
+
+    /**
+     * Camera and microphone judgements made by AI (faces, gaze, noise, a covered lens, a face that does not
+     * match). They are confirmed over several frames on the candidate's computer, then put in front of a person
+     * with the picture; they never count as a warning strike, so they can never lock or submit an exam by
+     * themselves. A person decides.
+     */
+    public const AI_EVENTS = ['face_absent', 'multiple_faces', 'gaze_away', 'noise_detected', 'camera_obstructed', 'identity_mismatch'];
 
     public static function settings(?array $stored): array
     {
@@ -164,7 +177,21 @@ class ExamSettings
     public const CHOICES = [
         'identity_check' => ['none', 'photo_match', 'proctor_review'],
         'violation_action' => ['warn', 'lock', 'submit'],
+        'recording_mode' => ['institution', 'stream', 'progressive', 'on_submit', 'triggered'],
     ];
+
+    public const RECORDING_MODES = ['stream', 'progressive', 'on_submit', 'triggered'];
+
+    /** The recording mode that applies: the exam's own, or the institution's default. */
+    public static function recordingMode(array $p): string
+    {
+        $mode = $p['recording_mode'] ?? 'institution';
+        if ($mode === 'institution' || ! in_array($mode, self::RECORDING_MODES, true)) {
+            $mode = (string) \App\Support\Policy::get('recording_mode');
+        }
+
+        return in_array($mode, self::RECORDING_MODES, true) ? $mode : 'progressive';
+    }
 
     /** Proctoring checks an approved hardware exception can switch off for one candidate (Target 141). */
     public const RELAXABLE = ['webcam', 'face_detection', 'microphone', 'screen_share', 'second_camera', 'live_video', 'record_video', 'record_screen',
@@ -182,8 +209,26 @@ class ExamSettings
             }
         }
         $p['pre_checks'] = self::preChecksFor($p, $relaxed);
+        // the monitoring notice is only shown when the exam actually uses the camera, microphone or screen;
+        // an exam supervised in person, with none of these, starts without it
+        $p['require_consent'] = $p['require_consent'] && self::watchesCandidate($p);
+        $p['recording_mode'] = self::recordingMode($p);
+        // live watching needs the live-streaming mode; the other modes send no live video at all
+        $p['live_video'] = $p['live_video'] && $p['recording_mode'] === 'stream';
 
         return $p;
+    }
+
+    /** Does this exam use the camera, microphone or screen at all? */
+    public static function watchesCandidate(array $p): bool
+    {
+        foreach (['webcam', 'face_detection', 'microphone', 'screen_share', 'second_camera', 'live_video', 'record_video', 'record_screen', 'gaze_tracking'] as $k) {
+            if (! empty($p[$k])) {
+                return true;
+            }
+        }
+
+        return ($p['identity_check'] ?? 'none') !== 'none';
     }
 
     /** Known keys only, each cast to the type of its default and kept within sane limits. */

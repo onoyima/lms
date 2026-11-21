@@ -15,14 +15,14 @@ class DemoInstitutionSeeder extends Seeder
     {
         $password = env('SEED_ADMIN_PASSWORD') ?: 'ChangeMe!2026';
         $tenant = app(TenantProvisioner::class)->provision(
-            ['slug' => 'veritas', 'name' => 'Veritas University, Abuja', 'short_name' => 'Veritas', 'brand_color' => '#10b981',
-                'domains' => ['localhost', '127.0.0.1']],
+            ['slug' => SampleInstitution::$slug, 'name' => SampleInstitution::$name, 'short_name' => SampleInstitution::$short, 'brand_color' => '#10b981',
+                'domains' => SampleInstitution::$hosts],
             'enterprise',
-            ['name' => 'Veritas Administrator', 'email' => 'admin@veritas.local', 'password' => $password]
+            ['name' => SampleInstitution::$short.' Administrator', 'email' => SampleInstitution::email('admin'), 'password' => $password]
         );
 
         if (! \App\Models\Subscription::where('tenant_id', $tenant->id)->exists()) {
-            $tenant->forceFill(['approved_at' => now(), 'contact_name' => 'Veritas Administrator', 'contact_email' => 'admin@veritas.local'])->save();
+            $tenant->forceFill(['approved_at' => now(), 'contact_name' => SampleInstitution::$short.' Administrator', 'contact_email' => SampleInstitution::email('admin')])->save();
             app(\App\Services\Billing\Billing::class)->start($tenant, \App\Models\Plan::where('key', 'enterprise')->firstOrFail(), 'yearly', null, \App\Services\Billing\Billing::trialDays());
         }
     }

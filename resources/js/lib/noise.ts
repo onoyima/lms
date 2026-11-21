@@ -3,8 +3,11 @@
  * leaves the computer for this — and reports sustained talking or noise as a proctoring event.
  */
 export function watchNoise(stream: MediaStream, onNoise: (level: number, seconds: number) => void, opts: { threshold?: number; seconds?: number; cooldownMs?: number } = {}) {
-    const threshold = opts.threshold ?? 0.06; // RMS of the signal, 0..1
-    const needed = opts.seconds ?? 3;
+    // the room's own background (fans, generators, a busy hall) is measured for the first 20 seconds,
+    // and only sound well above it — held for several seconds — counts, so steady noise never alerts
+    let threshold = opts.threshold ?? 0.06; // RMS of the signal, 0..1
+    const needed = opts.seconds ?? 5;
+    const calibration: number[] = [];
     const cooldown = opts.cooldownMs ?? 60000;
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
@@ -31,6 +34,19 @@ export function watchNoise(stream: MediaStream, onNoise: (level: number, seconds
         }
 
         const rms = Math.sqrt(sum / buf.length);
+
+        if (calibration.length < 40) {
+            calibration.push(rms);
+
+            if (calibration.length === 40) {
+                const sorted = [...calibration].sort((a, b) => a - b);
+                const background = sorted[Math.floor(sorted.length * 0.6)];
+                threshold = Math.max(threshold, background * 4);
+            }
+
+            return;
+        }
+
         loud = rms > threshold ? loud + 0.5 : Math.max(0, loud - 0.5);
         peak = Math.max(peak, rms);
 

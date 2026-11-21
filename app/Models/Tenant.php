@@ -83,4 +83,10 @@ class Tenant extends Model
         static::saved($forget);
         static::deleted($forget);
     }
+
+    /** The public demo institution: sample data, wiped every night, open to anyone through /demo. */
+    public function isDemo(): bool
+    {
+        return $this->slug === 'demo' && (bool) data_get($this->settings, 'demo');
+    }
 }

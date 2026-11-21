@@ -26,6 +26,8 @@ class PlatformSettings
         'brand_logo_path' => '',
         'brand_favicon_path' => '',
         'support_email' => '',
+        'landing_design' => 'paper',
+        'demo_enabled' => false,            // the public demo institution visitors can sign in to (see demo:reset)        // the public website's look: paper, campus or midnight
         'billing_address' => '',
         'billing_email' => '',
         'maintenance_mode' => false,

@@ -710,6 +710,10 @@ class AttemptService
             'power_cut_left' => max(0, ExamSettings::settings($attempt->exam?->settings)['power_cut_minutes'] * 60 - (int) $attempt->device_off_seconds),
             'violation_threshold' => (int) ExamSettings::proctoring($attempt->exam?->proctoring)['violation_threshold'],
             'violation_action' => (string) ExamSettings::proctoring($attempt->exam?->proctoring)['violation_action'],
+            // the live-video batch this candidate belongs to (the browser moves rooms if it changes)
+            'live_batch' => $attempt->session?->proctor_batch_size
+                ? (\Illuminate\Support\Facades\Cache::remember("cand:{$attempt->exam_candidate_id}:batch", 30, fn () => (int) \App\Models\ExamCandidate::whereKey($attempt->exam_candidate_id)->value('proctor_batch')) ?: null)
+                : null,
         ];
     }
 

@@ -56,6 +56,8 @@ class HandleInertiaRequests extends Middleware
             ],
             // the institution in view; the public landing page belongs to the platform itself
             'tenant' => fn () => self::showsPlatform($request) ? null : tenant()?->brandPayload(),
+            // signed in to the public demo: the menu shows a notice
+            'demo' => fn () => (bool) ($request->user() && tenant()?->isDemo()),
             'roles' => fn () => $request->user() && ! $request->user()->isPlatformAdmin() ? $request->user()->getRoleNames() : [],
             'modules' => fn () => app(ModuleRegistry::class)->enabledFor(tenant()),
             'flash' => [

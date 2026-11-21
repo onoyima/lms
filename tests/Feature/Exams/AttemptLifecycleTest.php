@@ -140,9 +140,15 @@ class AttemptLifecycleTest extends TestCase
         $this->assertLessThanOrEqual(45 * 60, $remaining);
     }
 
+    public function test_an_exam_without_camera_or_screen_monitoring_needs_no_monitoring_notice(): void
+    {
+        $exam = $this->cbtExam(['proctoring' => ['require_consent' => true]]); // supervised in person
+        $this->startAs($this->candidate($this->sitting($exam)))->assertOk();
+    }
+
     public function test_access_rules_window_pin_eligibility_consent_and_attempts(): void
     {
-        $exam = $this->cbtExam(['proctoring' => ['require_consent' => true]]);
+        $exam = $this->cbtExam(['proctoring' => ['require_consent' => true, 'webcam' => true]]);
         $later = $this->sitting($exam, ['starts_at' => now()->addHour(), 'ends_at' => now()->addHours(3)]);
         $this->startAs($this->candidate($later))->assertStatus(403)->assertJsonPath('reason', 'not_started');
 

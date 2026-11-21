@@ -30,6 +30,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // nothing is ever sent to the demo institution's people (their addresses end in the reserved .invalid)
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Mail\Events\MessageSending::class, function ($e) {
+            foreach ($e->message->getTo() as $to) {
+                if (str_ends_with(strtolower($to->getAddress()), '.invalid')) {
+                    return false;
+                }
+            }
+
+            return null;
+        });
         // mail sent before the sender is configured carries the platform's name, not the framework's
         // (MAIL_FROM_NAME="${APP_NAME}" in .env counts as not configured: the platform's brand is used)
         if (in_array(config('mail.from.name'), [null, '', 'Laravel', 'Example', config('app.name')], true)) {

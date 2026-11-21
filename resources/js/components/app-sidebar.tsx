@@ -45,6 +45,7 @@ import {
     UsersRound,
     Video,
     Wrench,
+    MonitorCheck,
     Network,
     MonitorPlay,
     Radio,
@@ -186,6 +187,7 @@ function useMenu(): { home: string; groups: Group[] } {
             { title: 'Proctor shifts', href: '/proctor/shifts', icon: CalendarClock },
             hasModule('cbt_halls') && can('exams.manage') && { title: 'Halls & computers', href: '/venues', icon: Building2 },
             hasModule('cbt_halls') && can('exams.manage') && { title: 'Exam network', href: '/exam-network', icon: Network },
+            can('exams.manage') && { title: 'Computer checks', href: '/computer-checks', icon: MonitorCheck },
             can('exams.manage') && { title: 'Exam centres', href: '/exam-centres', icon: Building2 },
             hasModule('secure_client') && can('exams.manage') && { title: 'Safe Exam Browser', href: '/admin/safe-exam-browser', icon: ShieldCheck },
         ], { badge: live > 0 ? `${live} live` : null });

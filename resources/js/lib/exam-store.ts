@@ -71,7 +71,8 @@ function lsSet(key: string, value: unknown): void {
     try {
         localStorage.setItem(key, JSON.stringify(value));
     } catch {
-        // storage full: IndexedDB still has it
+        // storage full: IndexedDB still has it, but the exams office should know
+        window.dispatchEvent(new Event('exam-storage-failed'));
     }
 }
 

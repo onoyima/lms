@@ -19,7 +19,7 @@ They come from a course's class list, a programme and level, or a pasted list of
 
 ## Setting a paper
 
-Exams > New exam. Formats: objective (CBT), essay, mixed, practical (criteria with allowed score steps, several examiners, average) and viva (one overall criterion). Each section can draw *N* questions at random from a larger set. The paper goes to a second person for approval before it can be scheduled.
+Exams > New exam. Formats: objective (CBT), essay, mixed, practical (criteria with allowed score steps, several examiners, average) and viva (one overall criterion). Each section can draw *N* questions at random from a larger set. If your institution switches on paper approval (Settings › Policy), the paper goes to a second person before it can be published; otherwise **Publish** is one click.
 
 ## Examiners for one viva, practical or defence
 

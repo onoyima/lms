@@ -709,6 +709,7 @@ function RulesEditor({ exam }: { exam: ExamData }) {
             </section>
             <section className="surface p-6">
                 <p className="eyebrow mb-4">Proctoring policy</p>
+                <p className="mb-2 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">AI checks (faces, looking away, noise, covered camera) are confirmed over several seconds and frames before anything is reported, and the picture is kept. They never count as a warning strike: they are put in front of a person, who decides.</p>
                 {Object.keys(proctorLabels).map((k) => (
                     <label key={k} className="flex items-center justify-between gap-3 border-b border-border py-2 text-sm last:border-0">
                         {proctorLabels[k]}
@@ -724,6 +725,15 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                             <option value="warn">warn only</option>
                             <option value="lock">lock (invigilator unlocks)</option>
                             <option value="submit">submit automatically</option>
+                        </select>
+                    </Field>
+                    <Field label="Recording (when the camera or screen is recorded)">
+                        <select className={inputClass} value={String(proctoring.recording_mode ?? 'institution')} onChange={(e) => setProctoring({ ...proctoring, recording_mode: e.target.value })}>
+                            <option value="institution">As the institution has chosen</option>
+                            <option value="stream">Live streaming (supervisors can watch; recorded as it goes)</option>
+                            <option value="progressive">Recorded on the computer, uploaded as it goes</option>
+                            <option value="on_submit">Recorded on the computer, uploaded after submitting</option>
+                            <option value="triggered">Short clips only when something happens</option>
                         </select>
                     </Field>
                     <Field label="Snapshot every (s)">

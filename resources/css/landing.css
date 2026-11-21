@@ -1,162 +1,314 @@
-/* Public website only. Paper, ink, the product green, and the pink "drop-out" ink of a printed answer sheet. */
+@import '@fontsource-variable/inter';
 /*
- * Public website. Uses the same design as the app: the chosen theme (Sapphire, Forest & gold or Plum,
- * set under Branding) gives the deep colour, the action colour and the colour wash; Bricolage
- * Grotesque for headings and Figtree for text.
+ * Public website. Quiet and paper-like: an off-white page, deep exam-green ink, real screenshots of the
+ * product, and the one printed object every candidate knows, the exam slip. Bricolage Grotesque for
+ * headings, Figtree for text (both served from this site).
  */
 .landing {
-    --paper: var(--background);
-    --paper-2: color-mix(in oklab, var(--foreground) 9%, transparent);
-    --ink: var(--foreground);
-    --ink-2: var(--muted-foreground);
-    --green: var(--brand);
-    --green-deep: var(--brand-ink);
-    --on-green: var(--brand-foreground);
-    --sheet: var(--brand-ink);
-    --sheet-soft: color-mix(in oklab, var(--brand) 8%, var(--background));
+    --paper: #f6f7f4;
+    --card: #ffffff;
+    --ink: #14211b;
+    --ink-2: #4d5a53;
+    --ink-3: #7a857f;
+    --line: #dbe0da;
+    --green: #0e6b4f;
+    --green-deep: #0a4f3a;
+    --mint: #e7f0eb;
+    --slip: #fffdf6;
+    --stamp: #c2410c;
     background: var(--paper);
     color: var(--ink);
     font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.6;
 }
 
 .landing .display {
     font-family: var(--font-display);
     font-weight: 700;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.035em;
     line-height: 1.02;
+}
+
+.landing h1.display {
+    font-size: clamp(2.6rem, 6vw, 4.6rem);
 }
 
 .landing .h2 {
     font-family: var(--font-display);
     font-weight: 700;
-    letter-spacing: -0.025em;
+    letter-spacing: -0.03em;
     line-height: 1.08;
-    font-size: clamp(1.75rem, 3.2vw, 2.6rem);
+    font-size: clamp(1.9rem, 3.6vw, 2.75rem);
 }
 
-/* The deep hero and bands: theme's deep colour with soft glows of the theme's wash colours */
-.landing .deep {
-    position: relative;
-    isolation: isolate;
-    color: #fff;
-    background: linear-gradient(140deg, var(--deep) 0%, var(--deep-2) 100%);
+.landing .lead {
+    font-size: 1.15rem;
+    color: var(--ink-2);
+    max-width: 38rem;
 }
-/* The hero also shows the theme's picture under the deep colour */
-.landing .deep.with-picture {
-    background:
-        linear-gradient(90deg, color-mix(in oklab, var(--deep) 78%, transparent) 0%, transparent 55%),
-        linear-gradient(170deg, color-mix(in oklab, var(--deep) 92%, transparent) 0%, color-mix(in oklab, var(--deep-2) 62%, transparent) 55%, color-mix(in oklab, var(--deep) 40%, transparent) 100%),
-        var(--wash-image) center bottom / cover,
-        linear-gradient(140deg, var(--deep) 0%, var(--deep-2) 100%);
+
+.landing .muted {
+    color: var(--ink-2);
 }
-.landing .deep::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-        radial-gradient(520px 360px at 12% 18%, color-mix(in oklab, var(--mesh-1) 38%, transparent), transparent 70%),
-        radial-gradient(460px 320px at 78% 12%, color-mix(in oklab, var(--mesh-3) 30%, transparent), transparent 70%),
-        radial-gradient(520px 360px at 70% 100%, color-mix(in oklab, var(--mesh-2) 26%, transparent), transparent 70%);
+
+/* buttons */
+.landing .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding: 0.8rem 1.35rem;
+    font-weight: 600;
+    font-size: 0.98rem;
+    transition: background-color 0.15s, border-color 0.15s;
 }
-.landing .card {
-    border-radius: 1.25rem;
-    border: 1px solid var(--glass-border);
-    background: var(--card);
-    box-shadow: var(--shadow-soft);
+
+.landing .btn-primary {
+    background: var(--green);
+    color: var(--on-accent, #fff);
 }
-.landing .board-tile {
-    border-radius: 0.9rem;
-    border: 1px solid rgb(255 255 255 / 0.1);
-    background: rgb(255 255 255 / 0.06);
+
+.landing .btn-primary:hover {
+    background: var(--green-deep);
+}
+
+.landing .btn-quiet {
+    border: 1.5px solid color-mix(in oklab, var(--ink) 22%, transparent);
+    color: var(--ink);
+}
+
+.landing .btn-quiet:hover {
+    border-color: var(--ink);
 }
 
 .landing a:focus-visible,
 .landing button:focus-visible,
+.landing summary:focus-visible,
 .landing input:focus-visible,
 .landing select:focus-visible,
-.landing textarea:focus-visible,
-.landing summary:focus-visible {
-    outline: 3px solid var(--glow);
+.landing textarea:focus-visible {
+    outline: 3px solid color-mix(in oklab, var(--green) 55%, transparent);
     outline-offset: 2px;
 }
 
-/* The answer sheet in the hero: bubbles are pencilled in one after another, once, on load. */
-.omr-bubble {
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    border: 1.5px solid var(--sheet);
-    color: var(--sheet);
-    font-size: 10px;
-    font-weight: 600;
-    display: grid;
-    place-items: center;
-    position: relative;
+/* a real screenshot, shown like a print laid on the desk */
+.landing .shot {
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--card);
+    border: 1px solid var(--line);
+    box-shadow:
+        0 1px 0 rgb(20 33 27 / 0.04),
+        0 24px 48px -28px rgb(20 33 27 / 0.35);
 }
-.omr-bubble.is-marked::after {
+
+.landing .shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* the exam slip in the hero */
+.landing .slip {
+    background: var(--slip);
+    border: 1px solid #e6e1cf;
+    border-radius: 6px;
+    box-shadow: 0 18px 40px -22px rgb(20 33 27 / 0.45);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.landing .slip dt {
+    color: var(--ink-3);
+    font-size: 0.7rem;
+}
+
+.landing .slip dd {
+    font-weight: 600;
+}
+
+.landing .perforation {
+    background-image: radial-gradient(circle, var(--paper) 3.5px, transparent 4px);
+    background-size: 14px 10px;
+    background-repeat: repeat-x;
+    height: 10px;
+}
+
+.landing .barcode {
+    height: 34px;
+    background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 4px, var(--ink) 4px 5px, transparent 5px 8px, var(--ink) 8px 11px, transparent 11px 12px);
+    opacity: 0.85;
+}
+
+.landing .stamp {
+    color: var(--stamp);
+    border: 2px solid var(--stamp);
+    border-radius: 6px;
+    transform: rotate(-8deg);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.45rem;
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+/* settings list that looks like the real exam rules */
+.landing .switch {
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: #cfd6d1;
+    position: relative;
+    flex: none;
+}
+
+.landing .switch::after {
     content: '';
     position: absolute;
-    inset: 2px;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
     border-radius: 999px;
-    background: #23292e;
-    transform: scale(0);
-    animation: omr-fill 260ms cubic-bezier(0.3, 1.4, 0.5, 1) forwards;
-    animation-delay: var(--d, 0ms);
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
-@keyframes omr-fill {
-    to {
-        transform: scale(1);
+
+.landing .switch.on {
+    background: var(--green);
+}
+
+.landing .switch.on::after {
+    left: 17px;
+}
+
+/* the CBT lab plan */
+.landing .seat {
+    aspect-ratio: 4 / 3;
+    border-radius: 4px;
+    background: var(--card);
+    border: 1px solid var(--line);
+}
+
+.landing .seat.writing {
+    background: var(--mint);
+    border-color: color-mix(in oklab, var(--green) 45%, transparent);
+}
+
+.landing .rule {
+    border-top: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .landing .rise {
+        animation: landing-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
     }
-}
-.omr-stamp {
-    opacity: 0;
-    transform: rotate(-8deg) scale(1.3);
-    animation: omr-stamp 380ms cubic-bezier(0.2, 1.2, 0.4, 1) forwards;
-    animation-delay: var(--d, 0ms);
-}
-@keyframes omr-stamp {
-    to {
-        opacity: 1;
-        transform: rotate(-8deg) scale(1);
+
+    .landing .rise-2 {
+        animation-delay: 0.12s;
+    }
+
+    @keyframes landing-rise {
+        from {
+            opacity: 0;
+            transform: translateY(14px);
+        }
     }
 }
 
-/* Hero board: the live bars grow once on load */
-.bar-grow {
-    transform-origin: left;
-    transform: scaleX(0);
-    animation: bar-grow 900ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-    animation-delay: var(--d, 0ms);
+/* ---------- Campus: photographs, institutional blue ---------- */
+.landing-campus {
+    --paper: #f4f7fc;
+    --card: #ffffff;
+    --ink: #0b1b3a;
+    --ink-2: #4a5878;
+    --ink-3: #7d89a6;
+    --line: #dde4f0;
+    --green: #1f5bd8;
+    --green-deep: #153f99;
+    --mint: #e9f0fd;
 }
-@keyframes bar-grow {
-    to {
-        transform: scaleX(1);
+
+.landing-campus .display,
+.landing-campus .h2 {
+    font-family: var(--font-sans);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+}
+
+.landing-campus .hero-photo {
+    background-image: linear-gradient(90deg, #08183f 0%, #0b2559 34%, rgb(11 37 89 / 0.55) 58%, rgb(11 37 89 / 0) 80%), url('/images/landing/campus-hero.webp');
+    background-size: cover, auto 100%;
+    background-position: center, right center;
+    background-repeat: no-repeat;
+    background-color: #0b2559;
+}
+
+@media (max-width: 1023px) {
+    .landing-campus .hero-photo {
+        background-image: linear-gradient(180deg, rgb(8 24 63 / 0.94), rgb(11 37 89 / 0.82)), url('/images/landing/campus-hero.webp');
+        background-size: cover, cover;
+        background-position: center, center;
     }
 }
 
-/* Product tour: the screenshot changes when a role is chosen. */
-.tour-shot {
-    animation: tour-in 320ms ease-out;
-}
-@keyframes tour-in {
-    from {
-        opacity: 0;
-        transform: translateY(8px);
-    }
+.landing-campus .float-card {
+    box-shadow: 0 30px 60px -30px rgb(11 27 58 / 0.35);
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .omr-bubble.is-marked::after,
-    .omr-stamp,
-    .bar-grow,
-    .tour-shot {
-        animation: none;
-        transform: none;
-        opacity: 1;
-    }
-    .omr-stamp {
-        transform: rotate(-8deg);
-    }
+/* ---------- Midnight: dark, bold, orange ---------- */
+.landing-midnight {
+    --paper: #0a0a0a;
+    --card: #121214;
+    --ink: #fafafa;
+    --ink-2: #a1a1aa;
+    --ink-3: #71717a;
+    --line: #26262b;
+    --green: #ff6a00;
+    --green-deep: #e35e00;
+    --mint: rgb(255 106 0 / 0.08);
+    --on-accent: #0a0a0a;
+    font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+.landing-midnight .display,
+.landing-midnight .h2 {
+    font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 650;
+    letter-spacing: -0.035em;
+}
+
+.landing-midnight .kicker {
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    font-weight: 600;
+}
+
+.landing-midnight .glow {
+    background: radial-gradient(60% 50% at 20% 0%, rgb(255 106 0 / 0.12), transparent 70%), radial-gradient(40% 40% at 90% 30%, rgb(120 80 255 / 0.08), transparent 70%);
+}
+
+.landing-midnight .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+}
+
+.landing-midnight .btn-quiet {
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+.landing-midnight .btn-quiet:hover {
+    border-color: #52525b;
+}
+
+.landing-midnight .shot {
+    border-color: var(--line);
+    background: #0f0f11;
+    box-shadow: 0 40px 80px -40px rgb(255 106 0 / 0.25);
 }
