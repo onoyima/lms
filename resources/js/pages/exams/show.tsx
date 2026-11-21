@@ -1,24 +1,30 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
+import { BankChips, BankPicker, BanksPanel, PaperProblems  } from '@/components/exam/banks';
+import type {Bank} from '@/components/exam/banks';
+import { QuestionReportsPanel  } from '@/components/exam/question-reports';
+import type {ReportGroup} from '@/components/exam/question-reports';
+import { QuestionUpload } from '@/components/exam/question-upload';
 import { Field, formatDateTime, inputClass, PageHeader, Status, Table, Td, textareaClass } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { parseCsv } from '@/lib/csv';
 
 type Q = { id: number; type: string; stem_html: string; mark: number; topic: string | null; status: string; difficulty?: string | null };
-type Rule = { topic?: string | null; difficulty?: string | null; type?: string | null; count: number; mark?: number | null; draw?: number };
+type Rule = { topic?: string | null; difficulty?: string | null; type?: string | null; count: number; mark?: number | null; draw?: number; bank_ids?: number[]; min_each?: number | null };
 type Section = { id: number; title: string; instructions: string | null; blueprint: Rule[]; answer_any: number | null; questions: Q[] };
 type Criterion = { id?: number; text: string; allowed_scores: number[] | null; max_score: number };
 type Sitting = { id: number; name: string | null; mode: string; status: string; venue: string | null; starts_at: string; ends_at: string; candidates: number; attempts: number; is_practice: boolean };
 type ExamData = {
-    id: number; title: string; code: string | null; type: string; category: string; kind: string; parent_exam_id: number | null; status: string; instructions: string | null;
+    id: number; title: string; code: string | null; type: string; category: string; kind: string; parent_exam_id: number | null; exam_group_id?: number | null; status: string; instructions: string | null;
     total_mark: string | null; pass_mark: string | null; duration_minutes: number; max_attempts: number; score_policy: string; marking_policy: string;
     version: number; course_id: number | null; semester_id: number | null; channels: string[]; grading_scales?: string[]; certificate_template_id?: number | null; certificate_templates?: { id: number; name: string; kind: string; min_percent: number }[]; pre_check_options?: { key: string; label: string; hint: string }[];
     settings: Record<string, unknown> & { seb?: { config_key?: string; browser_exam_keys?: string[]; quit_password?: string; has_settings_password?: boolean } };
-    proctoring: Record<string, unknown>; is_panel: boolean; can_edit: boolean;
+    proctoring: Record<string, unknown>; is_panel: boolean; can_edit: boolean; needs_approval?: boolean;
 };
 
-const tabs = ['Overview', 'Paper', 'Rules & proctoring', 'Sittings', 'Examiners', 'Integrity review', 'History'] as const;
+const tabs = ['Overview', 'Paper', 'Question banks', 'Rules & proctoring', 'Sittings', 'Examiners', 'Question reports', 'Integrity review', 'History'] as const;
 
 type Anomaly = { id: number; attempt_id: number; score: number; reasons: { feature: string; z: number; value: number }[]; review: string; candidate: { name: string; identifier: string | null } | null; session_id: number | null };
 const FEATURE: Record<string, string> = { speed_vs_score: 'Scored far above what the time taken predicts', hard_items_fast: 'Hardest questions answered correctly very quickly', wrong_answer_overlap: 'Many identical wrong answers shared with one other candidate', late_burst: 'Most answers saved in the last minutes', proctoring_risk: 'High proctoring risk score' };
@@ -60,12 +66,13 @@ export default function ExamShow(props: {
     examinerAccounts: ExaminerAccount[]; examinerAccountsEnd: string | null;
     parent: { id: number; title: string } | null; group?: { id: number; title: string } | null; followUps: { id: number; title: string; kind: string; status: string }[];
     anomalies?: Anomaly[];
+    banks?: Bank[]; problems?: string[]; questionReports?: ReportGroup[]; reportReasons?: Record<string, string>;
 }) {
     const { exam } = props;
     const { flash } = usePage().props;
     // ?tab=paper|rules|sittings|examiners opens a tab directly (links from the exam's papers overview)
     const wanted = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null;
-    const fromQuery = ({ overview: 'Overview', paper: 'Paper', rules: 'Rules & proctoring', sittings: 'Sittings', examiners: 'Examiners' } as Record<string, (typeof tabs)[number]>)[wanted ?? ''];
+    const fromQuery = ({ overview: 'Overview', paper: 'Paper', banks: 'Question banks', reports: 'Question reports', rules: 'Rules & proctoring', sittings: 'Sittings', examiners: 'Examiners' } as Record<string, (typeof tabs)[number]>)[wanted ?? ''];
     const [tab, setTab] = useState<(typeof tabs)[number]>(fromQuery ?? 'Paper');
     const act = (action: string, comment?: string) => router.post(`/exams/${exam.id}/transition`, { action, comment }, { preserveScroll: true });
 
@@ -98,7 +105,8 @@ export default function ExamShow(props: {
                     }
                     actions={
                         <>
-                            {['draft', 'returned'].includes(exam.status) && <Button onClick={() => act('submit')}>Submit for approval</Button>}
+                            {['draft', 'returned'].includes(exam.status) &&
+                                (exam.needs_approval ? <Button onClick={() => act('submit')}>Submit for approval</Button> : <Button onClick={() => act('publish')}>Publish</Button>)}
                             {exam.status === 'submitted' && (
                                 <>
                                     <Button onClick={() => act('approve')}>Approve paper</Button>
@@ -109,7 +117,7 @@ export default function ExamShow(props: {
                             )}
                             {['scheduled'].includes(exam.status) && (
                                 <Button variant="outline" onClick={() => act('reopen')}>
-                                    Reopen for editing
+                                    {exam.needs_approval ? 'Reopen for editing' : 'Edit the paper'}
                                 </Button>
                             )}
                             {['scheduled', 'live'].includes(exam.status) && (
@@ -138,16 +146,25 @@ export default function ExamShow(props: {
                 />
                 {flash?.success && <p className="text-sm text-status-good">{flash.success}</p>}
 
+                <SetupSteps exam={exam} sections={props.sections} criteria={props.criteria} sessions={props.sessions} problems={props.problems ?? []} go={setTab} publish={() => act(exam.needs_approval ? 'submit' : 'publish')} />
+
                 <nav className="flex flex-wrap gap-1 border-b border-border">
-                    {tabs.map((t) => (
-                        <button key={t} onClick={() => setTab(t)} className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === t ? 'border-brand font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-                            {t}
-                        </button>
-                    ))}
+                    {tabs.map((t) => {
+                        const open = t === 'Question reports' ? (props.questionReports ?? []).reduce((n, g) => n + g.open, 0) : 0;
+
+                        return (
+                            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`-mb-px rounded-t-lg border-b-2 px-4 py-2 text-sm transition-colors ${tab === t ? 'border-brand bg-brand-soft/40 font-medium text-foreground' : 'border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}>
+                                {t}
+                                {open > 0 && <span className="ml-1.5 rounded-full bg-status-warning px-1.5 py-0.5 text-[10px] font-bold text-white">{open}</span>}
+                            </button>
+                        );
+                    })}
                 </nav>
 
                 {tab === 'Overview' && <Overview {...props} />}
-                {tab === 'Paper' && (exam.is_panel ? <CriteriaEditor exam={exam} criteria={props.criteria} /> : <PaperEditor exam={exam} sections={props.sections} topics={props.topics} />)}
+                {tab === 'Paper' && (exam.is_panel ? <CriteriaEditor exam={exam} criteria={props.criteria} /> : <PaperEditor exam={exam} sections={props.sections} topics={props.topics} banks={props.banks ?? []} problems={props.problems ?? []} />)}
+                {tab === 'Question reports' && <QuestionReportsPanel examId={exam.id} groups={props.questionReports ?? []} reasons={props.reportReasons ?? {}} />}
+                {tab === 'Question banks' && (exam.is_panel ? <p className="text-sm text-muted-foreground">This paper is scored by examiners with a checklist (Paper tab); it has no question banks.</p> : <BanksPanel exam={exam} banks={props.banks ?? []} sections={props.sections} />)}
                 {tab === 'Rules & proctoring' && <RulesEditor exam={exam} />}
                 {tab === 'Sittings' && <Sittings exam={exam} sessions={props.sessions} />}
                 {tab === 'Examiners' && (
@@ -174,6 +191,54 @@ export default function ExamShow(props: {
                 )}
             </div>
         </>
+    );
+}
+
+/**
+ * The four things an exam needs, in order, each a click away: questions, students and a time,
+ * rules, then publish. Ticks show what is done, so setting up never means hunting through tabs.
+ */
+function SetupSteps({ exam, sections, criteria, sessions, problems, go, publish }: {
+    exam: ExamData; sections: Section[]; criteria: Criterion[]; sessions: Sitting[]; problems: string[];
+    go: (t: (typeof tabs)[number]) => void; publish: () => void;
+}) {
+    const questions = exam.is_panel ? criteria.length : sections.reduce((n, s) => n + s.questions.length + s.blueprint.reduce((m, r) => m + Number(r.count || 0), 0), 0);
+    const candidates = sessions.reduce((n, s) => n + s.candidates, 0);
+    const published = !['draft', 'returned', 'submitted'].includes(exam.status);
+    const steps = [
+        { done: questions > 0 && problems.length === 0, title: exam.is_panel ? 'Checklist' : 'Questions', text: questions ? `${questions} ${exam.is_panel ? 'steps' : 'per student'}${problems.length ? ' · needs a fix' : ''}` : exam.is_panel ? 'Upload or type the checklist' : 'Upload a file or choose from banks', tab: 'Paper' as const },
+        { done: sessions.length > 0 && candidates > 0, title: 'Students and time', text: sessions.length ? `${sessions.length} sitting${sessions.length === 1 ? '' : 's'} · ${candidates} students` : 'Set a date and add students', tab: 'Sittings' as const },
+        { done: true, title: 'Rules', text: `${exam.duration_minutes} minutes${exam.settings.shuffle_questions ? ' · shuffled' : ''}`, tab: 'Rules & proctoring' as const },
+    ];
+
+    return (
+        <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Setting up this exam">
+            {steps.map((st, i) => (
+                <li key={st.title}>
+                    <button type="button" onClick={() => go(st.tab)} className="surface flex h-full w-full items-start gap-3 p-4 text-left transition hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-[0_14px_30px_-20px_var(--brand)]">
+                        <span className={`grid size-7 shrink-0 place-items-center rounded-full text-sm font-bold ${st.done ? 'bg-status-good text-white' : 'bg-brand-soft text-brand-ink'}`}>{st.done ? '✓' : i + 1}</span>
+                        <span className="min-w-0">
+                            <span className="block font-medium">{st.title}</span>
+                            <span className="block text-sm text-muted-foreground">{st.text}</span>
+                        </span>
+                    </button>
+                </li>
+            ))}
+            <li>
+                <div className={`surface flex h-full items-start gap-3 p-4 ${published ? '' : 'border-brand/40'}`}>
+                    <span className={`grid size-7 shrink-0 place-items-center rounded-full text-sm font-bold ${published ? 'bg-status-good text-white' : 'bg-brand-soft text-brand-ink'}`}>{published ? '✓' : 4}</span>
+                    <span className="grid min-w-0 gap-2">
+                        <span className="font-medium">{published ? 'Published' : exam.status === 'submitted' ? 'Waiting for approval' : 'Publish'}</span>
+                        {!published && exam.status !== 'submitted' && (
+                            <Button size="sm" className="w-fit" disabled={!steps[0].done} onClick={publish}>
+                                {exam.needs_approval ? 'Submit for approval' : 'Publish now'}
+                            </Button>
+                        )}
+                        {published && <span className="text-sm text-muted-foreground">Students can write it at the sitting time.</span>}
+                    </span>
+                </div>
+            </li>
+        </ol>
     );
 }
 
@@ -256,47 +321,68 @@ function Overview({ exam, courses, semesters }: { exam: ExamData; courses: { id:
     );
 }
 
-function PaperEditor({ exam, sections, topics }: { exam: ExamData; sections: Section[]; topics: string[] }) {
-    const [picker, setPicker] = useState<number | null>(null);
+function PaperEditor({ exam, sections, topics, banks, problems }: { exam: ExamData; sections: Section[]; topics: string[]; banks: Bank[]; problems: string[] }) {
+    const [picker, setPicker] = useState<{ section: number; how: 'banks' | 'search' | 'upload' } | null>(null);
+    const open = (section: number, how: 'banks' | 'search' | 'upload') => setPicker(picker?.section === section && picker.how === how ? null : { section, how });
 
     return (
         <div className="grid gap-6">
             {!exam.can_edit && <p className="text-sm text-muted-foreground">This paper is approved. Reopen it for editing to change questions.</p>}
+            <PaperProblems problems={problems} />
             {sections.map((s) => (
                 <section key={s.id} className="surface p-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h3 className="text-lg font-medium">{s.title}</h3>
                             <p className="text-sm text-muted-foreground">
-                                {s.questions.length} fixed questions · {s.blueprint.reduce((n, r) => n + Number(r.count || 0), 0)} drawn from the pool per candidate
+                                {s.questions.length} fixed questions · {s.blueprint.reduce((n, r) => n + Number(r.count || 0), 0)} drawn at random per candidate
                                 {s.blueprint.find((r) => r.draw) && ` · each candidate sees ${s.blueprint.find((r) => r.draw)?.draw} of the fixed questions`}
                             </p>
                         </div>
                         {exam.can_edit && (
-                            <div className="flex gap-2">
-                                <Button variant="outline" onClick={() => setPicker(picker === s.id ? null : s.id)}>
-                                    <Plus className="size-4" /> Add questions
+                            <div className="flex flex-wrap gap-2">
+                                <Button variant={picker?.section === s.id && picker.how === 'upload' ? 'default' : 'outline'} onClick={() => open(s.id, 'upload')}>
+                                    <Plus className="size-4" /> Upload a file
                                 </Button>
-                                <Button variant="ghost" onClick={() => confirm('Delete this section?') && router.delete(`/exams/${exam.id}/sections/${s.id}`, { preserveScroll: true })}>
+                                {banks.length > 0 && (
+                                    <Button variant={picker?.section === s.id && picker.how === 'banks' ? 'default' : 'outline'} onClick={() => open(s.id, 'banks')}>
+                                        <Plus className="size-4" /> From banks
+                                    </Button>
+                                )}
+                                <Button variant={picker?.section === s.id && picker.how === 'search' ? 'default' : 'outline'} onClick={() => open(s.id, 'search')}>
+                                    <Plus className="size-4" /> Search the course
+                                </Button>
+                                <Button variant="ghost" aria-label={`Delete ${s.title}`} onClick={() => confirm('Delete this section?') && router.delete(`/exams/${exam.id}/sections/${s.id}`, { preserveScroll: true })}>
                                     <Trash2 className="size-4" />
                                 </Button>
                             </div>
                         )}
                     </div>
-                    {picker === s.id && <QuestionPicker exam={exam} section={s} onDone={() => setPicker(null)} />}
-                    <Blueprint exam={exam} section={s} topics={topics} />
+                    {picker?.section === s.id && (
+                        <div className="mt-4 rounded-xl border border-brand/40 p-4">
+                            {picker.how === 'upload' && (
+                                <>
+                                    <p className="mb-3 text-sm text-muted-foreground">The questions go on this section of the paper and into the paper&apos;s bank &quot;Uploaded questions&quot;. To upload into a topic bank, use the Question banks tab.</p>
+                                    <QuestionUpload sectionId={s.id} onCancel={() => setPicker(null)} />
+                                </>
+                            )}
+                            {picker.how === 'banks' && <BankPicker examId={exam.id} sectionId={s.id} banks={banks} onDone={() => setPicker(null)} />}
+                            {picker.how === 'search' && <QuestionPicker exam={exam} section={s} onDone={() => setPicker(null)} />}
+                        </div>
+                    )}
+                    <Blueprint exam={exam} section={s} topics={topics} banks={banks} />
                     <ol className="mt-4 grid gap-2">
                         {s.questions.map((q, i) => (
-                            <li key={q.id} className="flex items-start gap-3 rounded-xl border border-border p-3">
+                            <li key={q.id} className="flex items-start gap-3 rounded-xl border border-border bg-card/60 p-3">
                                 <span className="font-mono text-xs text-muted-foreground">{i + 1}</span>
                                 <RichContent html={q.stem_html} className="flex-1 text-sm" />
                                 <span className="text-xs whitespace-nowrap text-muted-foreground">
                                     {q.type} · {q.mark} mk
                                 </span>
                                 {exam.can_edit && (
-                                    <button className="text-muted-foreground hover:text-status-critical" onClick={() => router.delete(`/exams/${exam.id}/sections/${s.id}/questions/${q.id}`, { preserveScroll: true })} aria-label="Remove question">
+                                    <Button size="icon" variant="ghost" className="size-8" onClick={() => router.delete(`/exams/${exam.id}/sections/${s.id}/questions/${q.id}`, { preserveScroll: true })} aria-label="Remove question">
                                         <Trash2 className="size-4" />
-                                    </button>
+                                    </Button>
                                 )}
                             </li>
                         ))}
@@ -312,55 +398,75 @@ function PaperEditor({ exam, sections, topics }: { exam: ExamData; sections: Sec
     );
 }
 
-function Blueprint({ exam, section, topics }: { exam: ExamData; section: Section; topics: string[] }) {
+function Blueprint({ exam, section, topics, banks }: { exam: ExamData; section: Section; topics: string[]; banks: Bank[] }) {
     const [rules, setRules] = useState<Rule[]>(section.blueprint.filter((r) => r.draw === undefined));
     const [draw, setDraw] = useState<string>(String(section.blueprint.find((r) => r.draw !== undefined)?.draw ?? ''));
     const set = (i: number, patch: Partial<Rule>) => setRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
     return (
         <div className="mt-4 rounded-xl bg-muted/40 p-4">
-            <p className="eyebrow mb-3">Blueprint — random questions per candidate</p>
-            {rules.map((r, i) => (
-                <div key={i} className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-6">
-                    <select className={inputClass} value={r.topic ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { topic: e.target.value || null })}>
-                        <option value="">Any topic</option>
-                        {topics.map((t) => (
-                            <option key={t}>{t}</option>
-                        ))}
-                    </select>
-                    <select className={inputClass} value={r.difficulty ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { difficulty: e.target.value || null })}>
-                        <option value="">Any difficulty</option>
-                        {['easy', 'medium', 'hard'].map((d) => (
-                            <option key={d}>{d}</option>
-                        ))}
-                    </select>
-                    <select className={inputClass} value={r.type ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { type: e.target.value || null })}>
-                        <option value="">Any type</option>
-                        {['single_choice', 'multiple_choice', 'true_false', 'multi_true_false', 'matching', 'ordering', 'fill_blank', 'numeric', 'short_answer', 'essay', 'file_upload'].map((t) => (
-                            <option key={t}>{t}</option>
-                        ))}
-                    </select>
-                    <input type="number" min={1} className={inputClass} value={r.count} disabled={!exam.can_edit} onChange={(e) => set(i, { count: Number(e.target.value) })} aria-label="How many" />
-                    <input type="number" min={0} step="0.25" className={inputClass} placeholder="Mark each" value={r.mark ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { mark: e.target.value === '' ? null : Number(e.target.value) })} />
-                    {exam.can_edit && (
-                        <Button variant="ghost" onClick={() => setRules(rules.filter((_, j) => j !== i))}>
-                            Remove
-                        </Button>
-                    )}
-                </div>
-            ))}
+            <p className="eyebrow mb-1">Random questions per candidate</p>
+            <p className="mb-3 text-xs text-muted-foreground">Each rule draws a number of questions at random, from chosen banks or from the course&apos;s approved questions. With banks you can ask for at least a set number from each bank, so every topic is covered.</p>
+            {rules.map((r, i) => {
+                const fromBanks = (r.bank_ids ?? []).length > 0;
+
+                return (
+                    <div key={i} className="mb-3 grid gap-2 rounded-lg border border-border bg-card/70 p-3">
+                        {banks.length > 0 && (
+                            <div className="grid gap-1.5">
+                                <span className="text-xs text-muted-foreground">{fromBanks ? 'From these banks' : 'From the course pool, or choose banks:'}</span>
+                                <BankChips banks={banks} value={r.bank_ids ?? []} disabled={!exam.can_edit} onChange={(ids) => set(i, { bank_ids: ids, min_each: ids.length ? r.min_each : null })} />
+                            </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2 md:grid-cols-7">
+                            <select className={inputClass} value={r.topic ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { topic: e.target.value || null })} aria-label="Topic">
+                                <option value="">Any topic</option>
+                                {topics.map((t) => (
+                                    <option key={t}>{t}</option>
+                                ))}
+                            </select>
+                            <select className={inputClass} value={r.difficulty ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { difficulty: e.target.value || null })} aria-label="Difficulty">
+                                <option value="">Any difficulty</option>
+                                {['easy', 'medium', 'hard'].map((d) => (
+                                    <option key={d}>{d}</option>
+                                ))}
+                            </select>
+                            <select className={inputClass} value={r.type ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { type: e.target.value || null })} aria-label="Type">
+                                <option value="">Any type</option>
+                                {['single_choice', 'multiple_choice', 'true_false', 'multi_true_false', 'matching', 'ordering', 'fill_blank', 'numeric', 'short_answer', 'essay', 'file_upload'].map((t) => (
+                                    <option key={t}>{t}</option>
+                                ))}
+                            </select>
+                            <label className="grid gap-0.5 text-xs text-muted-foreground">How many
+                                <input type="number" min={1} className={inputClass} value={r.count} disabled={!exam.can_edit} onChange={(e) => set(i, { count: Number(e.target.value) })} />
+                            </label>
+                            <label className="grid gap-0.5 text-xs text-muted-foreground">At least from each bank
+                                <input type="number" min={0} className={inputClass} value={r.min_each ?? ''} placeholder={fromBanks ? '0' : 'choose banks'} disabled={!exam.can_edit || !fromBanks} onChange={(e) => set(i, { min_each: e.target.value === '' ? null : Number(e.target.value) })} />
+                            </label>
+                            <label className="grid gap-0.5 text-xs text-muted-foreground">Mark each
+                                <input type="number" min={0} step="0.25" className={inputClass} placeholder="as set" value={r.mark ?? ''} disabled={!exam.can_edit} onChange={(e) => set(i, { mark: e.target.value === '' ? null : Number(e.target.value) })} />
+                            </label>
+                            {exam.can_edit && (
+                                <Button variant="ghost" className="self-end" onClick={() => setRules(rules.filter((_, j) => j !== i))}>
+                                    Remove
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
             <label className="mt-3 mb-3 flex flex-wrap items-center gap-2 text-sm">
                 <span>Each candidate sees</span>
-                <input type="number" min={1} className={`${inputClass} w-24`} value={draw} disabled={!exam.can_edit} onChange={(e) => setDraw(e.target.value)} placeholder="all" />
+                <input type="number" min={1} className={`${inputClass} !w-24`} value={draw} disabled={!exam.can_edit} onChange={(e) => setDraw(e.target.value)} placeholder="all" />
                 <span className="text-muted-foreground">of this section&apos;s fixed questions, picked at random</span>
             </label>
             {exam.can_edit && (
-                <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setRules([...rules, { count: 10 }])}>
+                <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setRules([...rules, { count: 10, bank_ids: banks.length ? banks.filter((b) => b.scope === 'exam').map((b) => b.id) : [] }])}>
                         Add rule
                     </Button>
                     <Button size="sm" onClick={() => router.put(`/exams/${exam.id}/sections/${section.id}`, { blueprint: [...rules, ...(Number(draw) > 0 ? [{ draw: Number(draw) }] : [])] } as never, { preserveScroll: true })}>
-                        Save blueprint
+                        Save
                     </Button>
                 </div>
             )}
@@ -378,7 +484,7 @@ function QuestionPicker({ exam, section, onDone }: { exam: ExamData; section: Se
     };
 
     return (
-        <div className="mt-4 rounded-xl border border-brand/40 p-4">
+        <div>
             <div className="flex gap-2">
                 <input className={inputClass} placeholder="Search approved questions in this course" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), search())} />
                 <Button variant="outline" onClick={search}>
@@ -408,6 +514,36 @@ function QuestionPicker({ exam, section, onDone }: { exam: ExamData; section: Se
 function CriteriaEditor({ exam, criteria }: { exam: ExamData; criteria: Criterion[] }) {
     const [rows, setRows] = useState(criteria.map((c) => ({ id: c.id, text: c.text, allowed_scores: c.allowed_scores?.join(',') ?? '', max_score: c.max_score })));
     const total = rows.reduce((n, r) => n + (r.allowed_scores ? Math.max(...r.allowed_scores.split(',').map(Number)) : Number(r.max_score || 0)), 0);
+    const [note, setNote] = useState<string | null>(null);
+
+    /** A checklist from a CSV (Step, Score values, Maximum) or a text file (one step per line, "| 0,1,2" for its scores). */
+    const readChecklist = async (file: File, replace: boolean) => {
+        const text = await file.text();
+        let parsed: { text: string; allowed_scores: string; max_score: number }[] = [];
+
+        if (/\.csv$/i.test(file.name)) {
+            const table = parseCsv(text);
+            const head = (table[0] ?? []).map((h) => h.toLowerCase().replace(/[^a-z]/g, ''));
+            const hasHead = head.some((h) => /step|criterion|item|text|task/.test(h));
+            const col = (re: RegExp, fallback: number) => {
+                const i = head.findIndex((h) => re.test(h));
+
+                return hasHead ? i : fallback;
+            };
+            const [cText, cScores, cMax] = [col(/step|criterion|item|text|task/, 0), col(/score|values|allowed/, 1), col(/max/, 2)];
+            parsed = table.slice(hasHead ? 1 : 0).map((r) => ({ text: r[cText] ?? '', allowed_scores: (cScores >= 0 ? r[cScores] ?? '' : '').replace(/\s+/g, ''), max_score: Number(cMax >= 0 ? r[cMax] || 1 : 1) }));
+        } else {
+            parsed = text.replace(/^\uFEFF/, '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('//')).map((l) => {
+                const [t, scores = ''] = l.split(/\s*[|\t]\s*/);
+
+                return { text: t.replace(/^\d{1,3}[.)]\s+/, ''), allowed_scores: scores.replace(/\s+/g, ''), max_score: 1 };
+            });
+        }
+
+        parsed = parsed.filter((r) => r.text);
+        setRows([...(replace ? [] : rows), ...parsed.map((r) => ({ id: undefined, text: r.text.slice(0, 500), allowed_scores: r.allowed_scores, max_score: r.max_score }))]);
+        setNote(`${parsed.length} steps read from ${file.name}. Check them, then Save criteria.`);
+    };
 
     return (
         <section className="surface p-6">
@@ -431,6 +567,25 @@ function CriteriaEditor({ exam, criteria }: { exam: ExamData; criteria: Criterio
                     </div>
                 ))}
             </div>
+            {exam.can_edit && (
+                <div className="mt-4 rounded-xl border border-dashed border-border p-4">
+                    <p className="text-sm font-medium">Upload the checklist instead of typing it</p>
+                    <p className="mb-3 text-xs text-muted-foreground">A CSV with the columns Step, Score values, Maximum (<a className="text-brand underline" href="/templates/practical_checklist">template</a>), or a text file with one step per line and its scores after a bar: <span className="font-mono">Hand hygiene | 0,1,2</span></p>
+                    <div className="flex flex-wrap gap-2">
+                        <label className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-pointer`}>
+                            <Upload className="size-4" /> Add steps from a file
+                            <input type="file" className="sr-only" accept=".csv,.txt" onChange={(e) => (e.target.files?.[0] && void readChecklist(e.target.files[0], false), (e.target.value = ''))} />
+                        </label>
+                        {rows.length > 0 && (
+                            <label className={`${buttonVariants({ variant: 'ghost', size: 'sm' })} cursor-pointer`}>
+                                Replace the list from a file
+                                <input type="file" className="sr-only" accept=".csv,.txt" onChange={(e) => (e.target.files?.[0] && void readChecklist(e.target.files[0], true), (e.target.value = ''))} />
+                            </label>
+                        )}
+                    </div>
+                    {note && <p className="mt-2 text-sm text-status-good">{note}</p>}
+                </div>
+            )}
             {exam.can_edit && (
                 <div className="mt-4 flex gap-2">
                     <Button variant="outline" onClick={() => setRows([...rows, { id: undefined, text: '', allowed_scores: '', max_score: 1 }])}>
@@ -547,7 +702,7 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                     <label className="flex flex-wrap items-center gap-2">
                         <input type="radio" name="late_start" checked={settings.late_start === 'cutoff'} onChange={() => setSettings({ ...settings, late_start: 'cutoff' })} />
                         <span>Do not allow starting after</span>
-                        <input type="number" min={1} max={600} className={`${inputClass} w-20`} value={Number(settings.late_start_minutes ?? 30)} onChange={(e) => setSettings({ ...settings, late_start: 'cutoff', late_start_minutes: Number(e.target.value) })} />
+                        <input type="number" min={1} max={600} className={`${inputClass} !w-20`} value={Number(settings.late_start_minutes ?? 30)} onChange={(e) => setSettings({ ...settings, late_start: 'cutoff', late_start_minutes: Number(e.target.value) })} />
                         <span>minutes into the exam</span>
                     </label>
                 </fieldset>
@@ -667,13 +822,16 @@ function Sittings({ exam, sessions }: { exam: ExamData; sessions: Sitting[] }) {
                             <Status value={s.status} />
                         </Td>
                         <Td>
-                            <span className="flex flex-wrap gap-3">
-                                <Link href={`/proctor/sessions/${s.id}`} className="text-brand">
-                                    Console
-                                </Link>
-                                <button type="button" className="text-brand" title="A link and code students can open to start this sitting" onClick={() => router.post(`/sessions/${s.id}/share`)}>
+                            <span className="flex flex-wrap gap-2">
+                                <Button size="sm" asChild>
+                                    <Link href={`/sessions/${s.id}`}>{s.candidates ? 'Students' : 'Add students'}</Link>
+                                </Button>
+                                <Button size="sm" variant="outline" asChild>
+                                    <Link href={`/proctor/sessions/${s.id}`}>Console</Link>
+                                </Button>
+                                <Button size="sm" variant="ghost" title="A link and code students can open to start this sitting" onClick={() => router.post(`/sessions/${s.id}/share`)}>
                                     Share link
-                                </button>
+                                </Button>
                             </span>
                         </Td>
                     </tr>
@@ -743,7 +901,7 @@ function ExaminerAccounts({ exam, accounts, endsAt }: { exam: ExamData; accounts
                                     <Button size="sm" variant="outline" disabled={!a.signed_in} onClick={() => confirm(`Sign ${a.first_name} out everywhere so they can sign in again?`) && router.post(`/exams/${exam.id}/examiner-accounts/${a.id}/reset-session`, {}, { preserveScroll: true })}>Reset session</Button>
                                     {pw?.id === a.id ? (
                                         <form className="flex gap-1" onSubmit={(e) => (e.preventDefault(), router.put(`/exams/${exam.id}/examiner-accounts/${a.id}/password`, { password: pw.value }, { preserveScroll: true, onSuccess: () => setPw(null) }))}>
-                                            <input aria-label="New password" type="text" minLength={8} className={`${inputClass} h-8 w-36`} value={pw.value} onChange={(e) => setPw({ id: a.id, value: e.target.value })} required />
+                                            <input aria-label="New password" type="text" minLength={8} className={`${inputClass} h-8 !w-36`} value={pw.value} onChange={(e) => setPw({ id: a.id, value: e.target.value })} required />
                                             <Button size="sm">Set</Button>
                                         </form>
                                     ) : (

@@ -116,7 +116,7 @@ class WordScienceReader
     {
         $inner = trim($this->inline($p));
         if ($inner === '' || $inner === '<br>') {
-            return '';
+            return "<hr>\n"; // an empty line: ends a question in the old layout (as in text files)
         }
         $prefix = $this->listPrefix($p);
 

@@ -60,6 +60,7 @@ class FeatureCoverageSeeder extends Seeder
             $this->newerQuestions();
             $this->shop();
             $this->trustedDevice();
+            $this->banksAndReports();
 
             auth()->forgetUser();
         });
@@ -189,6 +190,32 @@ class FeatureCoverageSeeder extends Seeder
         $this->once('shop_order_items', ['shop_order_id' => $order, 'test_package_id' => $pkg], ['title' => 'Mock exam series', 'price' => 250000]);
         $this->once('package_access', ['user_id' => $this->student->id, 'test_package_id' => $pkg], ['tenant_id' => $tid, 'shop_order_id' => $order,
             'starts_at' => now()->subDays(3), 'expires_at' => now()->addDays(87)]);
+    }
+
+    /** A topic bank on an exam with two questions, and a student's report of a faulty question. */
+    private function banksAndReports(): void
+    {
+        $tid = $this->tenant->id;
+        $exam = DB::table('exams')->where('tenant_id', $tid)->whereIn('type', ['objective', 'mixed', 'cbt'])->orderBy('id')->first() ?? DB::table('exams')->where('tenant_id', $tid)->orderBy('id')->first();
+        if (! $exam) {
+            return;
+        }
+        $bank = $this->once('question_banks', ['tenant_id' => $tid, 'exam_id' => $exam->id, 'name' => 'Topic 1: Basics'], ['topic' => 'Basics', 'course_id' => $exam->course_id, 'created_by' => $this->admin->id]);
+        foreach (['Which organ pumps blood around the body?' => ['Heart', 'Liver', 'Kidney'], 'Which gas do red blood cells carry to the tissues?' => ['Oxygen', 'Nitrogen', 'Helium']] as $stem => $opts) {
+            $q = $this->once('questions', ['tenant_id' => $tid, 'question_bank_id' => $bank, 'stem_html' => "<p>$stem</p>"], ['type' => 'single_choice', 'mark' => 1, 'status' => 'approved', 'version' => 1, 'topic' => 'Basics', 'course_id' => $exam->course_id, 'created_by' => $this->admin->id]);
+            foreach ($opts as $i => $o) {
+                $this->once('question_options', ['question_id' => $q, 'position' => $i], ['label' => chr(65 + $i), 'body_html' => $o, 'is_correct' => $i === 0]);
+            }
+        }
+        // an exam centre that writes without internet (its key is demo-only)
+        $this->once('exam_centres', ['tenant_id' => $tid, 'code' => 'ENU'], ['name' => 'Enugu study centre', 'role' => 'centre', 'secret' => \Illuminate\Support\Facades\Crypt::encryptString('demo-centre-key-'.str_repeat('x', 32)),
+            'notes' => 'Demo centre: packages and scripts go through Exams › Exam centres.']);
+        $row = DB::table('attempt_questions')->join('attempts', 'attempts.id', '=', 'attempt_questions.attempt_id')->where('attempts.tenant_id', $tid)
+            ->orderBy('attempt_questions.id')->first(['attempt_questions.question_id', 'attempts.id as attempt_id', 'attempts.exam_id', 'attempts.user_id']);
+        if ($row) {
+            $this->once('question_reports', ['attempt_id' => $row->attempt_id, 'question_id' => $row->question_id], ['tenant_id' => $tid, 'exam_id' => $row->exam_id,
+                'user_id' => $row->user_id, 'reason' => 'two_answers', 'note' => 'Options B and C both look right to me.', 'status' => 'open']);
+        }
     }
 
     private function once(string $table, array $unique, array $values = []): int

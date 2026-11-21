@@ -67,6 +67,17 @@ class ExamAnalytics
         return $out;
     }
 
+    /** The last item analysis (computed when results were looked at), or a fresh one. */
+    public function itemAnalysisCached(Exam $exam): array
+    {
+        $stored = ItemStatistic::where('exam_id', $exam->id)->where('computed_at', '>=', now()->subMinutes(10))->get();
+        if ($stored->isEmpty()) {
+            return $this->itemAnalysis($exam);
+        }
+
+        return $stored->map(fn ($s) => $s->toArray() + ['flag' => $this->flag((float) $s->difficulty, (float) $s->discrimination)])->all();
+    }
+
     private function flag(float $p, float $d): ?string
     {
         return match (true) {

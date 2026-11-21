@@ -47,7 +47,7 @@ class PaperBuilder
                 if ($pool->count() < $need) {
                     throw new RuntimeException("Section \"{$section->title}\" needs {$need} questions for rule ".json_encode($rule).", the pool has {$pool->count()}.");
                 }
-                foreach ($this->shuffle($pool->all())->take($need) as $q) {
+                foreach ($this->draw($pool, $rule, $need) as $q) {
                     $chosen->push([$q, $rule['mark'] ?? null]);
                 }
             }
@@ -96,9 +96,9 @@ class PaperBuilder
                         }
                     }
                     $key = match ($q->type) {
-                        'single_choice', 'multiple_choice', 'true_false' => ['options' => $q->options->where('is_correct', true)->pluck('id')->values()->all()],
+                        'single_choice', 'multiple_choice', 'true_false' => ['options' => $q->options->where('is_correct', true)->pluck('id')->values()->all()] + ($q->scoring ? ['scoring' => $q->scoring] : []),
                         // multiple true/false: each statement is true or false on its own
-                        'multi_true_false' => ['tf' => $q->options->mapWithKeys(fn ($o) => [(string) $o->id => (bool) $o->is_correct])->all()],
+                        'multi_true_false' => ['tf' => $q->options->mapWithKeys(fn ($o) => [(string) $o->id => (bool) $o->is_correct])->all()] + ($q->scoring ? ['scoring' => $q->scoring] : []),
                         'ordering' => ['order' => $q->options->sortBy('position')->pluck('id')->values()->all()],
                         'fill_blank' => ['blanks' => $q->accepted_answers['blanks'] ?? []],
                         'numeric' => $q->numeric_answer,
@@ -150,9 +150,77 @@ class PaperBuilder
         });
     }
 
-    /** Questions matching a blueprint rule from the exam's course pool. Approved first; drafts only for practice. */
+    /**
+     * Picks $need questions at random. With banks and "at least N from each", every bank gives its
+     * minimum first (so every topic is covered), then the rest come from all the banks together.
+     */
+    private function draw(Collection $pool, array $rule, int $need): Collection
+    {
+        $min = (int) ($rule['min_each'] ?? 0);
+        if (! $min || empty($rule['bank_ids'])) {
+            return $this->shuffle($pool->all())->take($need);
+        }
+        $taken = collect();
+        foreach ($rule['bank_ids'] as $bankId) {
+            $this->shuffle($pool->where('question_bank_id', (int) $bankId)->all())->take($min)->each(fn ($q) => $taken->put($q->id, $q));
+        }
+        $rest = $this->shuffle($pool->reject(fn ($q) => $taken->has($q->id))->all())->take(max(0, $need - $taken->count()));
+
+        return $this->shuffle($taken->values()->merge($rest)->all())->take($need);
+    }
+
+    /**
+     * Problems that would stop a paper being built for a candidate, in words, so the setter sees them
+     * before publishing: a rule asking for more questions than its banks or pool hold.
+     *
+     * @return list<string>
+     */
+    public function problems(Exam $exam): array
+    {
+        $out = [];
+        $exam->loadMissing('sections.questions');
+        foreach ($exam->sections as $section) {
+            $fixed = $section->questions->pluck('id')->all();
+            foreach ($section->blueprint ?? [] as $rule) {
+                if (isset($rule['draw'])) {
+                    continue;
+                }
+                $pool = $this->pool($exam, $rule, $fixed);
+                $need = (int) ($rule['count'] ?? 0);
+                $label = empty($rule['bank_ids']) ? 'the question pool' : 'the chosen banks';
+                if ($pool->count() < $need) {
+                    $out[] = "{$section->title}: a rule draws {$need} questions but {$label} have only {$pool->count()} that fit.";
+                }
+                $min = (int) ($rule['min_each'] ?? 0);
+                if ($min && ! empty($rule['bank_ids'])) {
+                    if ($min * count($rule['bank_ids']) > $need) {
+                        $out[] = "{$section->title}: at least {$min} from each of ".count($rule['bank_ids'])." banks is more than the {$need} questions drawn.";
+                    }
+                    foreach (\App\Models\QuestionBank::whereIn('id', $rule['bank_ids'])->get() as $bank) {
+                        $have = $pool->where('question_bank_id', $bank->id)->count();
+                        $have < $min && $out[] = "{$section->title}: the bank \"{$bank->name}\" has {$have} questions; the rule needs at least {$min} from it (".($min - $have).' short).';
+                    }
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** Questions matching a blueprint rule from the exam's course pool, or from the chosen banks. Approved first; drafts only for practice. */
     private function pool(Exam $exam, array $rule, array $exclude): Collection
     {
+        if (! empty($rule['bank_ids'])) {
+            // an exam's banks are checked when the paper is approved, so their drafts count too
+            return Question::query()->with('options')
+                ->whereIn('question_bank_id', array_map('intval', $rule['bank_ids']))
+                ->whereIn('status', ['approved', 'draft', 'in_review'])
+                ->when($rule['topic'] ?? null, fn ($q, $v) => $q->where('topic', $v))
+                ->when($rule['difficulty'] ?? null, fn ($q, $v) => $q->where('difficulty', $v))
+                ->when($rule['type'] ?? null, fn ($q, $v) => $q->where('type', $v))
+                ->whereNotIn('id', $exclude ?: [0])
+                ->get();
+        }
         $statuses = $exam->category === 'practice' ? ['approved', 'draft', 'in_review'] : ['approved'];
 
         return Question::query()
@@ -199,6 +267,7 @@ class PaperBuilder
 
     private function shuffle(array $items): Collection
     {
+        $items = array_values($items);
         for ($i = count($items) - 1; $i > 0; $i--) {
             $j = mt_rand(0, $i);
             [$items[$i], $items[$j]] = [$items[$j], $items[$i]];

@@ -6,6 +6,12 @@ import { Button } from '@/components/ui/button';
 import type { ParsedQuestion } from '@/types';
 
 type ImportInfo = { id: number; original_name: string; status: string; question_count: number; warnings: string[] | null; format: string };
+type Destination = { bank: string | null; exam: { id: number; title: string } | null; section: string | null; pictures: number };
+
+const TYPE_NAMES: Record<string, string> = {
+    single_choice: 'single answer', multiple_choice: 'multiple answers', true_false: 'true / false', multi_true_false: 'multiple true / false', matching: 'matching',
+    ordering: 'put in order', fill_blank: 'fill in the blanks', numeric: 'numeric', short_answer: 'short answer', essay: 'essay', file_upload: 'file upload',
+};
 
 export default function ImportPreview({
     import: info,
@@ -15,6 +21,7 @@ export default function ImportPreview({
     commitLabel,
     backUrl,
     pages = 0,
+    destination,
 }: {
     import: ImportInfo;
     questions: ParsedQuestion[];
@@ -23,7 +30,12 @@ export default function ImportPreview({
     commitLabel?: string;
     backUrl?: string;
     pages?: number;
+    destination?: Destination;
 }) {
+    const typeCounts = Object.entries(questions.reduce<Record<string, number>>((m, q) => ((m[q.type] = (m[q.type] ?? 0) + 1), m), {}));
+    const where = destination?.bank ? `the bank "${destination.bank}"${destination.section ? ` and ${destination.section} of the paper` : ''}` : null;
+    const label = commitLabel ?? (where ? `Save to ${where}` : undefined);
+    const back = backUrl ?? (destination?.exam ? `/exams/${destination.exam.id}?tab=banks` : undefined);
     const withWarnings = questions.filter((q) => q.warnings.length > 0).length;
     const failed = info.status === 'failed';
     const reading = info.status === 'reading';
@@ -56,14 +68,14 @@ export default function ImportPreview({
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        {backUrl && (
+                        {back && (
                             <Button variant="outline" asChild>
-                                <Link href={backUrl}>Back</Link>
+                                <Link href={back}>Back</Link>
                             </Button>
                         )}
                         {info.status === 'parsed' && questions.length > 0 && (
                             <Button onClick={() => router.post(commitUrl ?? `/question-bank/imports/${info.id}/commit`)}>
-                                <CheckCircle2 className="size-4" /> {commitLabel ? `${commitLabel} (${questions.length})` : `Save ${questions.length} questions as drafts`}
+                                <CheckCircle2 className="size-4" /> {label ? `${label} (${questions.length})` : `Save ${questions.length} questions as drafts`}
                             </Button>
                         )}
                     </div>
@@ -72,6 +84,14 @@ export default function ImportPreview({
                     )}
                     {info.status === 'committed' && <span className="text-sm text-status-good">Saved to the question bank.</span>}
                 </header>
+
+                {questions.length > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        {typeCounts.map(([t, n]) => `${n} ${TYPE_NAMES[t] ?? t}`).join(' · ')}
+                        {destination?.exam && <> · for <Link className="text-brand" href={`/exams/${destination.exam.id}?tab=banks`}>{destination.exam.title}</Link></>}
+                        {destination && destination.pictures > 0 && ` · ${destination.pictures} pictures uploaded with the file`}
+                    </p>
+                )}
 
                 {[...new Set([...(info.warnings ?? []), ...documentWarnings])].map((w) => (
                     <div key={w} className="flex gap-3 rounded-lg border border-status-warning/40 bg-status-warning/10 p-4 text-sm">
@@ -106,15 +126,15 @@ export default function ImportPreview({
                 )}
 
                 <div className="grid gap-4">
-                    {questions.map((q) => (
+                    {questions.map((q, i) => (
                         <QuestionView
-                            key={q.number}
-                            number={q.number}
+                            key={i}
+                            number={i + 1}
                             type={q.type}
                             stemHtml={q.stem_html}
                             options={q.options}
                             mark={q.mark}
-                            meta={[q.topic, q.difficulty]}
+                            meta={[q.topic, q.difficulty, q.line ? `line ${q.line} of the file` : null, q.scoring ? (q.scoring === 'all' ? 'all or nothing' : 'part marks') : null]}
                             answerText={q.answer_text}
                             explanationHtml={q.explanation_html}
                             warnings={q.warnings}

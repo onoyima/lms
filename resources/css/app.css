@@ -270,6 +270,40 @@
         outline: 2px solid var(--brand);
         outline-offset: 2px;
     }
+    /* Anything that can be clicked says so: the hand cursor, and a clear "not now" when disabled. */
+    button:not(:disabled),
+    [role='button'],
+    [role='tab'],
+    [role='menuitem'],
+    [role='option'],
+    [role='checkbox'],
+    [role='switch'],
+    summary,
+    label:has(> input[type='checkbox']),
+    label:has(> input[type='radio']),
+    select,
+    input[type='file'],
+    input[type='checkbox'],
+    input[type='radio'] {
+        cursor: pointer;
+    }
+    button:disabled,
+    [aria-disabled='true'] {
+        cursor: not-allowed;
+    }
+    /* Plain-text buttons (a word such as "Remove" or "Edit") are underlined on hover, so they
+       read as actions and not as labels. Buttons with their own box are left alone. */
+    button:not([data-slot]):not([class*='bg-']):not([class*='border']):not([class*='size-']):not([role]):hover:not(:disabled) {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+    }
+    /* Links inside tables and text are underlined on hover too. */
+    td a:not([data-slot]):hover,
+    p a:not([data-slot]):hover,
+    li a:not([data-slot]):not([class*='rounded']):hover {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+    }
     /* Responsive by default: grid cells may shrink below their content (a long select option or a
        file input no longer widens the page), form controls never outgrow their box, and long words
        and links wrap instead of pushing the page sideways. */

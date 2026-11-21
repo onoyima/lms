@@ -116,13 +116,16 @@ class SessionController extends Controller
                 'starts_at' => $session->starts_at->toIso8601String(), 'ends_at' => $session->ends_at->toIso8601String(),
                 'venue' => $session->venue?->only(['id', 'name', 'capacity']), 'has_pin' => (bool) $session->access_pin_hash,
                 'started' => \App\Models\Attempt::whereIn('exam_candidate_id', ExamCandidate::where('exam_session_id', $session->id)->select('id'))->exists(),
-                'exam' => $session->exam->only(['id', 'title', 'type', 'status', 'kind', 'parent_exam_id']),
+                'exam' => $session->exam->only(['id', 'title', 'type', 'status', 'kind', 'parent_exam_id', 'category']),
                 'proctors' => $session->proctors->map(fn ($p) => ['id' => $p->id, 'user' => $p->user->only(['id', 'name']), 'role' => $p->role, 'max_candidates' => $p->max_candidates]),
             ],
             'candidates' => $candidates,
             'clashes' => app(\App\Services\Exams\TimetableClashes::class)->forSession($session),
             'venues' => Venue::orderBy('name')->get(['id', 'name', 'capacity']),
             'staff' => User::where('user_type', 'staff')->orderBy('name')->limit(500)->get(['id', 'name']),
+            // exam centres without internet: send this sitting to one, or (on a centre's server) send the scripts back
+            'centres' => \App\Models\ExamCentre::orderBy('name')->get(['id', 'name', 'code', 'role']),
+            'centre' => ['from_main' => (bool) $session->centre_ref, 'sent_to' => $session->exam_centre_id],
         ]);
     }
 
@@ -136,9 +139,50 @@ class SessionController extends Controller
             'identifiers' => ['nullable', 'string', 'max:200000'],
             'from_enrolment' => ['boolean'],
             'from_parent' => ['boolean'],
+            'user_ids' => ['nullable', 'array', 'max:5000'], 'user_ids.*' => ['integer'],
+            'list_token' => ['nullable', 'string', 'size:32'],
+            'create_missing' => ['boolean'],
+            'password_rule' => ['nullable', 'in:file_or_matric,matric,surname'],
+            'identifier_prefix' => ['nullable', 'string', 'min:2', 'max:60'],
+            'email_domain' => ['nullable', 'string', 'min:3', 'max:120'],
         ]);
+        $audience = $session->exam->audience();
+        abort_if(($data['user_ids'] ?? []) && \App\Models\User::whereIn('id', $data['user_ids'])->where('user_type', '!=', $audience)->exists(), 422,
+            $audience === 'staff' ? 'This is a staff promotion exam: only staff can be added.' : 'Only students can be added here.');
 
         return back()->with('success', $roster::message($roster->add($session, $data)));
+    }
+
+    /** Take one student off a sitting (before they start; an attempt stays with its record). */
+    public function removeCandidate(ExamSession $session, ExamCandidate $candidate): RedirectResponse
+    {
+        abort_unless($candidate->exam_session_id === $session->id, 404);
+        abort_if(\App\Models\Attempt::where('exam_candidate_id', $candidate->id)->exists(), 422, 'This student has already started; their attempt is kept. Mark them absent or excused instead.');
+        $this->audit->record('candidate.removed', $session, ['user_id' => $candidate->user_id]);
+        $candidate->delete();
+
+        return back()->with('success', 'Student taken off this sitting.');
+    }
+
+    /** Find students to add one by one: by name, matric number or e-mail. */
+    public function searchStudents(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $q = trim((string) $request->query('q'));
+        abort_if(mb_strlen($q) < 2, 422, 'Type at least two letters.');
+        $like = '%'.addcslashes($q, '%_\\').'%';
+
+        $type = $request->query('audience') === 'staff' ? 'staff' : 'student';
+
+        return response()->json(User::where('user_type', $type)->where(fn ($w) => $w->where('name', 'like', $like)->orWhere('identifier', 'like', $like)->orWhere('email', 'like', $like))
+            ->orderBy('name')->limit(20)->get(['id', 'name', 'identifier', 'email']));
+    }
+
+    /** Read an uploaded student list (CSV, Excel or text) and show who it names, before anything changes. */
+    public function previewList(Request $request, \App\Services\Exams\StudentListImport $lists): \Illuminate\Http\JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'max:10240', 'extensions:csv,txt,xlsx']]);
+
+        return response()->json($lists->read($request->file('file')));
     }
 
     /** Re-check eligibility (attendance, registration, status) for everyone not given an override. */

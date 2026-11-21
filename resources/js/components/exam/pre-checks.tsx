@@ -354,15 +354,15 @@ export function PreChecks({ checks, compat, onChange }: { checks: CheckKey[]; co
                             )}
                             {k === 'speakers' && ok !== true && (
                                 <div className="mt-2 ml-6.5 flex flex-wrap items-center gap-2">
-                                    <button type="button" onClick={playBeeps} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:border-brand">Play sound</button>
+                                    <button type="button" onClick={playBeeps} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold shadow-[0_2px_6px_-3px_rgb(16_26_51/.3)] transition hover:border-brand hover:shadow-[0_8px_16px_-10px_rgb(16_26_51/.45)]">Play sound</button>
                                     {beeps !== null && [2, 3, 4].map((n) => (
-                                        <button key={n} type="button" className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:border-brand"
+                                        <button key={n} type="button" className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold shadow-[0_2px_6px_-3px_rgb(16_26_51/.3)] transition hover:border-brand hover:shadow-[0_8px_16px_-10px_rgb(16_26_51/.45)]"
                                             onClick={() => set('speakers', n === beeps ? { ok: true, note: 'Sound works' } : { ok: false, note: 'Not quite. Turn the volume up and play it again.' })}>{n} beeps</button>
                                     ))}
                                 </div>
                             )}
-                            {k === 'fullscreen' && ok !== true && <button type="button" onClick={testFullscreen} className="mt-2 ml-6.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:border-brand">Test</button>}
-                            {k === 'screen_share' && ok !== true && <button type="button" onClick={testShare} className="mt-2 ml-6.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:border-brand">Test</button>}
+                            {k === 'fullscreen' && ok !== true && <button type="button" onClick={testFullscreen} className="mt-2 ml-6.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold shadow-[0_2px_6px_-3px_rgb(16_26_51/.3)] transition hover:border-brand hover:shadow-[0_8px_16px_-10px_rgb(16_26_51/.45)]">Test</button>}
+                            {k === 'screen_share' && ok !== true && <button type="button" onClick={testShare} className="mt-2 ml-6.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold shadow-[0_2px_6px_-3px_rgb(16_26_51/.3)] transition hover:border-brand hover:shadow-[0_8px_16px_-10px_rgb(16_26_51/.45)]">Test</button>}
                         </li>
                     );
                 })}

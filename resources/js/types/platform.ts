@@ -42,6 +42,9 @@ export type ParsedQuestion = {
     topic: string | null;
     difficulty: string | null;
     warnings: string[];
+    line?: number | null;
+    image?: string | null;
+    scoring?: string | null;
 };
 
 export type Paginated<T> = {

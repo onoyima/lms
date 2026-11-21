@@ -79,7 +79,7 @@ function Sheet({ exam, criteria, candidate }: { exam: { id: number }; criteria: 
                         </div>
                     ) : (
                         <label className="flex items-center gap-2 text-sm">
-                            <select className={`${inputClass} w-28 tabular-nums`} value={scores[c.id] ?? ''} onChange={(e) => setScores({ ...scores, [c.id]: e.target.value })} aria-label={`Score out of ${c.max_score}`}>
+                            <select className={`${inputClass} !w-28 tabular-nums`} value={scores[c.id] ?? ''} onChange={(e) => setScores({ ...scores, [c.id]: e.target.value })} aria-label={`Score out of ${c.max_score}`}>
                                 <option value="">Score…</option>
                                 {scoreChoices(Number(c.max_score)).map((v) => (
                                     <option key={v} value={String(v)}>{v}</option>

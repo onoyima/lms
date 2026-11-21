@@ -43,3 +43,7 @@ If one sync would switch off an unusual number of people at once (for example th
 2. They give you the bridge address, a client ID and a client secret, and register this return address with the bridge: shown on the settings card.
 3. Fill in the card, tick what you want, **Save**, then **Test connection**: it shows the running semester and how many active students and staff the portal has.
 4. Switch it on and press **Sync now**.
+
+## The old exam system's Exeat2 import
+
+The old system read students and staff from the Exeat2 database. The portal bridge reads the same tables (students, staff, departments, levels, course_studies), only reading, never writing. To take people from the Exeat2 database instead, point `VUNA_DB_DATABASE` (and host, user) at it; table names that differ can be renamed in `config/vuna_bridge.php` (`tables`).

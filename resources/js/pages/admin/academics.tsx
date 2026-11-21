@@ -172,7 +172,7 @@ function Plans({ programmes, courses, plan }: Props) {
                             <div key={r.course_id} className="flex items-center gap-2 text-sm">
                                 <span className="w-24 font-mono text-brand">{courses.find((c) => c.id === r.course_id)?.code}</span>
                                 <span className="flex-1">{courses.find((c) => c.id === r.course_id)?.title}</span>
-                                <select className={`${inputClass} w-32`} value={r.category} onChange={(e) => setRows(rows.map((x) => (x.course_id === r.course_id ? { ...x, category: e.target.value } : x)))}><option value="core">Compulsory</option><option value="elective">Elective</option></select>
+                                <select className={`${inputClass} !w-32`} value={r.category} onChange={(e) => setRows(rows.map((x) => (x.course_id === r.course_id ? { ...x, category: e.target.value } : x)))}><option value="core">Compulsory</option><option value="elective">Elective</option></select>
                                 <button className="text-xs text-muted-foreground" onClick={() => setRows(rows.filter((x) => x.course_id !== r.course_id))}>Remove</button>
                             </div>
                         ))}
@@ -209,14 +209,14 @@ function Calendar({ sessions }: Props) {
                                 <p className="font-medium">{m.name} <Status value={m.is_current ? 'current' : m.status} /></p>
                                 <p className="text-xs text-muted-foreground">{m.offerings} courses{m.closed_at && ` · closed ${formatDateTime(m.closed_at)}`}</p>
                                 <div className="mt-2 flex gap-2 text-xs">
-                                    <input type="date" className={`${inputClass} w-40`} defaultValue={m.starts_on ?? ''} onBlur={(e) => post(`/admin/academics/semesters/${m.id}`, { action: 'dates', starts_on: e.target.value || null, ends_on: m.ends_on })} aria-label="Starts" />
-                                    <input type="date" className={`${inputClass} w-40`} defaultValue={m.ends_on ?? ''} onBlur={(e) => post(`/admin/academics/semesters/${m.id}`, { action: 'dates', starts_on: m.starts_on, ends_on: e.target.value || null })} aria-label="Ends" />
+                                    <input type="date" className={`${inputClass} !w-40`} defaultValue={m.starts_on ?? ''} onBlur={(e) => post(`/admin/academics/semesters/${m.id}`, { action: 'dates', starts_on: e.target.value || null, ends_on: m.ends_on })} aria-label="Starts" />
+                                    <input type="date" className={`${inputClass} !w-40`} defaultValue={m.ends_on ?? ''} onBlur={(e) => post(`/admin/academics/semesters/${m.id}`, { action: 'dates', starts_on: m.starts_on, ends_on: e.target.value || null })} aria-label="Ends" />
                                 </div>
                             </div>
                             <div className="flex flex-wrap items-start gap-2">
                                 {m.status !== 'closed' && !m.is_current && <Button size="sm" onClick={() => confirm(`Make ${s.name} ${m.name} the current semester?`) && post(`/admin/academics/semesters/${m.id}`, { action: 'activate' })}>Make current</Button>}
                                 {m.status !== 'closed' && (
-                                    <select className={`${inputClass} w-52`} value="" onChange={(e) => {
+                                    <select className={`${inputClass} !w-52`} value="" onChange={(e) => {
                                         if (e.target.value && confirm('Carry over courses and lecturers from that semester? Choose OK, then you will be asked about content.')) {
                                             post(`/admin/academics/semesters/${m.id}`, { action: 'rollover', from: Number(e.target.value), copy_content: confirm('Also copy course pages, materials and quizzes?') });
                                         }
@@ -247,16 +247,16 @@ function BulkBar({ ids, staff, onDone }: { ids: number[]; staff: Props['staff'];
     return (
         <div className="surface flex flex-wrap items-center gap-2 p-3 text-sm" role="region" aria-label="Bulk actions">
             <span className="font-medium">{ids.length} selected</span>
-            <select aria-label="Action" className={`${inputClass} w-48`} value={action} onChange={(e) => setAction(e.target.value)}>
+            <select aria-label="Action" className={`${inputClass} !w-48`} value={action} onChange={(e) => setAction(e.target.value)}>
                 <option value="status">Set status</option><option value="capacity">Set capacity</option><option value="add_lecturer">Add a lecturer</option>
                 <option value="remove_lecturer">Remove a lecturer</option><option value="copy_content">Copy content from last time</option>
             </select>
-            {action === 'status' && <select aria-label="Status" className={`${inputClass} w-36`} value={status} onChange={(e) => setStatus(e.target.value)}>{['draft', 'open', 'closed', 'archived'].map((x) => <option key={x}>{x}</option>)}</select>}
-            {action === 'capacity' && <input aria-label="Capacity" type="number" min={1} className={`${inputClass} w-28`} value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="no limit" />}
+            {action === 'status' && <select aria-label="Status" className={`${inputClass} !w-36`} value={status} onChange={(e) => setStatus(e.target.value)}>{['draft', 'open', 'closed', 'archived'].map((x) => <option key={x}>{x}</option>)}</select>}
+            {action === 'capacity' && <input aria-label="Capacity" type="number" min={1} className={`${inputClass} !w-28`} value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="no limit" />}
             {(action === 'add_lecturer' || action === 'remove_lecturer') && (
-                <select aria-label="Lecturer" className={`${inputClass} w-56`} value={user} onChange={(e) => setUser(e.target.value)}><option value="">Choose…</option>{staff.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+                <select aria-label="Lecturer" className={`${inputClass} !w-56`} value={user} onChange={(e) => setUser(e.target.value)}><option value="">Choose…</option>{staff.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
             )}
-            {action === 'add_lecturer' && <select aria-label="Role" className={`${inputClass} w-36`} value={role} onChange={(e) => setRole(e.target.value)}><option>coordinator</option><option>lecturer</option><option>assistant</option></select>}
+            {action === 'add_lecturer' && <select aria-label="Role" className={`${inputClass} !w-36`} value={role} onChange={(e) => setRole(e.target.value)}><option>coordinator</option><option>lecturer</option><option>assistant</option></select>}
             <Button size="sm" disabled={(action.endsWith('lecturer') && !user)} onClick={() => confirm(`Apply to ${ids.length} course(s)?`) && run()}>Apply</Button>
         </div>
     );

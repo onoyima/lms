@@ -131,7 +131,7 @@ function InvoiceRow({ i, online }: { i: Invoice; online: boolean }) {
                         e.preventDefault();
                         form.post(`/institution/billing/invoices/${i.id}/coupon`, { preserveScroll: true, onSuccess: () => setCoupon(false) });
                     }}>
-                        <input aria-label="Discount code" className={`${inputClass} h-8 w-32`} value={form.data.code} onChange={(e) => form.setData('code', e.target.value)} placeholder="Code" required />
+                        <input aria-label="Discount code" className={`${inputClass} h-8 !w-32`} value={form.data.code} onChange={(e) => form.setData('code', e.target.value)} placeholder="Code" required />
                         <Button size="sm" disabled={form.processing}>Apply</Button>
                     </form>
                 )}

@@ -1,15 +1,15 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { BarChart3, Download } from 'lucide-react';
+import { BarChart3, Download, ListChecks, Users } from 'lucide-react';
 import { PageHeader, Stat, Status, Table, Td } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
 import type { Paginated } from '@/types';
 
-type Row = { id: number; name: string; identifier: string | null; raw: number | null; max: number | null; final: number | null; grade: string | null; status: string; locked: boolean; withheld_reason: string | null };
+type Row = { id: number; name: string; identifier: string | null; raw: number | null; max: number | null; final: number | null; grade: string | null; status: string; locked: boolean; withheld_reason: string | null; attempt_id?: number | null };
 
 export default function ExamResults({ exam, results, stats, changes, appeals, canApprove, canPublish }: {
     exam: { id: number; title: string; type: string; total_mark: string | null; pass_mark: string | null; status: string }; results: Paginated<Row>;
     stats: { count: number; mean: number; min: number; max: number; grades: Record<string, number>; status: Record<string, number> };
-    changes: { id: number; candidate: string; from: number; to: number; reason: string; requested_by: string | null }[];
+    changes: { id: number; candidate: string; from: number; to: number; reason: string; requested_by: string | null; answer?: { number: number | null; attempt_id: number } | null }[];
     appeals: { id: number; candidate: string; statement: string; status: string }[]; canApprove: boolean; canPublish: boolean;
 }) {
     const { flash } = usePage().props;
@@ -28,14 +28,20 @@ export default function ExamResults({ exam, results, stats, changes, appeals, ca
                             <Button variant="outline" onClick={() => move('moderated')}>Moderate</Button>
                             {canApprove && <Button variant="outline" onClick={() => move('approved')}>Approve</Button>}
                             {canPublish && <Button onClick={() => move('published')}>Publish</Button>}
-                            <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=xlsx`}><Download className="size-4" /> Excel</a></Button>
-                            <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=pdf`}>PDF</a></Button>
-                            <Button variant="outline" asChild><a href={`/results/${exam.id}/export`}>CSV</a></Button>
-                            <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=json`}>JSON</a></Button>
-                            <Button variant="outline" asChild><Link href={`/results/${exam.id}/analytics`}><BarChart3 className="size-4" /> Analysis</Link></Button>
                         </>
                     }
                 />
+                <nav className="flex flex-wrap gap-2" aria-label="More about these results">
+                    <Button variant="secondary" asChild><Link href={`/exam-board/${exam.id}`}><Users className="size-4" /> Overview and scoreboard</Link></Button>
+                    <Button variant="secondary" asChild><Link href={`/results/${exam.id}/questions`}><ListChecks className="size-4" /> Question by question</Link></Button>
+                    <Button variant="secondary" asChild><Link href={`/results/${exam.id}/analytics`}><BarChart3 className="size-4" /> Analysis</Link></Button>
+                    <span className="mx-1 hidden w-px bg-border sm:block" />
+                    <Button variant="outline" asChild><a href={`/results/${exam.id}/score-sheet.xlsx`}><Download className="size-4" /> Scores per question (Excel)</a></Button>
+                    <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=xlsx`}><Download className="size-4" /> Results (Excel)</a></Button>
+                    <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=pdf`}>PDF</a></Button>
+                    <Button variant="outline" asChild><a href={`/results/${exam.id}/export`}>CSV</a></Button>
+                    <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=json`}>JSON</a></Button>
+                </nav>
                 {flash?.success && <p className="text-sm text-status-good">{flash.success}</p>}
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                     <Stat label="Candidates" value={stats.count} />
@@ -50,7 +56,14 @@ export default function ExamResults({ exam, results, stats, changes, appeals, ca
                         <p className="eyebrow mb-3">Changes waiting for a second officer</p>
                         {changes.map((c) => (
                             <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-2 text-sm last:border-0">
-                                <span>{c.candidate}: {c.from} → <strong>{c.to}</strong> — {c.reason} <span className="text-xs text-muted-foreground">(by {c.requested_by})</span></span>
+                                <span>
+                                    {c.answer ? (
+                                        <>{c.candidate}: answer to <Link className="text-brand" href={`/results/${exam.id}/scripts/${c.answer.attempt_id}`}>question {c.answer.number ?? ''}</Link> corrected; the script is marked again when approved</>
+                                    ) : (
+                                        <>{c.candidate}: {c.from} → <strong>{c.to}</strong></>
+                                    )}{' '}
+                                    — {c.reason} <span className="text-xs text-muted-foreground">(by {c.requested_by})</span>
+                                </span>
                                 {canApprove && (
                                     <span className="flex gap-2">
                                         <Button size="sm" onClick={() => router.post(`/results/changes/${c.id}`, { approve: true }, { preserveScroll: true })}>Approve</Button>
@@ -98,21 +111,27 @@ router.post(`/results/appeals/${a.id}`, { upheld: false, decision: d }, { preser
                             <Td className="font-semibold tabular-nums">{r.final ?? '—'}</Td>
                             <Td>{r.grade}</Td>
                             <Td><Status value={r.status} />{r.locked && <span className="ml-1 text-xs text-muted-foreground">locked</span>}{r.withheld_reason && <div className="text-xs text-status-critical">{r.withheld_reason}</div>}</Td>
-                            <Td className="flex gap-2 text-xs">
-                                <button className="text-brand" onClick={() => {
- const to = prompt('Corrected final score:'); const reason = to && prompt('Reason (kept in the audit trail):');
+                            <Td>
+                                <span className="flex flex-wrap gap-1.5">
+                                    {r.attempt_id && <Button size="sm" variant="outline" asChild><Link href={`/results/${exam.id}/scripts/${r.attempt_id}`}>Script</Link></Button>}
+                                    <Button size="sm" variant="ghost" onClick={() => {
+                                        const to = prompt('Corrected final score:');
+                                        const reason = to && prompt('Reason (kept in the audit trail):');
 
- if (to && reason) {
+                                        if (to && reason) {
 router.post(`/results/items/${r.id}/change`, { to, reason }, { preserveScroll: true });
-} 
-}}>Change…</button>
-                                {canApprove && r.status !== 'withheld' && <button className="text-status-critical" onClick={() => {
- const reason = prompt('Why withhold this result?');
+}
+                                    }}>Change score</Button>
+                                    {canApprove && r.status !== 'withheld' && (
+                                        <Button size="sm" variant="ghost" className="text-status-critical" onClick={() => {
+                                            const reason = prompt('Why withhold this result?');
 
- if (reason) {
+                                            if (reason) {
 router.post(`/results/items/${r.id}/withhold`, { reason }, { preserveScroll: true });
-} 
-}}>Withhold</button>}
+}
+                                        }}>Withhold</Button>
+                                    )}
+                                </span>
                             </Td>
                         </tr>
                     ))}

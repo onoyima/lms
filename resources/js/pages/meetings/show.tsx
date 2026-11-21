@@ -38,7 +38,7 @@ function GuestLinkPanel({ uuid, link }: { uuid: string; link: Props['guestLink']
                     </div>
                     <p className="text-xs text-muted-foreground">Guests type their name{link.passcode ? ' and the passcode' : ''}, then wait until a host lets them in. They see only this meeting.</p>
                     <div className="flex flex-wrap items-end gap-2">
-                        <Field label={link.passcode ? 'Change passcode' : 'Add a passcode (optional)'}><input className={`${inputClass} w-44`} value={passcode} onChange={(e) => setPasscode(e.target.value)} minLength={4} /></Field>
+                        <Field label={link.passcode ? 'Change passcode' : 'Add a passcode (optional)'}><input className={`${inputClass} !w-44`} value={passcode} onChange={(e) => setPasscode(e.target.value)} minLength={4} /></Field>
                         <Button size="sm" variant="outline" disabled={passcode.length > 0 && passcode.length < 4} onClick={() => (save({ enabled: true, passcode }), setPasscode(''))}>{passcode ? 'Save passcode' : link.passcode ? 'Remove passcode' : 'Save'}</Button>
                         <Button size="sm" variant="ghost" onClick={() => confirm('Make a new link? The old one stops working.') && save({ enabled: true, new_link: true })}>New link</Button>
                         <Button size="sm" variant="ghost" className="text-status-critical" onClick={() => save({ enabled: false })}>Switch off</Button>
@@ -47,7 +47,7 @@ function GuestLinkPanel({ uuid, link }: { uuid: string; link: Props['guestLink']
             ) : (
                 <div className="flex flex-wrap items-end gap-2">
                     <p className="w-full text-sm text-muted-foreground">Invite an external examiner, a guest speaker or a parent without giving them an account.</p>
-                    <Field label="Passcode (optional)"><input className={`${inputClass} w-44`} value={passcode} onChange={(e) => setPasscode(e.target.value)} /></Field>
+                    <Field label="Passcode (optional)"><input className={`${inputClass} !w-44`} value={passcode} onChange={(e) => setPasscode(e.target.value)} /></Field>
                     <Button size="sm" variant="outline" disabled={passcode.length > 0 && passcode.length < 4} onClick={() => save({ enabled: true, passcode: passcode || null })}>Make a guest link</Button>
                 </div>
             )}

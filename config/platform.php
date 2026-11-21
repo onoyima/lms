@@ -92,6 +92,6 @@ return [
 
     'question_import' => [
         'max_upload_kb' => 20480,
-        'allowed_extensions' => ['docx', 'txt', 'md', 'html', 'htm'],
+        'allowed_extensions' => ['docx', 'txt', 'md', 'html', 'htm', 'csv', 'pdf'],
     ],
 ];

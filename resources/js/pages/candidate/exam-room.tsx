@@ -355,6 +355,10 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
     const [timerNotice, setTimerNotice] = useState<{ text: string; tone: 'half' | 'final' } | null>(null);
     const [contrast, setContrast] = useState(Boolean(candidate.accommodations?.high_contrast));
     const [warningToast, setWarningToast] = useState<string | null>(null);
+    // "Report this question": the question being reported, those already reported, and reports still to send
+    const [reporting, setReporting] = useState<PaperQuestion | null>(null);
+    const [reported, setReported] = useState<Record<number, true>>({});
+    const unsentReports = useRef<{ question_id: number; reason: string; note: string }[]>([]);
 
     const seq = useRef(0);
     const queue = useRef<Record<number, Answer>>({});
@@ -407,6 +411,25 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             return { ok: false, status: 0, data: {} as T };
         }
     }, [auth, reach]);
+
+    /** Sends a question report; if the connection is down it waits and goes with the next try. */
+    const sendReports = useCallback(async () => {
+        while (unsentReports.current.length) {
+            const r = unsentReports.current[0];
+            const res = await api('report', 'POST', r);
+
+            if (res.status === 0 || res.status >= 500) {
+                return; // offline: try again shortly
+            }
+
+            unsentReports.current.shift();
+        }
+    }, [api]);
+    useEffect(() => {
+        const t = window.setInterval(() => void sendReports(), 15000);
+
+        return () => window.clearInterval(t);
+    }, [sendReports]);
 
     const finish = useCallback((r: Record<string, unknown> & { reason?: string }) => {
         if (finished.current) {
@@ -1587,9 +1610,14 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                         {q.section.instructions && index === questions.findIndex((x) => x.section.id === q.section.id) && (
                             <p className="mb-4 rounded-xl bg-black/5 p-3 text-[0.85em] opacity-80">{q.section.instructions}</p>
                         )}
-                        <p className="text-[0.75em] font-medium opacity-60">
-                            {q.section.title} · Question {q.number} · {q.mark} mark{q.mark === 1 ? '' : 's'}
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-[0.75em] font-medium opacity-60">
+                                {q.section.title} · Question {q.number} · {q.mark} mark{q.mark === 1 ? '' : 's'}
+                            </p>
+                            <button type="button" onClick={() => setReporting(q)} className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium ${reported[q.id] ? 'border-[#d97706]/50 bg-[#d97706]/10 text-[#b45309]' : contrast ? 'border-white/30 hover:bg-white/10' : 'border-black/15 bg-white hover:bg-black/5'}`}>
+                                <AlertTriangle className="size-3.5" /> {reported[q.id] ? 'Reported' : 'Report this question'}
+                            </button>
+                        </div>
                         {q.passage_id && paper.passages?.[String(q.passage_id)] && (
                             <details open className={`mt-3 rounded-2xl border p-4 text-[0.92em] ${contrast ? 'border-white/30' : 'border-black/10 bg-black/[.025]'}`}>
                                 <summary className="cursor-pointer font-semibold">{paper.passages[String(q.passage_id)]!.title}</summary>
@@ -1758,6 +1786,20 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                         <p className="mt-4 text-sm opacity-60">This message closes by itself when you can continue.</p>
                     )}
                 </Modal>
+            )}
+
+            {reporting && (
+                <ReportQuestion
+                    number={reporting.number}
+                    onCancel={() => setReporting(null)}
+                    onSend={(reason, note) => {
+                        unsentReports.current.push({ question_id: reporting.id, reason, note });
+                        setReported((r) => ({ ...r, [reporting.id]: true }));
+                        setReporting(null);
+                        setWarningToast('Thank you. The examiners will look at this question after the exam. Answer it as best you can.');
+                        void sendReports();
+                    }}
+                />
             )}
 
             {confirmSubmit && (
@@ -2060,6 +2102,45 @@ function FileAnswer({ q, value, onChange, contrast, upload }: { q: PaperQuestion
             </label>
             {error && <p role="alert" className="text-[0.85em] text-[#b91c1c]">{error}</p>}
         </div>
+    );
+}
+
+const REPORT_REASONS: [string, string][] = [
+    ['wrong_key', 'The right answer is not among the options, or looks wrongly marked'],
+    ['two_answers', 'More than one option is right'],
+    ['no_answer', 'None of the options is right'],
+    ['unclear', 'Typing error or unclear wording'],
+    ['missing_picture', 'A picture or equation does not show'],
+    ['other', 'Something else'],
+];
+
+/** "Report this question": the student says what is wrong; it takes no exam time and does not change their answer. */
+function ReportQuestion({ number, onCancel, onSend }: { number: number; onCancel: () => void; onSend: (reason: string, note: string) => void }) {
+    const [reason, setReason] = useState('');
+    const [note, setNote] = useState('');
+
+    return (
+        <Modal wide>
+            <h2 className="text-xl font-semibold">Report question {number}</h2>
+            <p className="mt-1 text-sm opacity-70">The examiners check every report after the exam. If the question is faulty, everyone&apos;s marks are put right. Your exam time keeps running, so answer the question as best you can.</p>
+            <fieldset className="mt-4 grid gap-2">
+                <legend className="sr-only">What is wrong</legend>
+                {REPORT_REASONS.map(([k, label]) => (
+                    <label key={k} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 text-sm ${reason === k ? 'border-brand bg-brand/5' : 'border-black/10 hover:bg-black/[.03]'}`}>
+                        <input type="radio" name="report-reason" className="mt-0.5" checked={reason === k} onChange={() => setReason(k)} />
+                        {label}
+                    </label>
+                ))}
+            </fieldset>
+            <label className="mt-3 grid gap-1 text-sm">
+                Anything to add (optional)
+                <textarea className="min-h-20 rounded-xl border border-black/15 p-2.5" maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Option C and D are the same" />
+            </label>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={onCancel} className="rounded-xl border border-black/15 px-4 py-2">Cancel</button>
+                <button type="button" disabled={!reason} onClick={() => onSend(reason, note.trim())} className="rounded-xl bg-brand px-5 py-2 font-medium text-brand-foreground disabled:opacity-50">Send report</button>
+            </div>
+        </Modal>
     );
 }
 

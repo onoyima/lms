@@ -32,6 +32,7 @@ class QuestionController extends Controller
 
         return Question::query()
             ->when($request->integer('course_id'), fn ($w, $id) => $w->where('course_id', $id))
+            ->when($request->integer('bank_id'), fn ($w, $id) => $w->where('question_bank_id', $id))
             ->when($request->string('type')->toString(), fn ($w, $t) => $w->where('type', $t))
             ->when($request->string('status')->toString(), fn ($w, $t) => $w->where('status', $t))
             ->when($request->string('topic')->toString(), fn ($w, $t) => $w->where('topic', $t))
@@ -54,7 +55,9 @@ class QuestionController extends Controller
             'questions' => $questions,
             'courses' => Course::orderBy('code')->get(['id', 'code', 'title']),
             'topics' => Question::whereNotNull('topic')->distinct()->orderBy('topic')->pluck('topic'),
-            'filters' => $request->only(['course_id', 'type', 'status', 'topic', 'difficulty', 'q']),
+            'filters' => $request->only(['course_id', 'bank_id', 'type', 'status', 'topic', 'difficulty', 'q']),
+            'banks' => \App\Models\QuestionBank::with('exam:id,title')->withCount('questions')->orderBy('name')->limit(500)->get()
+                ->map(fn ($b) => ['id' => $b->id, 'name' => $b->name.($b->exam ? ' — '.$b->exam->title : ''), 'questions' => $b->questions_count]),
             'canCreate' => $request->user()->can('questions.create'),
             'canModerate' => $request->user()->can('questions.moderate'),
         ]);

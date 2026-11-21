@@ -31,6 +31,30 @@ class ExamWorkflow
         $this->decide($exam, 'submission', $by, 'approved', null);
     }
 
+    /**
+     * When the institution does not ask for paper approval (the default), the setter publishes the
+     * paper in one step: the same checks, the same frozen version, no second person.
+     */
+    public function publish(Exam $exam, User $by): ExamVersion
+    {
+        abort_if((bool) \App\Support\Policy::get('exam_paper_approval'), 422, 'Papers here need approval: submit it for approval instead.');
+        abort_unless(in_array($exam->status, ['draft', 'returned', 'submitted'], true), 422, 'Only a draft can be published.');
+        $this->assertHasContent($exam);
+
+        return DB::transaction(function () use ($exam, $by) {
+            $snapshot = $this->snapshot($exam);
+            $json = json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $version = ExamVersion::create([
+                'exam_id' => $exam->id, 'version' => $exam->version, 'snapshot' => $snapshot,
+                'checksum' => hash('sha256', $json), 'created_by' => $by->id, 'created_at' => now(),
+            ]);
+            $exam->update(['status' => 'scheduled', 'approved_at' => now(), 'approved_by' => $by->id]);
+            $this->decide($exam, 'publication', $by, 'approved', 'Published without separate approval');
+
+            return $version;
+        });
+    }
+
     public function approve(Exam $exam, User $by, ?string $comment = null): ExamVersion
     {
         abort_unless($exam->status === 'submitted', 422, 'Only a submitted paper can be approved.');
@@ -128,7 +152,9 @@ class ExamWorkflow
 
         DB::transaction(function () use ($change, $by, $approve) {
             $change->update(['status' => $approve ? 'approved' : 'rejected', 'decided_by' => $by->id, 'decided_at' => now()]);
-            if ($approve) {
+            if ($approve && $change->answer) {
+                $this->applyAnswerCorrection($change);
+            } elseif ($approve) {
                 $result = $change->result;
                 $outOf = (float) ($result->exam->total_mark ?: $result->max_score ?: 100);
                 $result->update([
@@ -139,6 +165,50 @@ class ExamWorkflow
             }
             $this->audit->record('result.change_'.($approve ? 'approved' : 'rejected'), $change->result, ['change' => $change->id, 'to' => $change->to_score], $by->id);
         });
+    }
+
+    /**
+     * Correct one answer in a student's script (the old system's answer override), with the reason.
+     * Applied at once when the institution does not ask for a second officer, otherwise on approval.
+     *
+     * @param  array  $to  the corrected response, as the exam screen stores it (options / tf)
+     */
+    public function requestAnswerCorrection(Result $result, \App\Models\Attempt $attempt, int $questionId, int $number, array $to, User $by, string $reason): ResultChange
+    {
+        abort_unless($attempt->user_id === $result->user_id && $attempt->exam_id === $result->exam_id, 404);
+        abort_unless(in_array($attempt->status, \App\Models\Attempt::CLOSED, true), 422, 'The student is still writing.');
+        $from = DB::table('attempt_answers')->where('attempt_id', $attempt->id)->where('question_id', $questionId)->value('response');
+        $change = ResultChange::create([
+            'result_id' => $result->id, 'from_score' => $result->final_score, 'to_score' => (float) $result->final_score, 'reason' => $reason, 'requested_by' => $by->id,
+            'answer' => ['attempt_id' => $attempt->id, 'question_id' => $questionId, 'number' => $number, 'from' => $from ? json_decode($from, true) : null, 'to' => $to],
+        ]);
+        $this->audit->record('result.answer_correction_requested', $result, ['question' => $questionId, 'from' => $change->answer['from'], 'to' => $to, 'reason' => $reason], $by->id);
+        if (! \App\Support\Policy::get('result_change_approval') && $by->can('results.approve')) {
+            DB::transaction(function () use ($change, $by) {
+                $change->update(['status' => 'approved', 'decided_by' => $by->id, 'decided_at' => now()]);
+                $this->applyAnswerCorrection($change);
+            });
+        }
+
+        return $change->fresh();
+    }
+
+    /** Puts the corrected answer in the script, marks it again and recomputes the result (even an approved one). */
+    private function applyAnswerCorrection(ResultChange $change): void
+    {
+        $a = $change->answer;
+        $attempt = \App\Models\Attempt::findOrFail($a['attempt_id']);
+        DB::table('attempt_answers')->updateOrInsert(
+            ['attempt_id' => $attempt->id, 'question_id' => $a['question_id']],
+            ['response' => json_encode($a['to']), 'score' => null],
+        );
+        $this->marker->markAttempt($attempt);
+        $result = $change->result()->first();
+        $locked = $result->locked;
+        $locked && $result->forceFill(['locked' => false])->save();
+        $fresh = $this->marker->refreshResult($result->exam, $result->user_id);
+        $fresh?->forceFill(['locked' => $locked, 'version' => $result->version + 1])->save();
+        $change->update(['to_score' => (float) ($fresh?->final_score ?? $result->final_score)]);
     }
 
     public function decideAppeal(Appeal $appeal, User $by, bool $upheld, string $decision): void
@@ -167,6 +237,9 @@ class ExamWorkflow
         }
         $has = $exam->sections()->withCount('questions')->get()->sum(fn ($s) => $s->questions_count + collect($s->blueprint ?? [])->sum('count'));
         abort_if($has === 0, 422, 'Add questions or blueprint rules first.');
+        // every random-draw rule must be possible, or candidates could not start
+        $problems = app(PaperBuilder::class)->problems($exam);
+        abort_if($problems !== [], 422, implode(' ', $problems));
     }
 
     private function snapshot(Exam $exam): array

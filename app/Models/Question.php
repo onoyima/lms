@@ -26,8 +26,8 @@ class Question extends Model
     }
 
     protected $fillable = [
-        'course_id', 'passage_id', 'question_import_id', 'created_by', 'type', 'stem_html', 'explanation_html',
-        'topic', 'difficulty', 'mark', 'status', 'version', 'numeric_answer', 'matching', 'accepted_answers', 'outcome',
+        'course_id', 'question_bank_id', 'passage_id', 'question_import_id', 'created_by', 'type', 'stem_html', 'explanation_html',
+        'topic', 'difficulty', 'mark', 'scoring', 'status', 'version', 'numeric_answer', 'matching', 'accepted_answers', 'outcome', 'centre_ref',
     ];
 
     protected function casts(): array
@@ -50,6 +50,11 @@ class Question extends Model
         return $this->belongsTo(Course::class);
     }
 
+    public function bank(): BelongsTo
+    {
+        return $this->belongsTo(QuestionBank::class, 'question_bank_id');
+    }
+
     public function versions(): HasMany
     {
         return $this->hasMany(QuestionVersion::class);
@@ -64,6 +69,7 @@ class Question extends Model
             'type' => $this->type,
             'stem_html' => $this->stem_html,
             'mark' => (float) $this->mark,
+            'scoring' => $this->scoring,
             'numeric_answer' => $this->numeric_answer,
             'matching' => $this->matching,
             'accepted_answers' => $this->accepted_answers,

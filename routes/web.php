@@ -376,14 +376,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('media', [QuestionController::class, 'media'])->middleware('throttle:60,1,qmedia')->name('media');
             Route::post('preview', [QuestionController::class, 'preview'])->middleware('throttle:120,1,web125')->name('preview');
             Route::get('import', [ImportController::class, 'create'])->name('import.create');
-            Route::post('import', [ImportController::class, 'store'])->name('import.store');
-            Route::get('imports/{import}', [ImportController::class, 'show'])->name('imports.show');
-            Route::post('imports/{import}/commit', [ImportController::class, 'commit'])->name('imports.commit');
             Route::post('imports/{import}/retry', [ImportController::class, 'retry'])->name('imports.retry');
             Route::post('write', [ImportController::class, 'write'])->middleware('throttle:20,1,aiwrite')->name('write');
             Route::get('imports/{import}/pages/{n}', [ImportController::class, 'page'])->whereNumber('n')->name('imports.page');
         });
         Route::post('moderate', [QuestionController::class, 'moderate'])->middleware('permission:questions.moderate')->name('moderate');
+        // uploading questions: question writers, and exam officers uploading into an exam's own banks
+        Route::middleware('permission:questions.create|exams.manage')->group(function () {
+            Route::post('import', [ImportController::class, 'store'])->name('import.store');
+            Route::get('imports/{import}', [ImportController::class, 'show'])->name('imports.show');
+            Route::post('imports/{import}/commit', [ImportController::class, 'commit'])->name('imports.commit');
+        });
     });
 
     // ── Exams (module: question_bank = exam delivery) ─────────────────────────
@@ -430,6 +433,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('exams/{exam}/sections/{section}/questions', [ExamAdminController::class, 'attachQuestions'])->name('exams.sections.attach');
         Route::delete('exams/{exam}/sections/{section}/questions/{question}', [ExamAdminController::class, 'detachQuestion'])->name('exams.sections.detach');
         Route::get('exams/{exam}/question-search', [ExamAdminController::class, 'searchQuestions'])->name('exams.question-search');
+        // an exam's own question banks (one per topic if wanted)
+        $qb = \App\Http\Controllers\Exam\QuestionBankController::class;
+        Route::post('question-banks', [$qb, 'store'])->name('question-banks.store');
+        Route::put('question-banks/{bank}', [$qb, 'update'])->name('question-banks.update');
+        Route::delete('question-banks/{bank}', [$qb, 'destroy'])->name('question-banks.destroy');
+        Route::post('question-banks/{bank}/clear', [$qb, 'clear'])->name('question-banks.clear');
+        Route::get('question-banks/{bank}/questions', [$qb, 'questions'])->name('question-banks.questions');
+        Route::get('question-banks/{bank}/export.{format}', [$qb, 'export'])->whereIn('format', ['txt', 'csv'])->middleware('throttle:20,1,qbexp')->name('question-banks.export');
+        Route::get('exams/{exam}/questions.{format}', [$qb, 'exportExam'])->whereIn('format', ['txt', 'csv'])->middleware('throttle:20,1,qbexp')->name('exams.questions.export');
+        Route::post('exams/{exam}/sections/{section}/banks', [$qb, 'attachAll'])->name('exams.sections.banks');
+        Route::post('exams/{exam}/clear-paper', [$qb, 'detachAll'])->name('exams.clear-paper');
+        Route::post('exams/{exam}/question-reports/{question}', [ExamAdminController::class, 'settleReport'])->whereNumber('question')->name('exams.question-reports.settle');
         Route::put('exams/{exam}/criteria', [ExamAdminController::class, 'saveCriteria'])->name('exams.criteria');
         Route::post('exams/{exam}/examiners', [ExamAdminController::class, 'assignExaminer'])->name('exams.examiners.store');
         Route::delete('exams/{exam}/examiners/{user}', [ExamAdminController::class, 'removeExaminer'])->name('exams.examiners.destroy');
@@ -444,6 +459,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('sessions/{session}', [SessionController::class, 'update'])->name('sessions.update');
         Route::post('sessions/{session}/candidates', [SessionController::class, 'addCandidates'])->name('sessions.candidates.store');
         Route::put('sessions/{session}/candidates/{candidate}', [SessionController::class, 'updateCandidate'])->name('sessions.candidates.update');
+        Route::delete('sessions/{session}/candidates/{candidate}', [SessionController::class, 'removeCandidate'])->name('sessions.candidates.destroy');
+        // exam centres without internet (.cbtpkg packages both ways)
+        $ec = \App\Http\Controllers\Exam\ExamCentreController::class;
+        Route::get('exam-centres', [$ec, 'index'])->name('exam-centres.index');
+        Route::post('exam-centres', [$ec, 'store'])->name('exam-centres.store');
+        Route::post('exam-centres/{centre}/rotate', [$ec, 'rotate'])->name('exam-centres.rotate');
+        Route::delete('exam-centres/{centre}', [$ec, 'destroy'])->name('exam-centres.destroy');
+        Route::post('exam-centres/read', [$ec, 'read'])->middleware('throttle:10,1,ecread')->name('exam-centres.read');
+        Route::get('sessions/{session}/centre-package', [$ec, 'package'])->middleware('throttle:20,1,ecpkg')->name('sessions.centre-package');
+        Route::post('sessions/{session}/centre-results', [$ec, 'results'])->middleware('throttle:10,1,ecres')->name('sessions.centre-results');
+        Route::get('sessions/{session}/centre-results', [$ec, 'pack'])->middleware('throttle:20,1,ecpack')->name('sessions.centre-pack');
+        Route::get('student-search', [SessionController::class, 'searchStudents'])->middleware('throttle:120,1,stusearch')->name('students.search');
+        Route::post('student-lists/preview', [SessionController::class, 'previewList'])->middleware('throttle:30,1,stulist')->name('student-lists.preview');
         Route::post('sessions/{session}/pins', [SessionController::class, 'generatePins'])->name('sessions.pins')->middleware('module:cbt_halls');
         Route::post('sessions/{session}/seats', [SessionController::class, 'allocateSeats'])->name('sessions.seats')->middleware('module:cbt_halls');
         Route::post('sessions/{session}/proctors', [SessionController::class, 'assignProctor'])->name('sessions.proctors.store');
@@ -528,6 +556,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('results/items/{result}/change', [ResultController::class, 'requestChange'])->name('results.change');
         Route::post('results/changes/{change}', [ResultController::class, 'decideChange'])->name('results.change.decide');
         Route::post('results/appeals/{appeal}', [ResultController::class, 'decideAppeal'])->name('results.appeal.decide');
+        // question by question: statistics, the Q1…Qn score sheet, each script, correcting an answer
+        $qr = \App\Http\Controllers\Results\QuestionResultsController::class;
+        Route::middleware('permission:results.mark|results.approve|exams.manage')->group(function () use ($qr) {
+            Route::get('results/{exam}/questions', [$qr, 'questions'])->name('results.questions');
+            Route::get('results/{exam}/questions/export', [$qr, 'questionsExport'])->middleware('throttle:20,1,qstatexp')->name('results.questions.export');
+            Route::get('results/{exam}/score-sheet.{format}', [$qr, 'scoreSheet'])->whereIn('format', ['csv', 'xlsx'])->middleware('throttle:20,1,qsheet')->name('results.score-sheet');
+            Route::get('results/{exam}/scripts/{attempt}', [$qr, 'script'])->name('results.script');
+            Route::post('results/{exam}/scripts/{attempt}/answers/{question}', [$qr, 'correctAnswer'])->whereNumber('question')->name('results.script.correct');
+        });
     });
     Route::get('results/{exam}/analytics', [ResultController::class, 'analytics'])->middleware(['module:analytics', 'permission:results.mark'])->name('results.analytics');
 

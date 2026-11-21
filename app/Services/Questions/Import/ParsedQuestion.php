@@ -37,6 +37,24 @@ class ParsedQuestion
     /** @var list<string> */
     public array $warnings = [];
 
+    /** Line of the file the question starts on (text and CSV files), for messages. */
+    public ?int $line = null;
+
+    /** Picture file named on an "IMAGE:" line, found in the pictures uploaded with the file. */
+    public ?string $image = null;
+
+    /** "all" (all or nothing) or "partial", from a "SCORING:" line. */
+    public ?string $scoring = null;
+
+    /** The type was given on a Type: line (so it is not guessed). */
+    public bool $typeGiven = false;
+
+    /** Any Answer/Mark/Topic/Type line was given (bare text with none of these is a heading, not a question). */
+    public bool $hasMeta = false;
+
+    /** Started without a number (old system's plain "Aiken" layout). */
+    public bool $unnumbered = false;
+
     public function __construct(public int $number) {}
 
     public function toArray(): array
@@ -57,6 +75,9 @@ class ParsedQuestion
             'accepted' => $this->accepted,
             'blanks' => $this->blanks,
             'warnings' => $this->warnings,
+            'line' => $this->line,
+            'image' => $this->image,
+            'scoring' => $this->scoring,
         ];
     }
 }

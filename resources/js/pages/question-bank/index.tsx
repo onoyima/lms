@@ -23,7 +23,7 @@ type Row = {
     numeric: { value: number; tolerance?: number } | null;
     mine: boolean;
 };
-type Filters = { course_id?: string; type?: string; status?: string; topic?: string; difficulty?: string; q?: string };
+type Filters = { course_id?: string; bank_id?: string; type?: string; status?: string; topic?: string; difficulty?: string; q?: string };
 
 const TYPES = ['single_choice', 'multiple_choice', 'true_false', 'multi_true_false', 'matching', 'ordering', 'fill_blank', 'numeric', 'short_answer', 'essay'];
 
@@ -52,7 +52,9 @@ export default function QuestionBank({
     filters,
     canCreate,
     canModerate,
+    banks = [],
 }: {
+    banks?: { id: number; name: string; questions: number }[];
     questions: Paginated<Row>;
     courses: { id: number; code: string; title: string }[];
     topics: string[];
@@ -104,12 +106,18 @@ export default function QuestionBank({
                     }
                 />
                 <Flash />
-                <div className="surface grid gap-2 p-4 md:grid-cols-6">
+                <div className="surface grid gap-2 p-4 md:grid-cols-7">
                     <input className={`${inputClass} md:col-span-2`} placeholder="Search question text" defaultValue={f.q} onKeyDown={(e) => e.key === 'Enter' && apply({ ...f, q: (e.target as HTMLInputElement).value })} aria-label="Search" />
                     <select className={inputClass} value={f.course_id ?? ''} aria-label="Course" onChange={(e) => apply({ ...f, course_id: e.target.value })}>
                         <option value="">All courses</option>
                         {courses.map((c) => (
                             <option key={c.id} value={c.id}>{c.code}</option>
+                        ))}
+                    </select>
+                    <select className={inputClass} value={f.bank_id ?? ''} aria-label="Bank" onChange={(e) => apply({ ...f, bank_id: e.target.value })}>
+                        <option value="">All banks</option>
+                        {banks.map((b) => (
+                            <option key={b.id} value={b.id}>{b.name} ({b.questions})</option>
                         ))}
                     </select>
                     <select className={inputClass} value={f.type ?? ''} aria-label="Type" onChange={(e) => apply({ ...f, type: e.target.value })}>

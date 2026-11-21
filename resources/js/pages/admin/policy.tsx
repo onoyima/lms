@@ -41,8 +41,8 @@ function CampusCard({ campus }: { campus: Campus }) {
             <ContactsEditor value={c.incident_contacts ?? []} onChange={(v) => setC({ ...c, incident_contacts: v })} />
             <textarea className={`${inputClass} h-20 py-2`} placeholder="Exam-day notice for this campus" value={c.exam_day_notice ?? ''} onChange={(e) => setC({ ...c, exam_day_notice: e.target.value })} />
             <div className="flex flex-wrap gap-3 text-sm">
-                <label className="grid gap-1">Most exams per student per day<input type="number" min={1} max={4} className={`${inputClass} w-28`} value={c.max_exams_per_day ?? ''} onChange={(e) => setC({ ...c, max_exams_per_day: e.target.value === '' ? null : Number(e.target.value) })} /></label>
-                <label className="grid gap-1">Minimum attendance %<input type="number" min={0} max={100} className={`${inputClass} w-28`} value={c.min_attendance_pct ?? ''} onChange={(e) => setC({ ...c, min_attendance_pct: e.target.value === '' ? null : Number(e.target.value) })} /></label>
+                <label className="grid gap-1">Most exams per student per day<input type="number" min={1} max={4} className={`${inputClass} !w-28`} value={c.max_exams_per_day ?? ''} onChange={(e) => setC({ ...c, max_exams_per_day: e.target.value === '' ? null : Number(e.target.value) })} /></label>
+                <label className="grid gap-1">Minimum attendance %<input type="number" min={0} max={100} className={`${inputClass} !w-28`} value={c.min_attendance_pct ?? ''} onChange={(e) => setC({ ...c, min_attendance_pct: e.target.value === '' ? null : Number(e.target.value) })} /></label>
             </div>
             <Button className="w-fit" onClick={() => router.put(`/admin/policy/campus/${campus.key}`, c as never, { preserveScroll: true })}>Save {campus.name}</Button>
         </section>
@@ -111,7 +111,7 @@ export default function Policy({ policy, eventTypes, defaultSeverity, proctoring
                             {eventTypes.map((t) => (
                                 <label key={t} className="flex items-center justify-between gap-2 text-xs">
                                     <span>{t.replace(/_/g, ' ')}</span>
-                                    <select className={`${inputClass} w-20`} value={p.severity_overrides?.[t] ?? ''} onChange={(e) => set('severity_overrides', { ...p.severity_overrides, [t]: e.target.value ? Number(e.target.value) : undefined })}>
+                                    <select className={`${inputClass} !w-20`} value={p.severity_overrides?.[t] ?? ''} onChange={(e) => set('severity_overrides', { ...p.severity_overrides, [t]: e.target.value ? Number(e.target.value) : undefined })}>
                                         <option value="">{defaultSeverity[t]} (default)</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
                                     </select>
                                 </label>
@@ -133,12 +133,12 @@ export default function Policy({ policy, eventTypes, defaultSeverity, proctoring
                                     <label key={k} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-xs">
                                         <span>{k.replace(/_/g, ' ')}</span>
                                         {['violation_threshold', 'snapshot_seconds', 'evidence_retention_days'].includes(k)
-                                            ? <input type="number" className={`${inputClass} w-24`} value={(v as number) ?? ''} placeholder="default" onChange={(e) => setDefault(k, e.target.value === '' ? undefined : Number(e.target.value))} />
+                                            ? <input type="number" className={`${inputClass} !w-24`} value={(v as number) ?? ''} placeholder="default" onChange={(e) => setDefault(k, e.target.value === '' ? undefined : Number(e.target.value))} />
                                             : k === 'identity_check'
-                                                ? <select className={`${inputClass} w-36`} value={(v as string) ?? ''} onChange={(e) => setDefault(k, e.target.value || undefined)}><option value="">default</option><option value="none">none</option><option value="photo_match">photo match</option><option value="proctor_review">proctor review</option></select>
+                                                ? <select className={`${inputClass} !w-36`} value={(v as string) ?? ''} onChange={(e) => setDefault(k, e.target.value || undefined)}><option value="">default</option><option value="none">none</option><option value="photo_match">photo match</option><option value="proctor_review">proctor review</option></select>
                                             : k === 'violation_action'
-                                                ? <select className={`${inputClass} w-28`} value={(v as string) ?? ''} onChange={(e) => setDefault(k, e.target.value || undefined)}><option value="">default</option><option value="warn">warn</option><option value="lock">lock</option><option value="submit">submit</option></select>
-                                                : <select className={`${inputClass} w-24`} value={v === undefined ? '' : v ? '1' : '0'} onChange={(e) => setDefault(k, e.target.value === '' ? undefined : e.target.value === '1')}><option value="">default</option><option value="1">on</option><option value="0">off</option></select>}
+                                                ? <select className={`${inputClass} !w-28`} value={(v as string) ?? ''} onChange={(e) => setDefault(k, e.target.value || undefined)}><option value="">default</option><option value="warn">warn</option><option value="lock">lock</option><option value="submit">submit</option></select>
+                                                : <select className={`${inputClass} !w-24`} value={v === undefined ? '' : v ? '1' : '0'} onChange={(e) => setDefault(k, e.target.value === '' ? undefined : e.target.value === '1')}><option value="">default</option><option value="1">on</option><option value="0">off</option></select>}
                                     </label>
                                 );
                             })}
@@ -151,6 +151,10 @@ export default function Policy({ policy, eventTypes, defaultSeverity, proctoring
                         <p className="mt-1 text-sm text-muted-foreground">Proctors and invigilators see these people on the proctoring console and on every incident, with the false-positive and escalation procedure.</p>
                     </div>
                     <ContactsEditor value={p.incident_contacts ?? []} onChange={(v) => set('incident_contacts', v)} />
+                    <div className="grid gap-1 border-t pt-4 text-sm">
+                        <label className="flex items-center gap-2"><input type="checkbox" checked={!!p.exam_paper_approval} onChange={(e) => set('exam_paper_approval', e.target.checked)} /> Exam papers need a second person&apos;s approval before students can write them</label>
+                        <p className="pl-6 text-xs text-muted-foreground">Off: whoever sets the paper publishes it in one step. On: the paper is submitted, and someone else approves or returns it.</p>
+                    </div>
                     <div className="grid gap-1 border-t pt-4 text-sm">
                         <label className="flex items-center gap-2"><input type="checkbox" checked={!!p.auto_rollover} onChange={(e) => set('auto_rollover', e.target.checked)} /> Close each semester and start the next one automatically, using the dates in the academic calendar</label>
                         <label className="flex items-center gap-2 pl-6"><input type="checkbox" checked={p.auto_rollover_copy_content !== false} disabled={!p.auto_rollover} onChange={(e) => set('auto_rollover_copy_content', e.target.checked)} /> Copy last session's course content into the new semester's courses</label>
@@ -230,7 +234,7 @@ function OtherScales({ value, onChange }: { value: Record<string, Scale>; onChan
                     </div>
                     <input className={inputClass} defaultValue={scaleText(sc)} onBlur={(e) => onChange({ ...value, [n]: parseScale(e.target.value, sc.pass) })} aria-label={`Grades of ${n}`} />
                     <label className="flex items-center gap-2 text-xs">Lowest passing grade
-                        <select className={`${inputClass} w-24`} value={sc.pass} onChange={(e) => onChange({ ...value, [n]: { ...sc, pass: e.target.value } })}>{Object.keys(sc.grades).map((g) => <option key={g}>{g}</option>)}</select>
+                        <select className={`${inputClass} !w-24`} value={sc.pass} onChange={(e) => onChange({ ...value, [n]: { ...sc, pass: e.target.value } })}>{Object.keys(sc.grades).map((g) => <option key={g}>{g}</option>)}</select>
                     </label>
                 </div>
             ))}

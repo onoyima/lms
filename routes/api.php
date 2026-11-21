@@ -20,6 +20,7 @@ Route::prefix('exam/attempt')->middleware([AuthenticateAttempt::class, 'throttle
     Route::post('file', [ExamApiController::class, 'file'])->middleware('throttle:exam-evidence');
     Route::post('messages/{message}/ack', [ExamApiController::class, 'acknowledge']);
     Route::post('help', [ExamApiController::class, 'help']);
+    Route::post('report', [ExamApiController::class, 'report'])->middleware('throttle:30,1,qreport');
     Route::post('identity', [ExamApiController::class, 'identity'])->middleware('throttle:exam-identity');
     Route::post('recording', [ExamApiController::class, 'recording'])->middleware('throttle:exam-recording');
     Route::post('media-token', [\App\Http\Controllers\Media\MediaController::class, 'candidate'])->middleware('throttle:exam-identity');

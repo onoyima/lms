@@ -1,6 +1,7 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { Download, MonitorPlay, Search, Upload, UserPlus } from 'lucide-react';
+import { Download, MonitorPlay, Search, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { QuestionUpload, TemplateLinks } from '@/components/exam/question-upload';
 import { Field, formatDateTime, inputClass, PageHeader, Stat, Status, Table, Td, textareaClass } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
 
@@ -147,7 +148,7 @@ export default function ExamBoardExam({ exam, scale, summary, distribution, sess
                     </div>
                     <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => (e.preventDefault(), Number(scaleInput) > 0 && applyView(Number(scaleInput)))}>
                         <Field label="Out of">
-                            <input type="number" min={1} max={1000} step="any" className={`${inputClass} w-28 tabular-nums`} value={scaleInput} onChange={(e) => setScaleInput(e.target.value)} />
+                            <input type="number" min={1} max={1000} step="any" className={`${inputClass} !w-28 tabular-nums`} value={scaleInput} onChange={(e) => setScaleInput(e.target.value)} />
                         </Field>
                         <Button type="submit" variant="outline">Show</Button>
                         {[100, 70, 60, 40, 30].map((v) => (
@@ -300,27 +301,17 @@ function AddStudents({ examId, sessions }: { examId: number; sessions: Sitting[]
 }
 
 function UploadQuestions({ exam, allowed }: { exam: Exam; allowed: boolean }) {
-    const form = useForm<{ file: File | null; reader: 'science' | 'standard' }>({ file: null, reader: 'science' });
-
     return (
         <section className="surface grid gap-3 p-5 md:max-w-3xl">
             <div>
                 <h2 className="text-base font-semibold">Questions</h2>
-                <p className="mt-1 text-sm text-muted-foreground">This exam has {exam.questions} fixed question{exam.questions === 1 ? '' : 's'}. Upload a Word or text file to add more; you will see every question, with its symbols and equations, before anything is saved.</p>
+                <p className="mt-1 text-sm text-muted-foreground">This exam has {exam.questions} fixed question{exam.questions === 1 ? '' : 's'}. Upload a text, CSV, Word or PDF file to add more (the old exam system&apos;s files work as they are); you will see every question, with its symbols and equations, before anything is saved.</p>
             </div>
             {allowed ? (
-                <form className="grid gap-3" onSubmit={(e) => (e.preventDefault(), form.post(`/exam-board/${exam.id}/questions`, { forceFormData: true }))}>
-                    <Field label="File" hint="Word (.docx), text (.txt), Markdown or HTML." error={form.errors.file}>
-                        <input type="file" accept=".docx,.txt,.md,.html,.htm" className="text-sm" onChange={(e) => form.setData('file', e.target.files?.[0] ?? null)} required />
-                    </Field>
-                    <Field label="How to read it">
-                        <select className={`${inputClass} max-w-md`} value={form.data.reader} onChange={(e) => form.setData('reader', e.target.value as 'science' | 'standard')}>
-                            <option value="science">Science & maths — keeps Word equations, Greek letters, symbols, sub- and superscripts</option>
-                            <option value="standard">Standard</option>
-                        </select>
-                    </Field>
-                    <div><Button disabled={form.processing || !form.data.file}><Upload className="size-4" /> Upload and preview</Button></div>
-                </form>
+                <>
+                    <QuestionUpload url={`/exam-board/${exam.id}/questions`} />
+                    <TemplateLinks />
+                </>
             ) : (
                 <p className="text-sm text-muted-foreground">Questions can be added while the exam is a draft. Ask the exams office to reopen it if you need to change the paper.</p>
             )}

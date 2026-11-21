@@ -31,7 +31,7 @@ class SittingLinkController extends Controller
     public function pool(Request $request, ExamPresets $quick): JsonResponse
     {
         $course = $request->integer('course_id') ?: null;
-        $category = in_array($request->string('category')->toString(), ['exam', 'test', 'quiz', 'practice', 'mock'], true) ? $request->string('category')->toString() : 'test';
+        $category = in_array($request->string('category')->toString(), ['exam', 'test', 'quiz', 'practice', 'mock', 'promotion'], true) ? $request->string('category')->toString() : 'test';
         $topics = Question::query()->whereIn('status', $category === 'practice' ? ['approved', 'draft', 'in_review'] : ['approved'])
             ->when($course, fn ($q) => $q->where('course_id', $course))
             ->whereNotNull('topic')->where('topic', '!=', '')

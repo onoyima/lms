@@ -28,7 +28,7 @@ class ExamSession extends Model
 
     use BelongsToTenant;
 
-    protected $fillable = ['exam_id', 'venue_id', 'name', 'mode', 'starts_at', 'ends_at', 'late_entry_minutes', 'grace_seconds', 'access_pin_hash', 'status', 'paused_at', 'is_practice'];
+    protected $fillable = ['exam_id', 'venue_id', 'name', 'mode', 'starts_at', 'ends_at', 'late_entry_minutes', 'grace_seconds', 'access_pin_hash', 'status', 'paused_at', 'is_practice', 'exam_centre_id', 'centre_ref'];
 
     protected $hidden = ['access_pin_hash'];
 

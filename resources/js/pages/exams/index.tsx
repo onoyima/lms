@@ -67,7 +67,7 @@ export default function Exams({ exams, filters, groups = [] }: { exams: Paginate
                         </Field>
                         <Field label="Kind">
                             <select className={inputClass} value={form.data.category} onChange={(e) => form.setData('category', e.target.value)}>
-                                {['exam', 'test', 'quiz', 'practice', 'mock'].map((c) => (
+                                {['exam', 'test', 'quiz', 'practice', 'mock', 'promotion'].map((c) => (
                                     <option key={c}>{c}</option>
                                 ))}
                             </select>

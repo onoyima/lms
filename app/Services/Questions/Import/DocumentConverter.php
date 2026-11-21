@@ -48,10 +48,26 @@ class DocumentConverter
             'sci-html', 'sci-htm' => ['html' => self::markMathsInHtml(self::toUtf8(File::get($path))), 'media' => []],
             'docx' => $this->viaPandoc($path, 'docx', $mediaDir),
             'md' => $this->pandocAvailable() ? $this->viaPandoc($path, 'markdown', $mediaDir) : ['html' => $this->textToHtml(File::get($path)), 'media' => []],
-            'txt' => ['html' => $this->textToHtml(File::get($path)), 'media' => []],
+            'txt' => ['html' => $this->textToHtml(self::toUtf8(File::get($path))), 'media' => []],
+            // a PDF's text (the browser usually sends it already as text; otherwise pdftotext, when installed)
+            'pdf' => ['html' => $this->textToHtml(self::toUtf8($this->pdfText($path))), 'media' => []],
             'html', 'htm' => ['html' => File::get($path), 'media' => []],
             default => throw new RuntimeException("Unsupported file type .$format"),
         };
+    }
+
+    private function pdfText(string $path): string
+    {
+        try {
+            $p = new Process([config('platform.pdftotext_path', 'pdftotext'), '-enc', 'UTF-8', $path, '-']);
+            $p->setTimeout(60)->run();
+            if ($p->isSuccessful() && trim($p->getOutput()) !== '') {
+                return $p->getOutput();
+            }
+        } catch (\Throwable) {
+        }
+
+        throw new RuntimeException('The text of this PDF could not be read. If it is a scan or a photo, use "Read with AI"; otherwise save it as Word (.docx) or text and upload that.');
     }
 
     private function viaPandoc(string $path, string $from, string $mediaDir): array
@@ -128,6 +144,10 @@ class DocumentConverter
         if (mb_check_encoding($bytes, 'UTF-8')) {
             return $bytes;
         }
+        // UTF-16 saved without a mark: every other byte is zero in ordinary text
+        if (strlen($bytes) > 3 && substr_count($bytes, "\0") > strlen($bytes) / 3) {
+            return mb_convert_encoding($bytes, 'UTF-8', $bytes[0] === "\0" ? 'UTF-16BE' : 'UTF-16LE');
+        }
 
         return mb_convert_encoding($bytes, 'UTF-8', 'Windows-1252');
     }
@@ -137,11 +157,19 @@ class DocumentConverter
     {
         $text = str_replace(["\r\n", "\r"], "\n", $text);
         $out = [];
-        foreach (explode("\n", $text) as $line) {
-            if (trim($line) === '') {
+        $gap = false;
+        foreach (explode("\n", $text) as $i => $line) {
+            $line = trim(preg_replace('/[\x{00A0}\t]+/u', ' ', $line));
+            if ($line === '' || str_starts_with($line, '//')) { // "//" lines are notes for the person typing the file
+                $gap = $gap || $line === '';
+
                 continue;
             }
-            $out[] = '<p>'.self::markMaths(htmlspecialchars(trim($line), ENT_QUOTES, 'UTF-8')).'</p>';
+            if ($gap && $out) {
+                $out[] = '<hr data-gap="1">'; // a blank line: ends a question in the old layout
+            }
+            $gap = false;
+            $out[] = '<p data-line="'.($i + 1).'">'.self::markMaths(htmlspecialchars($line, ENT_QUOTES, 'UTF-8')).'</p>';
         }
 
         return implode("\n", $out);

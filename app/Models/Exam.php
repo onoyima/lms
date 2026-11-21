@@ -47,6 +47,12 @@ class Exam extends Model
     }
 
     public function course(): BelongsTo { return $this->belongsTo(Course::class); }
+    /** Who sits it: staff for a promotion exam, students otherwise (the old system's promotional exams). */
+    public function audience(): string
+    {
+        return $this->category === 'promotion' ? 'staff' : 'student';
+    }
+
     public function group(): BelongsTo { return $this->belongsTo(ExamGroup::class, 'exam_group_id'); }
     public function semester(): BelongsTo { return $this->belongsTo(Semester::class); }
     public function sections(): HasMany { return $this->hasMany(ExamSection::class)->orderBy('position'); }

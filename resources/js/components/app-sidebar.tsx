@@ -79,8 +79,9 @@ type Group = { label: string; icon?: LucideIcon; badge?: string | null; flat?: b
  */
 function useMenu(): { home: string; groups: Group[] } {
     const { hasModule, can, canAny, isPlatformAdmin, userType } = usePlatform();
-    const page = usePage().props as { auth?: { examBoard?: boolean; examinerExam?: { id: number; title: string } | null }; liveWriting?: number };
+    const page = usePage().props as { auth?: { examBoard?: boolean; sitsExams?: boolean; examinerExam?: { id: number; title: string } | null }; liveWriting?: number };
     const examBoard = Boolean(page.auth?.examBoard);
+    const sitsExams = Boolean(page.auth?.sitsExams);
     const examinerExam = page.auth?.examinerExam;
     const live = Number(page.liveWriting ?? 0);
 
@@ -158,6 +159,13 @@ function useMenu(): { home: string; groups: Group[] } {
         ]);
     }
 
+    if (!student && sitsExams && exams) {
+        push('My exams', GraduationCap, [
+            { title: 'Exams I sit', href: '/my/exams', icon: GraduationCap },
+            { title: 'My results', href: '/my/results', icon: Trophy },
+        ]);
+    }
+
     if (exams && !student) {
         push('Exams', ScrollText, [
             can('exams.manage') && { title: 'All exams', href: '/exams', icon: ScrollText },
@@ -178,6 +186,7 @@ function useMenu(): { home: string; groups: Group[] } {
             { title: 'Proctor shifts', href: '/proctor/shifts', icon: CalendarClock },
             hasModule('cbt_halls') && can('exams.manage') && { title: 'Halls & computers', href: '/venues', icon: Building2 },
             hasModule('cbt_halls') && can('exams.manage') && { title: 'Exam network', href: '/exam-network', icon: Network },
+            can('exams.manage') && { title: 'Exam centres', href: '/exam-centres', icon: Building2 },
             hasModule('secure_client') && can('exams.manage') && { title: 'Safe Exam Browser', href: '/admin/safe-exam-browser', icon: ShieldCheck },
         ], { badge: live > 0 ? `${live} live` : null });
     } else if (proctoring && !student && examBoard) {

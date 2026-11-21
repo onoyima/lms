@@ -1,6 +1,7 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { ArrowLeft, ArrowRight, Check, Download, FileSpreadsheet, FileText, Plus, Send, Trash2, UsersRound, X } from 'lucide-react';
 import { useState } from 'react';
+import { AddStudents } from '@/components/exam/add-students';
 import { Field, formatDateTime, inputClass, PageHeader, Status, textareaClass } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
 import { isOnScreen, paperLook } from '@/lib/papers';
@@ -21,10 +22,11 @@ type Props = {
     students: { count: number; list: { id: number; name: string; identifier: string | null }[] };
     courses: { id: number; code: string; title: string }[];
     canExport: boolean;
+    needsApproval?: boolean;
 };
 
 const stepAction: Record<Step['key'], string> = {
-    paper: 'Add questions', sittings: 'Set the date', students: 'Add students', examiners: 'Assign examiners', rules: 'Check the rules', approval: 'Send for approval',
+    paper: 'Add questions', sittings: 'Set the date', students: 'Add students', examiners: 'Assign examiners', rules: 'Check the rules', approval: 'Publish',
 };
 
 /** Where each step is done: the paper's own page, on the right tab (or its sitting, for students). */
@@ -50,6 +52,7 @@ function StudentsPanel({ group, papers, programmes, levels, only, onClose }: Pro
         (group.course_id || papers.some((p) => p.course)) && { value: 'course', label: 'Course class lists', text: whole ? "Each exam's own course" : group.course ?? "The exam's course" },
         { value: 'programme', label: 'A programme and level', text: 'From the student records' },
         { value: 'list', label: 'Matric numbers or e-mails', text: 'Paste a list' },
+        { value: 'more', label: 'Upload or find', text: 'A CSV / Excel list, one student, or by matric prefix' },
     ].filter(Boolean) as { value: string; label: string; text: string }[];
 
     return (
@@ -87,7 +90,7 @@ function StudentsPanel({ group, papers, programmes, levels, only, onClose }: Pro
                 })}
             </div>}
             {err.papers && <p className="text-sm text-status-critical">{err.papers}</p>}
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {sources.map((s) => (
                     <label key={s.value} className={`flex cursor-pointer gap-3 rounded-xl border p-3.5 text-sm transition-colors ${form.data.source === s.value ? 'border-brand bg-brand-soft' : 'border-border bg-card/70 hover:border-foreground/20'}`}>
                         <input type="radio" name="source" className="mt-1 accent-[var(--brand)]" checked={form.data.source === s.value} onChange={() => form.setData('source', s.value)} />
@@ -118,7 +121,11 @@ function StudentsPanel({ group, papers, programmes, levels, only, onClose }: Pro
                     <textarea className={textareaClass} value={form.data.identifiers} onChange={(e) => form.setData('identifiers', e.target.value)} placeholder={'VUG/NUR/21/0012\nVUG/NUR/21/0013'} required />
                 </Field>
             )}
-            <div><Button disabled={form.processing || (!whole && form.data.papers.length === 0)}><UsersRound className="size-4" /> {whole ? 'Add to the category' : 'Add students'}</Button></div>
+            {form.data.source === 'more' ? (
+                <AddStudents busy={form.processing} send={(body) => router.post(`/exam-groups/${group.id}/students`, { target: form.data.target, papers: form.data.papers, ...body } as never, { preserveScroll: true, onSuccess: onClose })} />
+            ) : (
+                <div><Button disabled={form.processing || (!whole && form.data.papers.length === 0)}><UsersRound className="size-4" /> {whole ? 'Add to the category' : 'Add students'}</Button></div>
+            )}
         </form>
     );
 }
@@ -141,7 +148,7 @@ function AddPaper({ group, paperTypes, venues, courses, onClose }: Props & { onC
             <div className="md:col-span-2">
                 <Field label="Kind">
                     <select className={inputClass} value={form.data.category} onChange={(e) => form.setData('category', e.target.value)}>
-                        {[['exam', 'Exam'], ['test', 'Test'], ['quiz', 'Quiz'], ['mock', 'Mock exam'], ['practice', 'Practice']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {[['exam', 'Exam'], ['test', 'Test'], ['quiz', 'Quiz'], ['mock', 'Mock exam'], ['practice', 'Practice'], ['promotion', 'Staff promotion exam']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
                 </Field>
             </div>
@@ -176,7 +183,7 @@ function AddPaper({ group, paperTypes, venues, courses, onClose }: Props & { onC
 }
 
 export default function ExamGroupPage(props: Props) {
-    const { group, papers } = props;
+    const { group, papers, needsApproval = false } = props;
     const { flash } = usePage<{ flash?: { success?: string; error?: string } }>().props;
     const [panel, setPanel] = useState<'students' | 'paper' | null>(null);
     const [only, setOnly] = useState<number | null>(null);
@@ -199,7 +206,7 @@ export default function ExamGroupPage(props: Props) {
                         <>
                             <Button variant="outline" onClick={() => setPanel(panel === 'paper' ? null : 'paper')}><Plus className="size-4" /> Add exam</Button>
                             <Button variant="outline" onClick={() => (panel === 'students' && only === null ? setPanel(null) : openStudents(null))}><UsersRound className="size-4" /> Add students</Button>
-                            {drafts > 0 && <Button onClick={() => router.post(`/exam-groups/${group.id}/submit`, {}, { preserveScroll: true })}><Send className="size-4" /> Send exams for approval</Button>}
+                            {drafts > 0 && <Button onClick={() => router.post(`/exam-groups/${group.id}/submit`, {}, { preserveScroll: true })}><Send className="size-4" /> {needsApproval ? 'Send exams for approval' : 'Publish the exams'}</Button>}
                         </>
                     }
                 />

@@ -70,7 +70,9 @@ class PolicyController extends Controller
             'max_exams_per_day' => ['nullable', 'integer', 'min:1', 'max:4'],
             'access_review_days' => ['required', 'integer', 'min:30', 'max:365'],
             'auto_rollover' => ['boolean'], 'auto_rollover_copy_content' => ['boolean'],
+            'exam_paper_approval' => ['boolean'],
         ] + self::CONTACT_RULES);
+        $data['exam_paper_approval'] = (bool) ($data['exam_paper_approval'] ?? false);
         $data['auto_rollover'] = (bool) ($data['auto_rollover'] ?? false);
         $data['auto_rollover_copy_content'] = (bool) ($data['auto_rollover_copy_content'] ?? true);
         $data['incident_contacts'] = array_values($data['incident_contacts'] ?? []);

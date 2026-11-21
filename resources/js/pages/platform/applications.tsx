@@ -47,8 +47,8 @@ function Card({ app: a }: { app: App }) {
             {a.message && <p className="rounded-xl bg-muted/50 p-3 text-sm whitespace-pre-line">{a.message}</p>}
             {a.status === 'pending' ? (
                 <div className="flex flex-wrap items-end gap-2">
-                    <label className="grid gap-1 text-xs">Short name<input className={`${inputClass} w-40`} value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} /></label>
-                    <label className="grid gap-1 text-xs">Trial days<input type="number" min={0} max={90} className={`${inputClass} w-24`} value={trial} onChange={(e) => setTrial(Number(e.target.value))} /></label>
+                    <label className="grid gap-1 text-xs">Short name<input className={`${inputClass} !w-40`} value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} /></label>
+                    <label className="grid gap-1 text-xs">Trial days<input type="number" min={0} max={90} className={`${inputClass} !w-24`} value={trial} onChange={(e) => setTrial(Number(e.target.value))} /></label>
                     <label className="grid flex-1 gap-1 text-xs">Note (kept on record)<input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></label>
                     <Button onClick={() => decide(true)}>Approve</Button>
                     <Button variant="outline" onClick={() => decide(false)}>Decline</Button>

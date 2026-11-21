@@ -251,7 +251,7 @@ export default function Course({
                                 </div>
                                 <label className="grid gap-1">
                                     <span className="text-xs text-muted-foreground">Weeks</span>
-                                    <input type="number" min={1} max={30} className={`${inputClass} w-24`} value={weeks.data.weeks} onChange={(e) => weeks.setData('weeks', Number(e.target.value))} />
+                                    <input type="number" min={1} max={30} className={`${inputClass} !w-24`} value={weeks.data.weeks} onChange={(e) => weeks.setData('weeks', Number(e.target.value))} />
                                 </label>
                                 <label className="grid gap-1">
                                     <span className="text-xs text-muted-foreground">First week starts (default: semester start)</span>

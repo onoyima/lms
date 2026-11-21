@@ -35,6 +35,8 @@ class Policy
         // who proctors call during an exam: [{role, name, phone, email, hours}] (exams office procedure)
         'incident_contacts' => [],
         'exam_day_notice' => '',               // shown to candidates before an exam starts
+        'exam_paper_approval' => false,
+        'result_change_approval' => true,      // a changed score or corrected answer needs a second officer's approval        // papers need a second person's approval before use (off: the setter publishes)
         'auto_rollover' => false,              // close ended semesters and start the next one by themselves (LMS 172)
         'auto_rollover_copy_content' => true,  // and copy last session's course content into the new courses
     ];

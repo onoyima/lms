@@ -213,8 +213,13 @@ class ExamBoardController extends Controller
         $data = $request->validate([
             'file' => ['required', 'file', 'max:'.$cfg['max_upload_kb'], 'extensions:'.implode(',', $cfg['allowed_extensions'])],
             'reader' => ['nullable', 'in:standard,science'],
+            'images' => ['nullable', 'array', 'max:300'],
+            'images.*' => ['file', 'max:51200', 'extensions:zip,png,jpg,jpeg,gif,webp'],
+            'name' => ['nullable', 'string', 'max:250'],
+            'bank_id' => ['nullable', 'integer'],
         ]);
-        $import = $imports->upload($data['file'], $exam->course_id, $request->user()->id, $data['reader'] ?? 'science');
+        $bank = isset($data['bank_id']) ? \App\Models\QuestionBank::forExam($exam)->findOrFail($data['bank_id']) : null;
+        $import = $imports->upload($data['file'], $exam->course_id, $request->user()->id, $data['reader'] ?? 'science', $bank, $data['images'] ?? [], ['exam_id' => $exam->id], $data['name'] ?? null);
 
         return redirect()->route('exam-board.import', [$exam, $import]);
     }

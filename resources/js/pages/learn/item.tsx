@@ -853,7 +853,7 @@ function PeerReviews({
                         max={max}
                         step="0.5"
                         defaultValue={p.mine?.score ?? ''}
-                        className={`${inputClass} w-32`}
+                        className={`${inputClass} !w-32`}
                         placeholder={`Score /${max}`}
                     />
                     <textarea
@@ -1225,7 +1225,7 @@ function MarkDialog({
                             step="0.25"
                             min={0}
                             max={item.settings.max_score}
-                            className={`${inputClass} w-40`}
+                            className={`${inputClass} !w-40`}
                             value={form.data.score}
                             onChange={(e) =>
                                 form.setData('score', e.target.value)

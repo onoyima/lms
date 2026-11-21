@@ -36,15 +36,28 @@ class Marker
 
         foreach ($questions as $q) {
             $mark = (float) $q->mark;
-            $max += $mark;
             $answer = $answers[$q->question_id] ?? null;
             $response = $answer ? json_decode($answer->response ?? 'null', true) : null;
             $key = json_decode($q->key ?? 'null', true);
+            // a faulty question settled by the examiners: taken out for everyone, or full marks for everyone
+            if ($key['dropped'] ?? false) {
+                $scores[$q->question_id] = 0.0;
+
+                continue;
+            }
+            $max += $mark;
+            if (($key['award'] ?? null) === 'all') {
+                $total += $mark;
+                $scores[$q->question_id] = $mark;
+
+                continue;
+            }
 
             $score = match ($q->type) {
                 'single_choice', 'true_false' => $this->choice($response, $key, $mark, false, $settings),
-                'multiple_choice' => $this->choice($response, $key, $mark, $settings['partial_credit'], $settings),
-                'multi_true_false' => $this->trueFalseSet($response, $key, $mark, $settings),
+                // a question's own scoring rule (from the old system's SCORING: line) wins over the exam's
+                'multiple_choice' => $this->choice($response, $key, $mark, match ($key['scoring'] ?? null) { 'partial' => true, 'all' => false, default => $settings['partial_credit'] }, $settings),
+                'multi_true_false' => $this->trueFalseSet($response, $key, $mark, match ($key['scoring'] ?? null) { 'partial' => ['mtf_scoring' => 'per_statement'] + $settings, 'all' => ['mtf_scoring' => 'all_or_nothing'] + $settings, default => $settings }),
                 'ordering' => $this->ordering($response, $key, $mark, $settings['partial_credit']),
                 'fill_blank' => $this->blanks($response, $key, $mark),
                 'numeric' => $this->numeric($response, $key, $mark),

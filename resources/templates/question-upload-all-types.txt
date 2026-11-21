@@ -1,0 +1,73 @@
+// Every question type in the upload layout. Lines starting // are notes and are ignored.
+TYPE: MCQ
+MARK: 1
+What is the default port of a MySQL server?
+A. 80
+B. 443
+C. 3306
+D. 8080
+ANSWER: C
+Topic: Databases
+
+TYPE: MULTI
+MARK: 2
+SCORING: PARTIAL
+Which of the following are prime numbers?
+A. 2
+B. 4
+C. 7
+D. 9
+ANSWER: A, C
+
+TYPE: TF
+Water boils at 100 degrees Celsius at sea level.
+ANSWER: TRUE
+
+TYPE: MTF
+MARK: 4
+Concerning the liver:
+a) It is the largest gland in the body. [T]
+b) It produces insulin. [F]
+c) It stores glycogen. [T]
+d) It is located in the left iliac fossa. [F]
+
+TYPE: ESSAY
+MARK: 10
+Discuss the causes of the Nigerian civil war.
+
+TYPE: SHORT
+What is the chemical symbol for sodium?
+ANSWER: Na
+Accept: Na+
+
+TYPE: NUMERIC
+MARK: 2
+The acceleration due to gravity in m/s², to one decimal place.
+ANSWER: 9.8
+Tolerance: 0.1
+
+TYPE: BLANK
+The powerhouse of the cell is the _____ and the control centre is the _____.
+ANSWER: mitochondrion|mitochondria; nucleus
+
+TYPE: MATCHING
+Match each element to its symbol.
+Pair: Sodium = Na
+Pair: Potassium = K
+Pair: Iron = Fe
+
+TYPE: ORDER
+Put the stages of mitosis in order.
+A. Prophase
+B. Metaphase
+C. Anaphase
+D. Telophase
+
+TYPE: UPLOAD
+MARK: 5
+Upload a photo of your labelled diagram of the heart.
+
+Plain questions with no TYPE line still work:
+A. Yes
+B. No
+ANSWER: A

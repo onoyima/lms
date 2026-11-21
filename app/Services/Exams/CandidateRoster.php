@@ -25,6 +25,7 @@ class CandidateRoster
     public function add(ExamSession $session, array $data): array
     {
         $exam = $session->exam;
+        $data['audience'] ??= $exam->audience();
         $users = collect();
 
         if (! empty($data['from_enrolment'])) {
@@ -78,7 +79,8 @@ class CandidateRoster
     }
 
     /**
-     * Students named by a programme (and level), a pasted list of matric numbers or e-mails, or ids.
+     * Students named by a programme (and level), a pasted list of matric numbers or e-mails, ids, an
+     * uploaded list, or a matric-number prefix / e-mail domain.
      *
      * @return array{0: \Illuminate\Support\Collection<int, User>, 1: list<string>} the students, and what was not found
      */
@@ -98,6 +100,22 @@ class CandidateRoster
         }
 
         $missing = [];
+        // an uploaded list (CSV / Excel / text), new student accounts made for it when asked
+        if (! empty($data['list_token'])) {
+            [$listed, $notFound] = app(StudentListImport::class)->users($data['list_token'], (bool) ($data['create_missing'] ?? false), $data['password_rule'] ?? 'file_or_matric', $data['audience'] ?? 'student');
+            $users = $users->merge($listed);
+            $missing = array_merge($missing, $notFound);
+        }
+        // every student whose matric number starts with a prefix, or whose e-mail is at a domain (old system)
+        if (! empty($data['identifier_prefix']) || ! empty($data['email_domain'])) {
+            $prefix = trim((string) ($data['identifier_prefix'] ?? ''));
+            $domain = ltrim(trim((string) ($data['email_domain'] ?? '')), '@');
+            $users = $users->merge(User::where('user_type', $data['audience'] ?? 'student')->where('status', 'active')
+                ->where(function ($q) use ($prefix, $domain) {
+                    $prefix !== '' && $q->orWhere('identifier', 'like', addcslashes($prefix, '%_\\').'%');
+                    $domain !== '' && $q->orWhere('email', 'like', '%@'.addcslashes($domain, '%_\\'));
+                })->limit(20000)->get());
+        }
         if (! empty($data['identifiers'])) {
             $ids = collect(preg_split('/[\s,;]+/', $data['identifiers']))->map(fn ($v) => trim($v))->filter()->unique()->values();
             foreach ($ids->chunk(500) as $chunk) {

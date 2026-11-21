@@ -38,3 +38,18 @@ Mark: 1
 ## Exporting
 
 Question bank > Export (text) or Excel, for moderation meetings or archiving.
+
+## Question banks for one exam, and uploading the old system's files
+
+Each paper has a **Question banks** tab. Make as many banks as you like (for example one per topic); a bank belongs to that paper, to every paper in the exam category, or to the course.
+
+**Upload questions** into a bank from:
+
+- a text file in the old exam system's layout (questions without numbers, each ending with `ANSWER: B`; `TYPE:`, `MARK:`, `IMAGE:` and `SCORING:` lines before a question; blank line between questions) — the old system's files work unchanged, whatever program saved them;
+- a spreadsheet saved as CSV (one question per row; the old system's two sheets work too, with pictures);
+- Word (.docx), keeping equations and pictures;
+- a typed PDF (a scan needs *Read with AI*).
+
+Pictures named on `IMAGE:` lines or in the CSV are uploaded with the file, one by one or as a .zip. You see every question, with the line of the file it came from, before anything is saved. Templates for every format and question type are on the Question banks tab and under Help › Templates.
+
+A bank downloads in the same layout (.txt or .csv, with its pictures in a .zip), so it can be edited and uploaded again, or moved to another exam. **Empty** removes its questions; papers already written keep their copies.

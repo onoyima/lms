@@ -144,7 +144,7 @@ export default function Attendance({
                         <input
                             type="number"
                             min={0}
-                            className={`${inputClass} w-16`}
+                            className={`${inputClass} !w-16`}
                             value={form.data.code_minutes}
                             onChange={(e) =>
                                 form.setData(

@@ -1,6 +1,7 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { AlertTriangle, FileText, Images, Sparkles, Upload } from 'lucide-react';
 import { useState } from 'react';
+import { TemplateLinks } from '@/components/exam/question-upload';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -39,7 +40,40 @@ export default function ImportQuestions({
     aiWrite?: boolean;
     recent: Recent[];
 }) {
-    const form = useForm<{ file: File | null; course_id: string; reader: 'standard' | 'science' | 'ai' }>({ file: null, course_id: '', reader: ai ? 'ai' : pandoc ? 'standard' : 'science' });
+    const form = useForm<{ file: File | null; course_id: string; reader: 'standard' | 'science' | 'ai'; images: File[]; name: string }>({ file: null, course_id: '', reader: ai ? 'ai' : pandoc ? 'standard' : 'science', images: [], name: '' });
+    const [pdfError, setPdfError] = useState<string | null>(null);
+
+    /** Text, CSV and Word go as they are; a PDF's typed text is read here first (a scan has none: use AI). */
+    const sendFile = async () => {
+        setPdfError(null);
+        const f = form.data.file;
+
+        if (f && /\.pdf$/i.test(f.name)) {
+            setBusy('Reading the PDF…');
+
+            try {
+                const text = await (await import('@/lib/pdf-pages')).pdfToText(f);
+
+                if (text.replace(/\s/g, '').length < 20) {
+                    setPdfError('This PDF has no typed text (it may be a scan or a photo). Choose "Read with AI" instead.');
+                    setBusy(null);
+
+                    return;
+                }
+
+                form.transform((d) => ({ ...d, file: new File([text], f.name.replace(/\.pdf$/i, '') + '.txt', { type: 'text/plain' }), name: f.name, reader: 'standard' }));
+            } catch {
+                setPdfError('That PDF could not be opened. If it has a password, remove it first.');
+                setBusy(null);
+
+                return;
+            }
+        } else {
+            form.transform((d) => ({ ...d, reader: f && /\.(txt|csv)$/i.test(f.name) ? 'standard' : d.reader }));
+        }
+
+        form.post('/question-bank/import', { forceFormData: true, onFinish: () => setBusy(null) });
+    };
     const [files, setFiles] = useState<File[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [aiError, setAiError] = useState<string | null>(null);
@@ -113,7 +147,7 @@ export default function ImportQuestions({
                             if (isAi) {
                                 void sendToAi();
                             } else {
-                                form.post('/question-bank/import', { forceFormData: true });
+                                void sendFile();
                             }
                         }}
                     >
@@ -137,18 +171,23 @@ export default function ImportQuestions({
                                 className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-border p-8 text-center hover:border-brand/50"
                             >
                                 <Upload className="size-6 text-brand" />
-                                <span className="text-sm">{form.data.file ? form.data.file.name : 'Choose a .docx, .txt or .md file'}</span>
+                                <span className="text-sm">{form.data.file ? form.data.file.name : 'Choose a Word (.docx), text (.txt), spreadsheet (.csv) or PDF file'}</span>
                                 <span className="text-xs text-muted-foreground">Up to 20 MB</span>
                             </label>
                             <input
                                 id="file"
                                 type="file"
                                 className="sr-only"
-                                accept=".docx,.txt,.md,.html"
+                                accept=".docx,.txt,.md,.html,.csv,.pdf"
                                 onChange={(e) => form.setData('file', e.target.files?.[0] ?? null)}
                             />
-                            <span className="text-xs text-muted-foreground">Samples: <a className="text-brand underline" href="/templates/questions_docx">Word</a> · <a className="text-brand underline" href="/templates/questions_text">text</a></span>
-                            <InputError message={form.errors.file} />
+                            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:border-brand/50">
+                                <Images className="size-4 text-brand" />
+                                <span className="flex-1">{form.data.images.length ? `${form.data.images.length} picture file(s)` : 'Pictures named in the file (optional): images or a .zip'}</span>
+                                <input type="file" multiple className="sr-only" accept=".zip,.png,.jpg,.jpeg,.gif,.webp" onChange={(e) => form.setData('images', Array.from(e.target.files ?? []))} />
+                            </label>
+                            <div className="mt-1"><TemplateLinks /></div>
+                            <InputError message={form.errors.file ?? pdfError ?? undefined} />
                         </div>
                         )}
                         <div className="grid gap-2">
@@ -191,7 +230,7 @@ export default function ImportQuestions({
                         {isAi ? (
                             <Button disabled={!files.length || !!busy}>{busy ?? 'Read with AI'}</Button>
                         ) : (
-                            <Button disabled={!form.data.file || form.processing}>{form.processing ? 'Reading document…' : 'Upload and preview'}</Button>
+                            <Button disabled={!form.data.file || form.processing || !!busy}>{busy ?? (form.processing ? 'Reading document…' : 'Upload and preview')}</Button>
                         )}
                     </form>
 
@@ -233,6 +272,8 @@ export default function ImportQuestions({
                             Mark the answer with <span className="font-mono">*</span> or an <span className="font-mono">Answer:</span> line
                         </li>
                         <li>Optional lines: Mark, Topic, Difficulty, Type, Explanation</li>
+                        <li>The old exam system&apos;s files work as they are: questions without numbers, each ending with <span className="font-mono">ANSWER: B</span>, with TYPE:, MARK:, IMAGE: and SCORING: lines before a question</li>
+                        <li>A spreadsheet (CSV): one question per row; see the CSV templates</li>
                         <li>No options means an essay question; a number answer means numeric</li>
                         <li>In Word, use Insert → Equation; it imports as real maths</li>
                     </ul>

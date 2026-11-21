@@ -21,7 +21,7 @@ const levels = [
 ] as const;
 
 /** New exam category (Nursing exam, Semester exam, GST…): name it, then add its exams, each with a time. */
-const KINDS = [['exam', 'Exam'], ['test', 'Test'], ['quiz', 'Quiz'], ['mock', 'Mock exam'], ['practice', 'Practice']] as const;
+const KINDS = [['exam', 'Exam'], ['test', 'Test'], ['quiz', 'Quiz'], ['mock', 'Mock exam'], ['practice', 'Practice'], ['promotion', 'Staff promotion exam']] as const;
 export default function NewExam({ courses, semesters, venues, papers, defaults }: Props) {
     const form = useForm({
         title: '',

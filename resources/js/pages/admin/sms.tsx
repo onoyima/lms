@@ -83,7 +83,7 @@ export default function SmsSettings({ scope, current, platformOffers, active, pr
                     {scope === 'platform' && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.data.shared} onChange={(e) => form.setData('shared', e.target.checked)} /> Institutions without their own account may use this one</label>}
                     <div className="flex flex-wrap items-end gap-3">
                         <Button disabled={form.processing}>Save</Button>
-                        <input className={`${inputClass} w-48`} placeholder="Your mobile number" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Send a test to" />
+                        <input className={`${inputClass} !w-48`} placeholder="Your mobile number" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Send a test to" />
                         <Button type="button" variant="outline" onClick={() => void runTest()} disabled={testing || !to}>{testing && <Loader2 className="size-4 animate-spin" />} Send a test</Button>
                         {test && <span role="status" className={`flex items-center gap-1.5 text-sm ${test.ok ? 'text-status-good' : 'text-status-critical'}`}>{test.ok ? <CheckCircle2 className="size-4" /> : <XCircle className="size-4" />} {test.message}</span>}
                     </div>

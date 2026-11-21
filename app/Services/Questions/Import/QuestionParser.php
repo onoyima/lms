@@ -24,6 +24,11 @@ use DOMNode;
  *
  * Word's own numbered lists work too: a numbered list item starts a question and
  * a lettered (A, B, C) sub-list holds its options.
+ *
+ * The old exam system's plain layout ("Aiken") works unchanged: questions without numbers, each
+ * ending with an "ANSWER: B" line; TYPE:, MARK:, IMAGE: and SCORING: lines before a question;
+ * multiple true/false statements marked [T] / [F] or "ANSWER: TFFT"; "TYPE: TF" with
+ * "ANSWER: TRUE". In text files a blank line also ends a question whose statements are all marked.
  */
 class QuestionParser
 {
@@ -31,14 +36,14 @@ class QuestionParser
 
     private const OPTION_START = '/^\s*(\*)?\s*\(?([A-Ha-h])[.)]\s+/u';
 
-    private const META = '/^\s*(Answer|Ans|Correct(?:\s+answer)?|Mark|Marks|Score|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*[:\-]\s*(.*)$/isu';
+    private const META = '/^\s*(Answers?|Ans|Key|Correct(?:\s+answer)?|Mark|Marks|Score|Scoring|Image|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*[:=\-]\s*(.*)$/isu';
 
     // The same prefixes, for removing them from the HTML (they can sit behind opening tags)
     private const Q_PREFIX = '(?:Q(?:uestion)?\s*)?\d{1,4}\s*[.)]\s+';
 
     private const O_PREFIX = '\*?\s*\(?[A-Ha-h][.)]\s+';
 
-    private const M_PREFIX = '(?:Answer|Ans|Correct(?:\s+answer)?|Mark|Marks|Score|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*[:\-]\s*';
+    private const M_PREFIX = '(?:Answers?|Ans|Key|Correct(?:\s+answer)?|Mark|Marks|Score|Scoring|Image|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*[:=\-]\s*';
 
     /** @var list<ParsedQuestion> */
     private array $questions = [];
@@ -46,6 +51,18 @@ class QuestionParser
     private ?ParsedQuestion $current = null;
 
     private string $section = 'stem'; // stem, option, explanation
+
+    /** The current (unnumbered) question has had its Answer line: plain text after it starts the next one. */
+    private bool $closed = false;
+
+    /** A blank line came just before this block (text files only). */
+    private bool $afterGap = false;
+
+    /** Type/Mark/Image/Scoring lines written before the question they belong to (old layout). */
+    private array $pending = [];
+
+    /** Line of the file of the block being read, when known. */
+    private ?int $line = null;
 
     /** @var list<string> */
     private array $warnings = [];
@@ -58,6 +75,9 @@ class QuestionParser
         $this->questions = [];
         $this->current = null;
         $this->warnings = [];
+        $this->pending = [];
+        $this->closed = $this->afterGap = false;
+        $this->line = null;
 
         $doc = new DOMDocument;
         libxml_use_internal_errors(true);
@@ -66,9 +86,23 @@ class QuestionParser
 
         $body = $doc->getElementsByTagName('body')->item(0);
         foreach ($this->blocks($body) as [$kind, $node, $extra]) {
+            $this->line = $node instanceof DOMElement && $node->hasAttribute('data-line') ? (int) $node->getAttribute('data-line') : null;
+            // an empty paragraph (a blank line in Word) counts as a blank line
+            if ($kind === 'block' && $node instanceof DOMElement && trim($node->textContent) === '' && ! preg_match('/<(img|table)\b/i', (string) $node->ownerDocument->saveHTML($node))) {
+                $kind = 'gap';
+            }
+            if ($kind === 'gap') {
+                $this->afterGap = true;
+
+                continue;
+            }
             $this->consume($kind, $node, $extra);
+            $this->afterGap = false;
         }
         $this->finish();
+        if ($this->pending) {
+            $this->warnings[] = $this->at($this->pending['_line'] ?? null).'Lines such as TYPE: or MARK: at the end of the file have no question after them.';
+        }
 
         return ['questions' => $this->questions, 'warnings' => $this->warnings];
     }
@@ -85,6 +119,11 @@ class QuestionParser
         foreach (iterator_to_array($parent->childNodes) as $node) {
             if ($node instanceof DOMElement) {
                 $tag = strtolower($node->tagName);
+                if ($tag === 'hr') {
+                    yield ['gap', $node, null];
+
+                    continue;
+                }
                 if ($tag === 'ol') {
                     yield from $this->listItems($node);
 
@@ -167,6 +206,9 @@ class QuestionParser
         }
 
         $text = trim(preg_replace('/\s+/u', ' ', $node->textContent));
+        if (str_starts_with($text, '//')) {
+            return; // a note for the person typing the file
+        }
         $html = $this->html($node);
         if ($text === '' && ! preg_match('/<(img|table)\b/i', $html)) {
             return;
@@ -179,7 +221,14 @@ class QuestionParser
             return;
         }
 
-        if ($this->current && preg_match(self::OPTION_START, $text, $m) && $this->section !== 'explanation') {
+        // In the old layout, a blank line ends a question whose statements all carry [T] / [F].
+        // (So does it end a question whose type needs no options or Answer line, such as TYPE: ESSAY.)
+        if ($this->current?->unnumbered && $this->afterGap && ($this->allStatementsMarked($this->current)
+            || ($this->current->typeGiven && ! in_array($this->current->type, ['single_choice', 'multiple_choice', 'true_false', 'multi_true_false'], true)))) {
+            $this->closed = true;
+        }
+
+        if ($this->current && ! $this->closed && preg_match(self::OPTION_START, $text, $m) && $this->section !== 'explanation') {
             $html = $this->stripPrefix($html, self::O_PREFIX);
             [$html, $trailingStar] = $this->stripStar($html);
             $this->addOption(strtoupper($m[2]), $html, $m[1] === '*' || $trailingStar);
@@ -187,14 +236,37 @@ class QuestionParser
             return;
         }
 
-        if ($this->current && preg_match(self::META, $text, $m)) {
-            $this->applyMeta(strtolower($m[1]), trim($m[2]), $html);
+        if (preg_match(self::META, $text, $m)) {
+            $key = strtolower($m[1]);
+            $key = match ($key) { 'answers', 'key' => 'answer', default => $key };
+            $value = trim($m[2]);
+            // Old layout: TYPE:/IMAGE:/SCORING: (and anything after a blank line) belong to the next question.
+            $forNext = ! $this->current
+                || ($this->current->unnumbered && $key === 'type') // TYPE: always opens the next question in the old layout
+                || ($this->current->unnumbered && $this->closed && ($this->pending || $this->afterGap || in_array($key, ['image', 'scoring'], true)));
+            if ($forNext) {
+                if ($key === 'answer' && ! $this->current) {
+                    $this->warnings[] = $this->at($this->line).'An ANSWER line with no question above it.';
+
+                    return;
+                }
+                if ($key === 'type' && $this->current) {
+                    $this->finish();
+                }
+                $this->pending['_line'] ??= $this->line;
+                $this->pending[$key] = [$value, $html];
+
+                return;
+            }
+            $this->applyMeta($key, $value, $html);
 
             return;
         }
 
-        if (! $this->current) {
-            $this->warnings[] = 'Ignored text before the first question: "'.mb_strimwidth($text, 0, 80, '…').'"';
+        // Plain text with no number: a new question in the old layout (or the very first question).
+        if (! $this->current || ($this->current->unnumbered && $this->closed)) {
+            $this->startQuestion(count($this->questions) + 1, true);
+            $this->appendStem($html);
 
             return;
         }
@@ -206,11 +278,42 @@ class QuestionParser
         };
     }
 
-    private function startQuestion(int $number): void
+    private function startQuestion(int $number, bool $unnumbered = false): void
     {
         $this->finish();
         $this->current = new ParsedQuestion($number);
+        $this->current->unnumbered = $unnumbered;
+        $this->current->line = $this->pending['_line'] ?? $this->line;
         $this->section = 'stem';
+        $this->closed = false;
+        $pending = $this->pending;
+        $this->pending = [];
+        unset($pending['_line']);
+        foreach ($pending as $key => [$value, $html]) {
+            $this->applyMeta($key, $value, $html);
+        }
+        $this->section = 'stem';
+        $this->closed = false;
+    }
+
+    private function at(?int $line): string
+    {
+        return $line ? "Line $line: " : '';
+    }
+
+    /** Every statement carries its own [T] / [F] mark (old multiple true/false layout). */
+    private function allStatementsMarked(ParsedQuestion $q): bool
+    {
+        if (count($q->options) < 2 || ($q->typeGiven && $q->type !== 'multi_true_false')) {
+            return false;
+        }
+        foreach ($q->options as $o) {
+            if (($o['tf'] ?? null) === null) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function ensureQuestion(): void
@@ -233,21 +336,54 @@ class QuestionParser
     private function addOption(string $label, string $html, bool $correct): void
     {
         $this->section = 'option';
-        $this->current->options[] = ['label' => $label, 'html' => trim($html), 'correct' => $correct];
+        $this->current->options[] = ['label' => $label, 'html' => trim($html), 'correct' => $correct, 'tf' => self::trueFalseMark(trim($html))];
+    }
+
+    /** "[T]", "(F)", "- TRUE", "= FALSE" at the end of a statement: its truth (old layout), or null. */
+    public static function trueFalseMark(string $html): ?array
+    {
+        foreach (['/\s*[\[(]\s*(T|F|TRUE|FALSE)\s*[\])]\s*$/i', '/\s+[-–=|:]\s*(T|F|TRUE|FALSE)\s*$/i', '/\s+(TRUE|FALSE)\s*$/', '/\s{2,}(T|F)$/'] as $p) {
+            if (preg_match($p, $html, $m)) {
+                return [strtoupper($m[1][0]) === 'T', trim(preg_replace($p, '', $html))];
+            }
+        }
+
+        return null;
     }
 
     private function appendToLastOption(string $html): void
     {
         $i = array_key_last($this->current->options);
         $this->current->options[$i]['html'] .= ' '.$html;
+        $this->current->options[$i]['tf'] = self::trueFalseMark($this->current->options[$i]['html']);
     }
 
     private function applyMeta(string $key, string $value, string $html): void
     {
         $q = $this->current;
+        $q->hasMeta = true;
+        if (in_array($key, ['answer', 'ans', 'correct', 'correct answer'], true) && $q->unnumbered) {
+            $this->closed = true; // old layout: the ANSWER line ends the question
+        }
         switch ($key) {
+            case 'image':
+                $q->image = mb_substr(basename(str_replace('\\', '/', $value)), 0, 190) ?: null;
+                break;
+            case 'scoring':
+                $v = strtolower($value);
+                $q->scoring = in_array($v, ['all', 'all_or_nothing', 'exact', 'strict', 'none'], true) ? 'all' : (in_array($v, ['partial', 'proportional'], true) ? 'partial' : null);
+                $q->scoring === null && $value !== '' && $q->warnings[] = "SCORING: \"$value\" is not known; write ALL or PARTIAL.";
+                break;
             case 'answer': case 'ans': case 'correct': case 'correct answer':
-                if (self::truthList($value) !== null) {
+                // "ANSWER: B. Paris": keep the letter, ignore the copy of the option text
+                if ($q->options && preg_match('/^([A-Ha-h])(?:[.)]\s+|\s*[:\-]\s+)\S/u', $value, $em) && self::truthList($value) === null) {
+                    $value = strtoupper($em[1]);
+                } elseif ($q->options && preg_match('/^([A-H])\s+(\S.{2,})$/su', $value, $em) && ! preg_match('/^(?:and\s+|&\s*|,\s*)?[A-H](?:\s*[,;&]\s*[A-H])*\.?$/i', $em[2])) {
+                    // "ANSWER: A The Z-track method seals…": the letter, then a note that explains it
+                    $value = $em[1];
+                    $q->explanationHtml ??= '<p>'.htmlspecialchars(trim($em[2]), ENT_QUOTES, 'UTF-8').'</p>';
+                }
+                if (self::truthList($value) !== null && ! ($q->typeGiven && $q->type !== 'multi_true_false')) {
                     $q->answerText = $value; // multiple true/false, resolved in finish()
                     $q->type = 'multi_true_false';
                     break;
@@ -278,11 +414,18 @@ class QuestionParser
                 break;
             case 'type':
                 $v = str_replace([' ', '-'], '_', strtolower($value));
-                $aliases = ['mcq' => 'single_choice', 'objective' => 'single_choice', 'multi' => 'multiple_choice', 'tf' => 'true_false', 'theory' => 'essay', 'short' => 'short_answer',
+                $aliases = ['mcq' => 'single_choice', 'mcq_single' => 'single_choice', 'single' => 'single_choice', 'objective' => 'single_choice', 'multi' => 'multiple_choice', 'mcq_multi' => 'multiple_choice', 'multiple' => 'multiple_choice', 'tf' => 'true_false', 'true/false' => 'true_false', 'truefalse' => 'true_false',
+                    'essay_question' => 'essay', 'numerical' => 'numeric', 'number' => 'numeric', 'matching_pairs' => 'matching', 'theory' => 'essay', 'short' => 'short_answer',
                     'mtf' => 'multi_true_false', 'multiple_true_false' => 'multi_true_false', 'multiple_true/false' => 'multi_true_false', 'multi_tf' => 'multi_true_false', 'true_false_set' => 'multi_true_false',
                     'blank' => 'fill_blank', 'blanks' => 'fill_blank', 'fill' => 'fill_blank', 'fill_in' => 'fill_blank', 'fill_in_the_blank' => 'fill_blank', 'fill_in_the_blanks' => 'fill_blank', 'cloze' => 'fill_blank',
                     'order' => 'ordering', 'sequence' => 'ordering', 'arrange' => 'ordering', 'upload' => 'file_upload', 'file' => 'file_upload'];
                 $q->type = $aliases[$v] ?? $v;
+                $q->typeGiven = true;
+                if (! in_array($q->type, \App\Models\Question::TYPES, true)) {
+                    $q->warnings[] = "Unknown type \"$value\". Use MCQ, MULTI, TF, MTF, essay, short, numeric, blank, matching, order or upload.";
+                    $q->type = 'single_choice';
+                    $q->typeGiven = false;
+                }
                 break;
             case 'pair': case 'match':
                 // "Pair: Sodium = Na" (also "->" or "|")
@@ -318,6 +461,45 @@ class QuestionParser
             return;
         }
         $this->current = null;
+        $this->closed = false;
+
+        // Bare text with no number, options or Answer line: a heading or a note, not a question.
+        if ($q->unnumbered && ! $q->options && ! $q->hasMeta && ! $q->pairs && $q->answerText === null) {
+            $text = mb_strimwidth(trim(html_entity_decode(strip_tags($q->stemHtml))), 0, 80, '…');
+            $this->warnings[] = $this->at($q->line).($this->questions ? "Skipped \"$text\": it has no options and no ANSWER line." : "Ignored text before the first question: \"$text\"");
+
+            return;
+        }
+
+        // Old layout: every statement marked [T] / [F] is a multiple true/false question.
+        $marked = count($q->options) >= 2 && count(array_filter($q->options, fn ($o) => ($o['tf'] ?? null) !== null)) === count($q->options);
+        if ($marked && ($q->type === 'multi_true_false' || (! $q->typeGiven && ($q->answerText === null || self::truthList($q->answerText) === null) && ! array_filter($q->options, fn ($o) => $o['correct'])))) {
+            $q->type = 'multi_true_false';
+            if ($q->answerText === null || self::truthList($q->answerText) === null) {
+                foreach ($q->options as &$o) {
+                    [$o['correct'], $o['html']] = $o['tf'];
+                }
+                unset($o);
+                $q->answerText = null;
+            }
+        }
+        foreach ($q->options as &$o) {
+            unset($o['tf']);
+        }
+        unset($o);
+
+        // "TYPE: TF" with "ANSWER: TRUE" (no options written): the True / False options are made here.
+        if (! $q->options && $q->answerText !== null && in_array($q->type, ['true_false', 'single_choice'], true)
+            && ($q->type === 'true_false' || ! $q->typeGiven) && preg_match('/^(T|F|TRUE|FALSE|YES|NO)\.?$/i', trim($q->answerText))) {
+            $true = in_array(strtoupper(trim($q->answerText, ". \t")), ['T', 'TRUE', 'YES'], true);
+            $q->type = 'true_false';
+            $q->options = [['label' => 'A', 'html' => 'True', 'correct' => $true], ['label' => 'B', 'html' => 'False', 'correct' => ! $true]];
+            $q->answerText = null;
+        }
+        if ($q->type === 'true_false' && ! $q->options) {
+            $q->options = [['label' => 'A', 'html' => 'True', 'correct' => false], ['label' => 'B', 'html' => 'False', 'correct' => false]];
+            $q->warnings[] = 'No answer given: write ANSWER: TRUE or ANSWER: FALSE.';
+        }
 
         // fill in the blanks: ___ in the text become [[1]], [[2]]…; "Answer: cell; nucleus|nuclei" gives each blank's answers
         if ($q->type === 'fill_blank') {

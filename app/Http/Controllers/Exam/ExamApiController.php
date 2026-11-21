@@ -220,6 +220,28 @@ class ExamApiController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /**
+     * "Report this question": a student says a question is faulty (wrong key, two right options,
+     * unclear, picture missing). Saved once per question (a second report replaces the first);
+     * it costs no exam time, and examiners settle it after the exam.
+     */
+    public function report(Request $request): JsonResponse
+    {
+        $attempt = $this->attempt($request);
+        $data = $request->validate([
+            'question_id' => ['required', 'integer'],
+            'reason' => ['required', \Illuminate\Validation\Rule::in(array_keys(\App\Models\QuestionReport::REASONS))],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+        abort_unless(\Illuminate\Support\Facades\DB::table('attempt_questions')->where('attempt_id', $attempt->id)->where('question_id', $data['question_id'])->exists(), 422, 'That question is not on your paper.');
+        \App\Models\QuestionReport::updateOrCreate(
+            ['attempt_id' => $attempt->id, 'question_id' => $data['question_id']],
+            ['tenant_id' => $attempt->tenant_id, 'exam_id' => $attempt->exam_id, 'user_id' => $attempt->user_id, 'reason' => $data['reason'], 'note' => $data['note'] ?? null, 'status' => 'open'],
+        );
+
+        return response()->json(['ok' => true], 201);
+    }
+
     /** "I need help" / technical support from inside the exam (Target 108, 234). */
     public function help(Request $request): JsonResponse
     {

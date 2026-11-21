@@ -39,6 +39,7 @@ class ResultController extends Controller
                 'id' => $r->id, 'name' => $r->user?->name, 'identifier' => $r->user?->identifier,
                 'raw' => $r->raw_score, 'max' => $r->max_score, 'final' => $r->final_score, 'grade' => $r->grade,
                 'status' => $r->status, 'locked' => $r->locked, 'withheld_reason' => $r->withheld_reason,
+                'attempt_id' => $r->attempt_id ?? \App\Models\Attempt::where('exam_id', $r->exam_id)->where('user_id', $r->user_id)->whereIn('status', \App\Models\Attempt::CLOSED)->latest('id')->value('id'),
             ]);
         $stats = Result::where('exam_id', $exam->id)->selectRaw('COUNT(*) n, AVG(final_score) mean, MIN(final_score) min, MAX(final_score) max')->first();
         $grades = Result::where('exam_id', $exam->id)->selectRaw('grade, COUNT(*) n')->groupBy('grade')->pluck('n', 'grade');
@@ -49,7 +50,8 @@ class ResultController extends Controller
             'results' => $results,
             'stats' => ['count' => (int) $stats->n, 'mean' => round((float) $stats->mean, 2), 'min' => (float) $stats->min, 'max' => (float) $stats->max, 'grades' => $grades, 'status' => $byStatus],
             'changes' => ResultChange::with('result.user:id,name')->whereHas('result', fn ($q) => $q->where('exam_id', $exam->id))->where('status', 'pending')->get()
-                ->map(fn ($c) => ['id' => $c->id, 'candidate' => $c->result?->user?->name, 'from' => $c->from_score, 'to' => $c->to_score, 'reason' => $c->reason, 'requested_by' => \App\Models\User::find($c->requested_by)?->name]),
+                ->map(fn ($c) => ['id' => $c->id, 'candidate' => $c->result?->user?->name, 'from' => $c->from_score, 'to' => $c->to_score, 'reason' => $c->reason, 'requested_by' => \App\Models\User::find($c->requested_by)?->name,
+                    'answer' => $c->answer ? ['number' => $c->answer['number'] ?? null, 'attempt_id' => $c->answer['attempt_id']] : null]),
             'appeals' => Appeal::with('user:id,name')->whereHas('result', fn ($q) => $q->where('exam_id', $exam->id))->whereIn('status', ['submitted', 'reviewing'])->get()
                 ->map(fn ($a) => ['id' => $a->id, 'candidate' => $a->user?->name, 'statement' => $a->statement, 'status' => $a->status]),
             'canApprove' => $request->user()->can('results.approve'),

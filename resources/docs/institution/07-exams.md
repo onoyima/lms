@@ -53,3 +53,20 @@ Add a sitting (hall or remote), then candidates: from course registration, from 
 ## Integrity review
 
 After the exam, the **Integrity review** tab lists attempts whose pattern is statistically unusual for that exam — scored far above what the time taken predicts, hard questions answered correctly very fast, many identical wrong answers shared with one other candidate, most answers saved at the last minute, or a high proctoring score. Clear a flag, or open an incident so the full procedure applies. Marks are never changed here.
+
+## Setting up a paper in four steps
+
+The top of every exam page shows what is left: **Questions**, **Students and time**, **Rules**, **Publish**. Each step opens the right tab.
+
+- **Questions**: on the Paper tab, *Upload a file* puts the questions straight on the section; *From banks* puts on chosen questions or whole banks; a **random-draw rule** gives each student their own set — from one bank or several, with *at least N from each bank* so every topic is covered. If a rule asks for more questions than its banks hold, the page says which bank is short and by how many, and the paper cannot be published until it is fixed.
+- **Publish**: one click. Papers need a second person's approval only if your institution switches that on (Settings › Policy).
+- **Students**: on a sitting, *Upload a list* (CSV, Excel or text, with the old system's columns firstname, middlename, lastname, email, matric_no, password — students without an account get one after a preview), *Find a student*, *Paste matric numbers*, or *By matric / e-mail* (everyone whose matric number starts with, or whose e-mail is at, what you type). A student who has not started can be taken off again.
+- **Staff promotion exams**: choose the kind *Staff promotion exam*; its candidates are staff, added the same ways, and they find it under *My exams* in their menu.
+
+## When a student reports a question
+
+During the exam a student can press **Report this question** and say what is wrong. It costs them no time. The exam's **Question reports** tab gathers the reports by question; for each you can correct the answer, give everyone full marks, take the question out, or keep it. Every student who had the question is marked again.
+
+## Exam centres without internet
+
+Under **Exams › Exam centres**, add each centre; it gets its own key. On a sitting, *Package for the centre* downloads a signed .cbtpkg file (paper, pictures, candidates, times). The centre, running its own copy of the platform, adds the main server with the same code and key, reads the package, and runs the sitting; candidates sign in with their usual password. Afterwards the centre downloads *Scripts for the main server* and you add them on the sitting with *Add the centre's scripts*: each script is stored once and marked with your answer keys. A changed file, or one signed with another key, is refused.

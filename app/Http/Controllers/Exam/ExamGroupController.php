@@ -64,7 +64,7 @@ class ExamGroupController extends Controller
             'papers.*.mode' => ['nullable', 'in:hall,remote'],
             'papers.*.venue_id' => ['nullable', Rule::exists('venues', 'id')->where('tenant_id', tenant_id())],
             'papers.*.protection' => ['nullable', Rule::in(ExamPresets::PROTECTION)],
-            'papers.*.category' => ['nullable', 'in:exam,test,quiz,practice,mock'],
+            'papers.*.category' => ['nullable', 'in:exam,test,quiz,practice,mock,promotion'],
             'papers.*.course_id' => ['nullable', Rule::exists('courses', 'id')->where('tenant_id', tenant_id())],
         ]);
         $user = $request->user();
@@ -131,7 +131,7 @@ class ExamGroupController extends Controller
             'mode' => ['nullable', 'in:hall,remote'],
             'venue_id' => ['nullable', Rule::exists('venues', 'id')->where('tenant_id', tenant_id())],
             'protection' => ['nullable', Rule::in(ExamPresets::PROTECTION)],
-            'category' => ['nullable', 'in:exam,test,quiz,practice,mock'],
+            'category' => ['nullable', 'in:exam,test,quiz,practice,mock,promotion'],
             'course_id' => ['nullable', Rule::exists('courses', 'id')->where('tenant_id', tenant_id())],
         ]);
         $exam = $this->makePaper($group, $p, $request->user()->id);
@@ -195,8 +195,11 @@ class ExamGroupController extends Controller
                 ['key' => 'examiners', 'label' => 'Examiners', 'done' => ! $needsExaminers || $examiners > 0, 'optional' => ! $needsExaminers,
                     'detail' => $needsExaminers ? ($examiners ? $examiners.' assigned' : 'None yet') : 'Marked automatically'],
                 ['key' => 'rules', 'label' => 'Rules and monitoring', 'done' => true, 'detail' => $this->protectionLabel((array) $e->proctoring, $e->isOnScreen())],
-                ['key' => 'approval', 'label' => 'Approval', 'done' => in_array($e->status, ['scheduled', 'live', 'closed', 'results_published'], true),
-                    'detail' => match ($e->status) { 'draft', 'returned' => 'Not sent yet', 'submitted' => 'Waiting for a second person', default => 'Approved' }],
+                \App\Support\Policy::get('exam_paper_approval')
+                    ? ['key' => 'approval', 'label' => 'Approval', 'done' => in_array($e->status, ['scheduled', 'live', 'closed', 'results_published'], true),
+                        'detail' => match ($e->status) { 'draft', 'returned' => 'Not sent yet', 'submitted' => 'Waiting for a second person', default => 'Approved' }]
+                    : ['key' => 'approval', 'label' => 'Published', 'done' => in_array($e->status, ['scheduled', 'live', 'closed', 'results_published'], true),
+                        'detail' => in_array($e->status, ['draft', 'returned', 'submitted'], true) ? 'Not yet' : 'Published'],
             ];
 
             return [
@@ -212,6 +215,7 @@ class ExamGroupController extends Controller
         });
 
         return Inertia::render('exams/group', [
+            'needsApproval' => (bool) \App\Support\Policy::get('exam_paper_approval'),
             'group' => ['id' => $group->id, 'title' => $group->title, 'code' => $group->code, 'description' => $group->description,
                 'course' => $group->course ? trim($group->course->code.' — '.$group->course->title, ' —') : null, 'course_id' => $group->course_id, 'semester' => $group->semester?->name],
             'papers' => $rows,
@@ -240,7 +244,13 @@ class ExamGroupController extends Controller
             'target' => ['nullable', 'in:category,exams'],
             'papers' => ['nullable', 'required_unless:target,category', 'array'],
             'papers.*' => ['integer'],
-            'source' => ['required', 'in:course,programme,list'],
+            'source' => ['required', 'in:course,programme,list,upload,match,ids'],
+            'list_token' => ['nullable', 'required_if:source,upload', 'string', 'size:32'],
+            'create_missing' => ['boolean'],
+            'password_rule' => ['nullable', 'in:file_or_matric,matric,surname'],
+            'identifier_prefix' => ['nullable', 'string', 'max:60'],
+            'email_domain' => ['nullable', 'string', 'max:120'],
+            'user_ids' => ['nullable', 'required_if:source,ids', 'array', 'max:5000'], 'user_ids.*' => ['integer'],
             'programme_id' => ['nullable', 'required_if:source,programme', Rule::exists('programmes', 'id')->where('tenant_id', tenant_id())],
             'level' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'identifiers' => ['nullable', 'required_if:source,list', 'string', 'max:200000'],
@@ -250,8 +260,17 @@ class ExamGroupController extends Controller
         $source = match ($data['source']) {
             'course' => ['from_enrolment' => true],
             'programme' => ['from_programme' => ['programme_id' => (int) $data['programme_id'], 'level' => $data['level'] ?? null]],
+            'upload' => ['list_token' => $data['list_token'], 'create_missing' => (bool) ($data['create_missing'] ?? false), 'password_rule' => $data['password_rule'] ?? 'file_or_matric'],
+            'match' => array_filter(['identifier_prefix' => $data['identifier_prefix'] ?? null, 'email_domain' => $data['email_domain'] ?? null]) ?: abort(422, 'Give a matric number prefix or an e-mail domain.'),
+            'ids' => ['user_ids' => $data['user_ids']],
             default => ['identifiers' => $data['identifiers']],
         };
+        // an uploaded list makes its new accounts once, then every paper uses the same people
+        $source['audience'] = $papers->isNotEmpty() && $papers->every(fn ($p) => $p->category === 'promotion') ? 'staff' : 'student';
+        if ($data['source'] === 'upload' || $data['source'] === 'match') {
+            [$people, $listMissing] = $roster->resolve($source);
+            $source = ['user_ids' => $people->pluck('id')->all()];
+        }
 
         $missing = [];
         $kept = 0;
@@ -304,7 +323,7 @@ class ExamGroupController extends Controller
         if ($noCourse) {
             $msg .= ' '.implode(', ', $noCourse).' '.(count($noCourse) === 1 ? 'has' : 'have').' no course and semester, so no class list: add students another way.';
         }
-        $missing = array_values(array_unique($missing));
+        $missing = array_values(array_unique(array_merge($missing, $listMissing ?? [])));
         if ($missing) {
             $msg .= ' Not found: '.implode(', ', array_slice($missing, 0, 10)).(count($missing) > 10 ? '…' : '').'.';
         }
@@ -407,16 +426,17 @@ class ExamGroupController extends Controller
     public function submitAll(Request $request, ExamGroup $group, \App\Services\Exams\ExamWorkflow $workflow): RedirectResponse
     {
         $sent = 0;
+        $approval = (bool) \App\Support\Policy::get('exam_paper_approval');
         foreach ($group->papers()->whereIn('status', ['draft', 'returned'])->get() as $paper) {
             try {
-                $workflow->submitForApproval($paper, $request->user());
+                $approval ? $workflow->submitForApproval($paper, $request->user()) : $workflow->publish($paper, $request->user());
                 $sent++;
             } catch (\Symfony\Component\HttpKernel\Exception\HttpException) {
                 // a paper without questions or criteria stays a draft; the overview shows why
             }
         }
 
-        return back()->with('success', $sent ? "$sent ".($sent === 1 ? 'paper' : 'papers').' sent for approval.' : 'No paper is ready to send yet: add questions or criteria first.');
+        return back()->with('success', $sent ? "$sent ".($sent === 1 ? 'paper' : 'papers').($approval ? ' sent for approval.' : ' published.') : 'No paper is ready yet: add questions or criteria first.');
     }
 
     private function protectionLabel(array $p, bool $onScreen): string

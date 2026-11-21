@@ -79,7 +79,7 @@ class ExamAdminController extends Controller
 
         return Inertia::render('exams/show', [
             'exam' => [
-                ...$exam->only(['id', 'title', 'code', 'type', 'category', 'kind', 'parent_exam_id', 'status', 'instructions', 'total_mark', 'pass_mark', 'duration_minutes', 'max_attempts', 'score_policy', 'marking_policy', 'version', 'course_id', 'semester_id', 'channels']),
+                ...$exam->only(['id', 'title', 'code', 'type', 'category', 'kind', 'parent_exam_id', 'exam_group_id', 'status', 'instructions', 'total_mark', 'pass_mark', 'duration_minutes', 'max_attempts', 'score_policy', 'marking_policy', 'version', 'course_id', 'semester_id', 'channels']),
                 'settings' => ExamSettings::settings($exam->settings) + ['seb' => \Illuminate\Support\Arr::except((array) data_get($exam->settings, 'seb', []), ['settings_password']) + ['has_settings_password' => (bool) data_get($exam->settings, 'seb.settings_password')]],
                 'proctoring' => ExamSettings::proctoring($exam->proctoring),
                 'grading_scales' => array_keys((array) \App\Support\Policy::get('grading_scales')),
@@ -89,6 +89,7 @@ class ExamAdminController extends Controller
                 'course' => $exam->course, 'semester' => $exam->semester,
                 'is_panel' => $exam->isPanelMarked(),
                 'can_edit' => in_array($exam->status, ['draft', 'returned'], true),
+                'needs_approval' => (bool) \App\Support\Policy::get('exam_paper_approval'),
             ],
             'sections' => $exam->sections->map(fn ($s) => [
                 'id' => $s->id, 'title' => $s->title, 'instructions' => $s->instructions, 'blueprint' => $s->blueprint ?? [], 'answer_any' => $s->answer_any,
@@ -109,6 +110,16 @@ class ExamAdminController extends Controller
             'courses' => Course::orderBy('code')->get(['id', 'code', 'title']),
             'semesters' => Semester::with('academicSession:id,name')->latest('id')->get(['id', 'name', 'academic_session_id']),
             'topics' => Question::query()->when($exam->course_id, fn ($q) => $q->where('course_id', $exam->course_id))->whereNotNull('topic')->distinct()->orderBy('topic')->pluck('topic'),
+            // the exam's own banks, its category's and its course's
+            'banks' => \App\Models\QuestionBank::forExam($exam)->withCount('questions')->orderBy('name')->get()
+                ->map(fn ($b) => ['id' => $b->id, 'name' => $b->name, 'topic' => $b->topic, 'description' => $b->description, 'questions' => $b->questions_count,
+                    'scope' => $b->exam_id ? 'exam' : ($b->exam_group_id ? 'group' : 'course'), 'scope_label' => $b->scopeLabel(),
+                    'types' => Question::where('question_bank_id', $b->id)->selectRaw('type, count(*) as n')->groupBy('type')->pluck('n', 'type')]),
+            // anything that would stop a candidate's paper being built (a bank too small for its rule)
+            'problems' => $exam->isPanelMarked() ? [] : app(\App\Services\Exams\PaperBuilder::class)->problems($exam),
+            // students' reports of faulty questions, by question
+            'questionReports' => app(\App\Services\Exams\QuestionReports::class)->summary($exam),
+            'reportReasons' => \App\Models\QuestionReport::REASONS,
             'staff' => User::where('user_type', 'staff')->orderBy('name')->limit(500)->get(['id', 'name', 'email']),
             'parent' => $exam->parent_exam_id ? Exam::find($exam->parent_exam_id, ['id', 'title']) : null,
             'group' => $exam->exam_group_id ? \App\Models\ExamGroup::find($exam->exam_group_id, ['id', 'title']) : null,
@@ -117,6 +128,25 @@ class ExamAdminController extends Controller
                 ->map(fn ($x) => ['id' => $x->id, 'attempt_id' => $x->attempt_id, 'score' => $x->score, 'reasons' => $x->reasons, 'review' => $x->review,
                     'candidate' => $x->attempt?->user?->only(['name', 'identifier']), 'session_id' => $x->attempt?->exam_session_id]),
         ]);
+    }
+
+    /** Settle students' reports of a faulty question: full marks, take it out, correct the answer, or keep it. */
+    public function settleReport(Request $request, Exam $exam, int $question, \App\Services\Exams\QuestionReports $reports): RedirectResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', Rule::in(\App\Services\Exams\QuestionReports::ACTIONS)],
+            'response' => ['nullable', 'string', 'max:2000'],
+            'correct' => ['nullable', 'array', 'max:20'], 'correct.*' => ['integer'],
+        ]);
+        abort_unless(\App\Models\QuestionReport::where('exam_id', $exam->id)->where('question_id', $question)->exists(), 404);
+        $n = $reports->settle($exam, $question, $data['action'], $data['response'] ?? null, $request->user(), $data['correct'] ?? []);
+
+        return back()->with('success', match ($data['action']) {
+            'dismiss' => 'Reports closed; the question stands.',
+            'full_mark' => "Everyone gets full marks for this question. $n scripts marked again.",
+            'drop' => "The question is taken out for everyone. $n scripts marked again.",
+            'fix_key' => "Answer corrected. $n scripts marked again.",
+        });
     }
 
     /** Run the statistical review now (it also runs by itself after each exam closes). */
@@ -260,7 +290,19 @@ class ExamAdminController extends Controller
             'blueprint.*.difficulty' => ['nullable', 'in:easy,medium,hard'],
             'blueprint.*.type' => ['nullable', Rule::in(Question::TYPES)],
             'blueprint.*.mark' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            // questions from one bank, several, or all of them with "at least N from each"
+            'blueprint.*.bank_ids' => ['nullable', 'array', 'max:50'],
+            'blueprint.*.bank_ids.*' => ['integer'],
+            'blueprint.*.min_each' => ['nullable', 'integer', 'min:0', 'max:200'],
         ]);
+        if (isset($data['blueprint'])) {
+            $allowed = \App\Models\QuestionBank::forExam($exam)->pluck('id')->all();
+            foreach ($data['blueprint'] as $i => $rule) {
+                $ids = array_values(array_unique(array_map('intval', $rule['bank_ids'] ?? [])));
+                abort_if(array_diff($ids, $allowed) !== [], 422, 'A chosen bank does not belong to this exam, its category or its course.');
+                $data['blueprint'][$i] = array_filter(['bank_ids' => $ids ?: null, 'min_each' => $ids ? (int) ($rule['min_each'] ?? 0) ?: null : null] + $rule, fn ($v) => $v !== null && $v !== []);
+            }
+        }
         $section->update($data);
 
         return back()->with('success', 'Section saved.');
@@ -371,11 +413,12 @@ class ExamAdminController extends Controller
 
     public function transition(Request $request, Exam $exam): RedirectResponse
     {
-        $data = $request->validate(['action' => ['required', 'in:submit,approve,return,reopen,close,archive'], 'comment' => ['nullable', 'string', 'max:2000']]);
+        $data = $request->validate(['action' => ['required', 'in:submit,publish,approve,return,reopen,close,archive'], 'comment' => ['nullable', 'string', 'max:2000']]);
         $user = $request->user();
 
         match ($data['action']) {
             'submit' => $this->workflow->submitForApproval($exam, $user),
+            'publish' => $this->workflow->publish($exam, $user),
             'approve' => $this->authorizeApprove($user) && $this->workflow->approve($exam, $user, $data['comment'] ?? null),
             'return' => $this->authorizeApprove($user) && $this->workflow->returnForChanges($exam, $user, $data['comment'] ?? 'Returned for changes'),
             'reopen' => $this->workflow->reopenForEditing($exam, $user),
@@ -383,7 +426,10 @@ class ExamAdminController extends Controller
             'archive' => $exam->update(['status' => 'archived']),
         };
 
-        return back()->with('success', 'Exam '.$data['action'].' done.');
+        return back()->with('success', match ($data['action']) {
+            'publish' => 'Published. Students on its sittings can write it at the set time.', 'submit' => 'Sent for approval.', 'approve' => 'Approved.',
+            'return' => 'Returned to the setter.', 'reopen' => 'Open for editing again.', 'close' => 'Exam closed.', default => 'Done.',
+        });
     }
 
     private function authorizeApprove(User $user): bool
@@ -404,7 +450,7 @@ class ExamAdminController extends Controller
             'title' => [$exam ? 'sometimes' : 'required', 'string', 'max:190'],
             'code' => ['nullable', 'string', 'max:40'],
             'type' => [$exam ? 'sometimes' : 'required', Rule::in(Exam::TYPES)],
-            'category' => ['sometimes', 'in:exam,test,quiz,practice,mock'],
+            'category' => ['sometimes', 'in:exam,test,quiz,practice,mock,promotion'],
             'course_id' => ['nullable', Rule::exists('courses', 'id')->where('tenant_id', tenant_id())],
             'semester_id' => ['nullable', Rule::exists('semesters', 'id')->where('tenant_id', tenant_id())],
             'instructions' => ['nullable', 'string', 'max:20000'],

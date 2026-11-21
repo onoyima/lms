@@ -160,6 +160,8 @@ class ExamGroupTest extends TestCase
         $this->post("/exam-groups/{$group->id}/students", ['papers' => [$cbt->id], 'source' => 'course']);
 
         // the objective, practical and viva have content; the theory paper has no questions and stays a draft
+        // this institution asks for a second person's approval (Settings › Policy)
+        $this->tenant->update(['settings' => array_replace_recursive((array) $this->tenant->settings, ['policy' => ['exam_paper_approval' => true]])]);
         $this->post("/exam-groups/{$group->id}/submit")->assertSessionHas('success', '3 papers sent for approval.');
         $this->assertSame('draft', Exam::where('type', 'essay')->sole()->status);
         $this->assertSame('submitted', $cbt->fresh()->status);

@@ -329,7 +329,7 @@ export default function Editor({ question, courses, topics, passages: initialPas
                                         </label>
                                     ))}
                                 </div>
-                                <Field label="Largest file (MB)"><input type="number" min={1} max={100} className={`${inputClass} w-28`} value={fileRule.max_mb} onChange={(e) => setFileRule({ ...fileRule, max_mb: Number(e.target.value) })} /></Field>
+                                <Field label="Largest file (MB)"><input type="number" min={1} max={100} className={`${inputClass} !w-28`} value={fileRule.max_mb} onChange={(e) => setFileRule({ ...fileRule, max_mb: Number(e.target.value) })} /></Field>
                                 <p className="text-xs text-muted-foreground">Marked by an examiner, who opens the file from the marking page.</p>
                             </div>
                         )}

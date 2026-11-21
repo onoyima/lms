@@ -15,7 +15,8 @@ class TemplateController extends Controller
         $u = $request->user();
         abort_if($u->user_type === 'student', 403);
 
-        return array_filter(Templates::ALL, fn ($t) => $t[3] === null || $u->can($t[3]));
+        // "a|b": either permission is enough
+        return array_filter(Templates::ALL, fn ($t) => $t[3] === null || collect(explode('|', $t[3]))->contains(fn ($p) => $u->can($p)));
     }
 
     public function index(Request $request): Response
