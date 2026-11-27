@@ -26,9 +26,9 @@ class ExamSettings
         'partial_credit' => false,     // multiple-answer questions: share of correct choices instead of all-or-nothing
         'mtf_scoring' => 'per_statement',
         'grading_scale' => '',            // '' = the institution's main scale, else the name of one of its other scales // multiple true/false: per_statement (each statement its share) or all_or_nothing
-        'require_check_in' => true,    // hall sittings: invigilator checks the candidate in first (Target 96)
+        'require_check_in' => false,   // no longer used: students never wait for an invigilator check-in to start
         // Emergency exam: candidates see only this exam after signing in and start with one click. No
-        // pre-exam checks, monitoring notice, check-in, camera, microphone, screen or approved-computer
+        // pre-exam checks, monitoring notice, camera, microphone, screen or approved-computer
         // requirements; the exam is timed by the invigilator in the room, with the on-screen timer still running.
         'emergency' => false,
         // Starting late: "sitting" = the sitting's own late-entry minutes; "any_time" = may start until the

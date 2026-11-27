@@ -46,7 +46,7 @@ Under **Before the exam starts**, choose all, some or none of the checks. With n
 
 ## Emergency exams
 
-Switch on **Emergency exam** on the exam's page for an exam that must run at once. While it is open, its students see only that exam when they sign in, press **Start exam**, and the questions appear. There are no checks, no monitoring notice, no invigilator check-in, and no camera, microphone, screen or approved-computer rules. Time it in the room; the on-screen timer still runs and the exam still closes at the end of its time. A sitting PIN, if you set one, is still asked for. When they finish, students have their usual pages again.
+Switch on **Emergency exam** on the exam's page for an exam that must run at once. While it is open, its students see only that exam when they sign in, press **Start exam**, and the questions appear. There are no checks, no monitoring notice, and no camera, microphone, screen or approved-computer rules. Time it in the room; the on-screen timer still runs and the exam still closes at the end of its time. A sitting PIN, if you set one, is still asked for. When they finish, students have their usual pages again.
 
 ## Safe Exam Browser
 

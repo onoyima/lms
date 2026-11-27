@@ -93,9 +93,8 @@ class AttemptService
                     ? 'Starting closed '.$rule['late_start_minutes'].' minutes after the exam began. Speak to the invigilator.'
                     : 'Late entry for this exam has closed. Speak to the invigilator.', 'late', 403);
             }
-            if ($session->mode === 'hall' && ! $session->is_practice && ! $candidate->checked_in_at && data_get($exam->settings, 'require_check_in', true) && ! data_get($exam->settings, 'emergency', false)) {
-                throw new ExamException('Please check in with the invigilator first.', 'not_checked_in', 403);
-            }
+            // no invigilator check-in step before starting (user, 27 Nov: removed entirely); the sitting's
+            // "Check in" button still records attendance, but never stops a student starting
             if ($session->access_pin_hash && ! ($pin && Hash::check($pin, $session->access_pin_hash))) {
                 throw new ExamException('Enter the exam PIN given in the hall.', 'pin_required', 403);
             }

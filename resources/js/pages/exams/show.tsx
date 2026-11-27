@@ -601,7 +601,7 @@ function CriteriaEditor({ exam, criteria }: { exam: ExamData; criteria: Criterio
 const settingLabels: Record<string, string> = {
     shuffle_questions: 'Shuffle question order per candidate', shuffle_options: 'Shuffle answer options', show_score: 'Show objective score right after submitting',
     show_review: 'Let candidates review answers after results', allow_navigation: 'Free navigation between questions', allow_flagging: 'Flag questions for review',
-    calculator: 'On-screen calculator', partial_credit: 'Partial credit on multiple-answer questions', require_check_in: 'Hall sittings: check-in required',
+    calculator: 'On-screen calculator', partial_credit: 'Partial credit on multiple-answer questions',
 };
 const proctorLabels: Record<string, string> = {
     require_consent: 'Monitoring notice must be accepted', require_fullscreen: 'Require full screen', detect_tab_switch: 'Detect tab switching', detect_focus_loss: 'Detect leaving the window',
@@ -757,7 +757,7 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                     <span>
                         <b className="block font-medium">Emergency exam</b>
                         <span className="text-sm text-muted-foreground">
-                            While this exam is open, its students see only this exam when they sign in and start it with one press. No checks, monitoring notice, invigilator check-in,
+                            While this exam is open, its students see only this exam when they sign in and start it with one press. No checks, monitoring notice,
                             camera, microphone or approved-computer rules. Time it in the room; the on-screen timer still runs. A sitting PIN, if set, is still asked for.
                         </span>
                     </span>

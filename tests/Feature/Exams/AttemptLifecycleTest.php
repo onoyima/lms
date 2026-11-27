@@ -182,14 +182,13 @@ class AttemptLifecycleTest extends TestCase
         $this->startAs($this->candidate($this->sitting($exam, ['is_practice' => true])))->assertOk();
     }
 
-    public function test_hall_sittings_need_check_in(): void
+    public function test_hall_students_start_without_waiting_for_an_invigilator_check_in(): void
     {
+        // even an exam saved earlier with the old check-in setting on
         $exam = $this->cbtExam(['settings' => ['require_check_in' => true, 'shuffle_questions' => false]]);
         $c = $this->candidate($this->sitting($exam, ['mode' => 'hall']));
-        $this->startAs($c)->assertJsonPath('reason', 'not_checked_in');
-
-        $this->actingAs($this->officer)->post("/sessions/{$c->exam_session_id}/candidates/{$c->id}/check-in")->assertRedirect();
         $this->startAs($c)->assertOk();
+        $this->assertNull($c->fresh()->checked_in_at);
     }
 
     public function test_violations_lock_the_attempt_and_resume_gives_time_back(): void
