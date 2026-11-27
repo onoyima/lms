@@ -69,4 +69,14 @@ class EverydayPapersTest extends TestCase
         $this->actingAs($this->officer)->post('/question-bank/import', ['file' => UploadedFile::fake()->create('paper.ppt', 10), 'section_id' => $section->id])
             ->assertSessionHasErrors(['file' => 'Upload a Word file (.docx or .doc), a PDF, an Excel sheet (.xlsx), a CSV or a text file.']);
     }
+
+    public function test_a_server_problem_is_explained_instead_of_an_error_page(): void
+    {
+        $exam = $this->cbtExam(['status' => 'draft'], []);
+        $section = $exam->sections()->first() ?? $exam->sections()->create(['title' => 'Section A', 'position' => 0]);
+        \Illuminate\Support\Facades\Schema::table('question_imports', fn ($t) => $t->dropColumn('original_name')); // as if an update was not migrated
+        $r = $this->actingAs($this->officer)->post('/question-bank/import', ['file' => UploadedFile::fake()->createWithContent('q.txt', "1. A?\nA. x\n*B. y"), 'section_id' => $section->id]);
+        $r->assertRedirect()->assertSessionHasErrors('file');
+        $this->assertStringContainsString('php artisan migrate', session('errors')->first('file'));
+    }
 }

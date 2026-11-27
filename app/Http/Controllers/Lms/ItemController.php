@@ -36,6 +36,7 @@ class ItemController extends Controller
     {
         $user = $request->user();
         $this->access->authorizeOpen($user, $item);
+        abort_if($item->type === 'quiz' && ! app(\App\Services\Modules\ModuleRegistry::class)->isEnabled(tenant(), 'question_bank'), 404, 'Course quizzes are not available: the exams module is switched off for this institution.');
         $offering = $item->offering()->with('course')->first();
         $teacher = $this->access->teaches($user, $offering);
         if (! $teacher && in_array($item->type, ['page', 'link', 'video', 'live'], true)) {

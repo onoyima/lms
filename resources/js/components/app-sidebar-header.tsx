@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { Bell, CircleHelp, Moon, Search, Sun } from 'lucide-react';
+import { ArrowLeft, Bell, CircleHelp, House, Moon, Search, Sun } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -127,6 +127,46 @@ function QuickSearch() {
     );
 }
 
+/**
+ * Back and Home on every page. Back returns to the previous page of the app when there is one,
+ * otherwise to the page above this one (its breadcrumb or the address one level up), so it never
+ * leaves the platform or does nothing.
+ */
+function BackHome({ breadcrumbs, home }: { breadcrumbs: BreadcrumbItemType[]; home: string }) {
+    const { url } = usePage();
+    const path = url.split(/[?#]/)[0];
+    const atHome = path === home || path === '/';
+    const cls = 'grid size-9 shrink-0 place-items-center rounded-xl text-foreground/80 transition-colors hover:bg-card hover:text-foreground';
+
+    const back = () => {
+        const inside = typeof document !== 'undefined' && document.referrer.startsWith(window.location.origin) && window.history.length > 1;
+
+        if (inside) {
+            window.history.back();
+
+            return;
+        }
+
+        const parent = breadcrumbs.length > 1 ? String(breadcrumbs[breadcrumbs.length - 2].href) : path.replace(/\/[^/]+\/?$/, '') || home;
+        router.visit(parent && parent !== path ? parent : home);
+    };
+
+    if (atHome) {
+        return null;
+    }
+
+    return (
+        <div className="flex shrink-0 items-center">
+            <button type="button" onClick={back} className={cls} aria-label="Back" title="Back">
+                <ArrowLeft className="size-[18px]" />
+            </button>
+            <Link href={home} className={cls} aria-label="Home" title="Home">
+                <House className="size-[18px]" />
+            </Link>
+        </div>
+    );
+}
+
 export function AppSidebarHeader({ breadcrumbs = [] }: { breadcrumbs?: BreadcrumbItemType[] }) {
     const { notificationsUnread = 0, auth } = usePage().props as { notificationsUnread?: number; auth?: { user?: { name: string; avatar?: string | null; email: string } | null; isPlatformAdmin?: boolean } };
     const { resolvedAppearance, updateAppearance } = useAppearance();
@@ -136,6 +176,7 @@ export function AppSidebarHeader({ breadcrumbs = [] }: { breadcrumbs?: Breadcrum
         <header className="sticky top-0 z-30 px-4 pt-3 md:px-6">
             <div className="glass flex h-14 items-center gap-2 rounded-2xl px-2.5">
                 <SidebarTrigger className="size-9 rounded-xl" />
+                <BackHome breadcrumbs={breadcrumbs} home={auth?.isPlatformAdmin ? '/platform' : '/dashboard'} />
                 {breadcrumbs.length > 1 && <div className="hidden min-w-0 shrink lg:block"><Breadcrumbs breadcrumbs={breadcrumbs} /></div>}
                 <div className="flex flex-1 justify-center">{!auth?.isPlatformAdmin && <QuickSearch />}</div>
                 {!auth?.isPlatformAdmin && (

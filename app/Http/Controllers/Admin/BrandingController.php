@@ -28,7 +28,7 @@ class BrandingController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:190'],
             'short_name' => ['nullable', 'string', 'max:60'],
-            'theme' => ['nullable', 'in:sapphire,forest,plum'],
+            'theme' => ['nullable', 'in:sapphire,forest,plum,midnight'],
             'brand_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp'],
             // the rest of the white-label look

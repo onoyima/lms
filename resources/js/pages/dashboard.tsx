@@ -4,30 +4,14 @@ import type { LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ExamDayBoard } from '@/components/dashboard/exam-day';
-import type { Day } from '@/components/dashboard/exam-day';
+import MidnightDashboard from '@/components/dashboard/midnight';
+import type { Decision, ExamWithPapers, Layout, ModuleCard, Panels } from '@/components/dashboard/types';
 import { formatDateTime, Status } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
 import { usePlatform } from '@/hooks/use-platform';
 import { paperLook } from '@/lib/papers';
-import { cn } from '@/lib/utils';
+import { cn, firstName } from '@/lib/utils';
 
-type ModuleCard = { key: string; name: string; description: string; enabled: boolean };
-type Decision = { kind: 'exam_day' | 'approvals' | 'requests'; tone: 'critical' | 'warning' | 'info'; icon: string; title: string; detail: string; href: string; action: string };
-type ExamWithPapers = { id: number; title: string; students: number; papers: { id: number; type: string; label: string; status: string; starts_at: string | null; ends_at: string | null; candidates: number; writing: number; submitted: number }[] };
-type Glance = { students: number; students_week: number; students_trend: number[]; pass_rate: number | null; pass_trend: number[]; results_to_approve: number; results_ready: number; open_incidents: number; urgent_incidents: number };
-type Panels = {
-    institution?: Record<string, number | string | boolean | null>;
-    upcoming?: { id: number; title: string; starts_at: string; ends_at: string; status: string; venue: string | null; candidates: number }[];
-    oversight?: { scope: string; courses: number; reviews_waiting: number; results_to_approve: number; pass_rate: number | null; marking_backlog: number; courses_needing_attention: { id: number; code: string; title: string }[] };
-    teaching?: { courses: number; to_mark: number; unanswered_threads: number; students: number };
-    student?: { courses: number; unread: number; due: { id: number; title: string; type: string; due_at: string; code: string }[]; exams: { id: number; title: string; starts_at: string }[] };
-    casework?: { requests: number; hardware: number; anomalies: number };
-    day?: Day;
-    decisions?: Decision[];
-    exams?: ExamWithPapers[];
-    glance?: Glance;
-};
-type Layout = { hidden: string[]; order: string[] };
 
 const moduleLinks: Record<string, string> = { question_bank: '/question-bank', lms: '/learn/courses', browser_proctoring: '/proctor', results: '/marking', analytics: '/admin/reports' };
 const decisionIcons: Record<string, LucideIcon> = { eye: Eye, check: CheckCheck, send: Send, timer: Timer, scale: Scale };
@@ -224,13 +208,28 @@ const PANEL_NAMES: Record<string, string> = {
 };
 const WIDE = ['day', 'glance', 'kpis', 'modules'];
 
-export default function Dashboard({ moduleCards, panels, semester, layout: saved = { hidden: [], order: [] } }: { moduleCards: ModuleCard[]; panels: Panels; semester: string | null; layout?: Layout }) {
+export default function Dashboard(props: { moduleCards: ModuleCard[]; panels: Panels; semester: string | null; layout?: Layout }) {
+    const theme = usePage().props.tenant?.theme;
+
+    if (theme === 'midnight') {
+        return (
+            <>
+                <Head title="Dashboard" />
+                <MidnightDashboard {...props} layout={props.layout ?? { hidden: [], order: [] }} />
+            </>
+        );
+    }
+
+    return <StandardDashboard {...props} />;
+}
+
+function StandardDashboard({ moduleCards, panels, semester, layout: saved = { hidden: [], order: [] } }: { moduleCards: ModuleCard[]; panels: Panels; semester: string | null; layout?: Layout }) {
     const { tenant, auth, platform } = usePage().props;
     const { can, hasModule } = usePlatform();
     const i = panels.institution;
     const [layout, setLayout] = useState<Layout>(saved);
     const [editing, setEditing] = useState(false);
-    const hasPanel = (k: string) => (k === 'modules' ? true : k === 'kpis' ? !!i : k === 'student_due' || k === 'student_exams' ? !!panels.student : k === 'upcoming' ? !!panels.upcoming && !panels.day : !!panels[k as keyof Panels]);
+    const hasPanel = (k: string) => (k === 'modules' ? true : k === 'kpis' ? !!i : k === 'student_due' ? panels.student?.due != null : k === 'student_exams' ? panels.student?.exams != null : k === 'upcoming' ? !!panels.upcoming && !panels.day : !!panels[k as keyof Panels]);
     const available = ['day', 'glance', 'decisions', 'exams', 'student_exams', 'student_due', 'teaching', 'oversight', 'casework', 'upcoming', 'kpis', 'modules'].filter(hasPanel);
     const order = [...layout.order.filter((k) => available.includes(k)), ...available.filter((k) => !layout.order.includes(k))];
     const shown = (k: string) => !layout.hidden.includes(k);
@@ -248,7 +247,7 @@ export default function Dashboard({ moduleCards, panels, semester, layout: saved
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-    const nextExam = panels.student?.exams[0];
+    const nextExam = panels.student?.exams?.[0];
     const g = panels.glance;
 
     const renderPanel = (k: string): ReactNode => {
@@ -261,11 +260,11 @@ export default function Dashboard({ moduleCards, panels, semester, layout: saved
                         <GlanceCard label="Active students" icon={GraduationCap} value={g.students.toLocaleString()} note={g.students_week > 0 ? `+${g.students_week} this week` : 'No change this week'} noteTone={g.students_week > 0 ? undefined : 'text-muted-foreground'} href="/admin/people">
                             <Spark id="students" values={g.students_trend} color="var(--brand)" />
                         </GlanceCard>
-                        <GlanceCard label="Pass rate, last 5 exams" icon={TrendingUp} value={g.pass_rate === null ? '—' : `${g.pass_rate}%`} note={g.pass_trend.length > 1 ? `${g.pass_trend.at(-1)! - g.pass_trend[0] >= 0 ? '+' : ''}${g.pass_trend.at(-1)! - g.pass_trend[0]} points` : 'Published results only'} noteTone={g.pass_trend.length > 1 && g.pass_trend.at(-1)! < g.pass_trend[0] ? 'text-status-critical' : g.pass_trend.length > 1 ? undefined : 'text-muted-foreground'} href="/admin/reports">
+                        {g.results_to_approve !== null && <GlanceCard label="Pass rate, last 5 exams" icon={TrendingUp} value={g.pass_rate === null ? '—' : `${g.pass_rate}%`} note={g.pass_trend.length > 1 ? `${g.pass_trend.at(-1)! - g.pass_trend[0] >= 0 ? '+' : ''}${g.pass_trend.at(-1)! - g.pass_trend[0]} points` : 'Published results only'} noteTone={g.pass_trend.length > 1 && g.pass_trend.at(-1)! < g.pass_trend[0] ? 'text-status-critical' : g.pass_trend.length > 1 ? undefined : 'text-muted-foreground'} href="/admin/reports">
                             <Spark id="pass" values={g.pass_trend} color="var(--live)" />
-                        </GlanceCard>
-                        <GlanceCard label="Results to approve" icon={CheckCheck} value={g.results_to_approve} note={g.results_ready ? `${g.results_ready} approved, ready to publish` : 'None ready to publish'} noteTone={g.results_ready ? 'text-status-warning' : 'text-muted-foreground'} href="/marking" />
-                        <GlanceCard label="Open incidents" icon={ShieldAlert} value={g.open_incidents} note={g.urgent_incidents ? `${g.urgent_incidents} serious` : 'None serious'} noteTone={g.urgent_incidents ? 'text-status-critical' : 'text-muted-foreground'} href="/incidents" />
+                        </GlanceCard>}
+                        {g.results_to_approve !== null && <GlanceCard label="Results to approve" icon={CheckCheck} value={g.results_to_approve} note={g.results_ready ? `${g.results_ready} approved, ready to publish` : 'None ready to publish'} noteTone={g.results_ready ? 'text-status-warning' : 'text-muted-foreground'} href="/marking" />}
+                        {g.open_incidents !== null && <GlanceCard label="Open incidents" icon={ShieldAlert} value={g.open_incidents} note={g.urgent_incidents ? `${g.urgent_incidents} serious` : 'None serious'} noteTone={g.urgent_incidents ? 'text-status-critical' : 'text-muted-foreground'} href="/incidents" />}
                     </div>
                 );
             case 'decisions':
@@ -276,7 +275,7 @@ export default function Dashboard({ moduleCards, panels, semester, layout: saved
                 return i && (
                     <Panel title="More figures">
                         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
-                            {KPIS.filter((x) => x.key in i && shown(`kpi:${x.key}`)).map((x) => (
+                            {KPIS.filter((x) => x.key in i && i[x.key] !== null && shown(`kpi:${x.key}`)).map((x) => (
                                 <div key={x.key}>
                                     <dt className="text-[13px] text-muted-foreground">{x.label}</dt>
                                     <dd className={cn('font-display text-xl font-semibold tabular-nums', x.tone?.(i[x.key]))}>{x.render ? x.render(i[x.key]) : String(i[x.key])}</dd>
@@ -332,17 +331,17 @@ export default function Dashboard({ moduleCards, panels, semester, layout: saved
                 return panels.casework && (
                     <Panel title="Cases waiting" href="/admin/exceptions">
                         <dl className="grid grid-cols-3 gap-4 text-sm">
-                            <Link href="/admin/exceptions" className="hover:text-brand"><dt className="text-[13px] text-muted-foreground">Exception requests</dt><dd className="font-display text-2xl font-semibold">{panels.casework.requests}</dd></Link>
-                            <Link href="/admin/exceptions" className="hover:text-brand"><dt className="text-[13px] text-muted-foreground">Hardware exceptions</dt><dd className="font-display text-2xl font-semibold">{panels.casework.hardware}</dd></Link>
-                            <Link href="/exams" className="hover:text-brand"><dt className="text-[13px] text-muted-foreground">Unusual attempts</dt><dd className="font-display text-2xl font-semibold">{panels.casework.anomalies}</dd></Link>
+                            {panels.casework.requests !== undefined && <Link href="/admin/exceptions" className="hover:text-brand"><dt className="text-[13px] text-muted-foreground">Exception requests</dt><dd className="font-display text-2xl font-semibold">{panels.casework.requests}</dd></Link>}
+                            {panels.casework.hardware !== undefined && <Link href="/exams" className="hover:text-brand"><dt className="text-[13px] text-muted-foreground">Hardware exceptions</dt><dd className="font-display text-2xl font-semibold">{panels.casework.hardware}</dd></Link>}
+                            {panels.casework.anomalies !== undefined && <Link href="/exams" className="hover:text-brand"><dt className="text-[13px] text-muted-foreground">Unusual attempts</dt><dd className="font-display text-2xl font-semibold">{panels.casework.anomalies}</dd></Link>}
                         </dl>
                     </Panel>
                 );
             case 'student_exams':
                 return panels.student && (
                     <Panel title="Your examinations" href="/my/exams" linkText="All">
-                        {panels.student.exams.length === 0 && <p className="text-sm text-muted-foreground">None scheduled.</p>}
-                        {panels.student.exams.map((e) => (
+                        {panels.student.exams?.length === 0 && <p className="text-sm text-muted-foreground">None scheduled.</p>}
+                        {panels.student.exams?.map((e) => (
                             <Link key={e.id} href={`/my/exams/${e.id}`} className="-mx-2 flex items-center justify-between gap-3 rounded-xl px-2 py-2 text-sm hover:bg-card/80">
                                 <span>{e.title}<span className="block text-xs text-muted-foreground">{formatDateTime(e.starts_at)}</span></span>
                                 <ArrowRight className="size-4 text-muted-foreground" />
@@ -354,8 +353,8 @@ export default function Dashboard({ moduleCards, panels, semester, layout: saved
             case 'student_due':
                 return panels.student && (
                     <Panel title="Due in the next two weeks" href="/learn/courses" linkText="Courses">
-                        {panels.student.due.length === 0 && <p className="text-sm text-muted-foreground">Nothing due.</p>}
-                        {panels.student.due.map((d) => <Link key={d.id} href={`/learn/items/${d.id}`} className="-mx-2 block rounded-xl px-2 py-2 text-sm hover:bg-card/80">{d.title}<span className="block text-xs text-muted-foreground">{d.code} · {d.type} · {formatDateTime(d.due_at)}</span></Link>)}
+                        {panels.student.due?.length === 0 && <p className="text-sm text-muted-foreground">Nothing due.</p>}
+                        {panels.student.due?.map((d) => <Link key={d.id} href={`/learn/items/${d.id}`} className="-mx-2 block rounded-xl px-2 py-2 text-sm hover:bg-card/80">{d.title}<span className="block text-xs text-muted-foreground">{d.code} · {d.type} · {formatDateTime(d.due_at)}</span></Link>)}
                     </Panel>
                 );
             case 'modules':
@@ -384,7 +383,7 @@ export default function Dashboard({ moduleCards, panels, semester, layout: saved
             <div className="flex flex-1 flex-col gap-6 px-4 pt-6 pb-10 md:px-8 md:pt-8">
                 <section className="flex flex-wrap items-end justify-between gap-4">
                     <div className="max-w-3xl">
-                        <p className="text-[15px] text-muted-foreground">{greeting}, {auth.user.name.split(' ')[0]}</p>
+                        <p className="text-[15px] text-muted-foreground">{greeting}, {firstName(auth.user.name)}</p>
                         <h1 className="mt-0.5 text-[2.1rem] leading-tight font-semibold md:text-[2.4rem]">{today}</h1>
                         <p className="mt-1 text-[15px] text-muted-foreground">
                             {[tenant?.name ?? platform?.name, semester].filter(Boolean).join(' · ')}
@@ -417,7 +416,7 @@ export default function Dashboard({ moduleCards, panels, semester, layout: saved
                         {i && (
                             <div className="flex flex-wrap gap-1.5">
                                 <span className="w-full text-xs text-muted-foreground">More figures</span>
-                                {KPIS.filter((x) => x.key in i).map((x) => (
+                                {KPIS.filter((x) => x.key in i && i[x.key] !== null).map((x) => (
                                     <button key={x.key} type="button" aria-pressed={shown(`kpi:${x.key}`)} onClick={() => toggle(`kpi:${x.key}`)} className={cn('rounded-full border px-2.5 py-1 text-xs', shown(`kpi:${x.key}`) ? 'border-brand bg-brand-soft text-brand-ink' : 'text-muted-foreground')}>{x.label}</button>
                                 ))}
                             </div>

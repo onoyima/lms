@@ -44,6 +44,11 @@ class AiSettings
     {
         $tenant ??= tenant();
 
+        // the platform can switch AI off for an institution (module ai_tools), whatever its own settings say
+        if ($tenant && ! app(\App\Services\Modules\ModuleRegistry::class)->isEnabled($tenant, 'ai_tools')) {
+            return false;
+        }
+
         return self::resolve($tenant) !== null && (bool) data_get($tenant?->settings, "ai.features.$feature", true);
     }
 

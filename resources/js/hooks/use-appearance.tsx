@@ -46,7 +46,8 @@ const applyTheme = (appearance: Appearance): void => {
         return;
     }
 
-    const isDark = isDarkMode(appearance);
+    // The Midnight theme is dark by design, whatever the person's light/dark setting.
+    const isDark = document.documentElement.dataset.theme === 'midnight' || isDarkMode(appearance);
 
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';

@@ -75,7 +75,14 @@ class QuestionResultsController extends Controller
         $questions = Question::withTrashed()->with('options')->whereIn('id', $rows->pluck('question_id'))->get()->keyBy('id');
         $result = Result::where('exam_id', $exam->id)->where('user_id', $attempt->user_id)->first();
 
+        // the scripts before and after this one (by name), to go through them one after another
+        $order = DB::table('attempts as a')->join('users as u', 'u.id', '=', 'a.user_id')->where('a.exam_id', $exam->id)
+            ->whereNotIn('a.status', ['in_progress', 'paused', 'locked', 'ending'])->orderBy('u.name')->orderBy('a.id')->pluck('a.id')->values();
+        $at = $order->search($attempt->id);
+
         return Inertia::render('results/script', [
+            'nav' => ['prev' => $at !== false && $at > 0 ? $order[$at - 1] : null, 'next' => $at !== false ? ($order[$at + 1] ?? null) : null,
+                'position' => $at === false ? null : $at + 1, 'total' => $order->count()],
             'exam' => $exam->only(['id', 'title']),
             'attempt' => ['id' => $attempt->id, 'name' => $attempt->user?->name, 'identifier' => $attempt->user?->identifier, 'raw' => (float) $attempt->score_raw, 'max' => (float) $attempt->score_max,
                 'status' => $attempt->status, 'submitted_at' => $attempt->submitted_at?->toIso8601String(), 'final' => $result?->final_score !== null ? (float) $result->final_score : null, 'locked' => (bool) $result?->locked],

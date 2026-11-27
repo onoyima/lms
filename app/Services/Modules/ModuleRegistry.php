@@ -34,9 +34,18 @@ class ModuleRegistry
         }
 
         $enabled = array_fill_keys($tenant->plan?->modules ?? [], true);
+        $explicit = [];
         foreach ($tenant->moduleOverrides as $override) {
             if ($override->current()) { // temporary access ends on its date
                 $enabled[$override->module] = $override->enabled;
+                $explicit[$override->module] = true;
+            }
+        }
+        // a feature inside a bigger module comes with it, unless switched off for this institution
+        foreach ($all as $key => $m) {
+            $parent = $m['part_of'] ?? null;
+            if ($parent && ! isset($explicit[$key]) && ! isset($enabled[$key]) && ($parent === 'core' || ! empty($enabled[$parent]))) {
+                $enabled[$key] = true;
             }
         }
         foreach ($always as $key) {

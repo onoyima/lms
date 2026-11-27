@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Route;
 | Candidate exam API — stateless, token per attempt (no cookies, no sessions), used by the
 | web exam room, the desktop exam app and Safe Exam Browser. Prefix: /api
 */
-Route::prefix('exam/attempt')->middleware([AuthenticateAttempt::class, 'throttle:exam-api'])->group(function () {
+Route::prefix('exam/attempt')->middleware([AuthenticateAttempt::class, 'module:question_bank', 'throttle:exam-api'])->group(function () {
     Route::get('paper', [ExamApiController::class, 'paper']);
     Route::post('answers', [ExamApiController::class, 'answers']);
     Route::post('heartbeat', [ExamApiController::class, 'heartbeat']);
@@ -24,7 +24,7 @@ Route::prefix('exam/attempt')->middleware([AuthenticateAttempt::class, 'throttle
     Route::post('problem', [ExamApiController::class, 'problem'])->middleware('throttle:20,1,cproblem');
     Route::post('identity', [ExamApiController::class, 'identity'])->middleware('throttle:exam-identity');
     Route::post('recording', [ExamApiController::class, 'recording'])->middleware('throttle:exam-recording');
-    Route::post('media-token', [\App\Http\Controllers\Media\MediaController::class, 'candidate'])->middleware('throttle:exam-identity');
+    Route::post('media-token', [\App\Http\Controllers\Media\MediaController::class, 'candidate'])->middleware('throttle:exam-identity'); // answers 'off' when the exam or module has no live video
     Route::post('phone-link', [\App\Http\Controllers\Media\MediaController::class, 'phoneLink'])->middleware('throttle:exam-identity');
 });
 
@@ -38,10 +38,10 @@ Route::post('devices/enrol', [VenueController::class, 'enrol'])->middleware(['th
 Route::prefix('v1')->middleware('throttle:integration')->group(function () {
     Route::post('sis/students', [IntegrationController::class, 'students'])->middleware('apikey:sis.write');
     Route::post('sis/courses', [IntegrationController::class, 'courses'])->middleware('apikey:sis.write');
-    Route::post('sis/registrations', [IntegrationController::class, 'registrations'])->middleware('apikey:sis.write');
+    Route::post('sis/registrations', [IntegrationController::class, 'registrations'])->middleware(['apikey:sis.write', 'module:lms']);
     Route::get('sis/runs', [IntegrationController::class, 'runs'])->middleware('apikey:sis.write');
-    Route::get('results', [IntegrationController::class, 'results'])->middleware('apikey:results.read');
-    Route::post('attendance', [\App\Http\Controllers\Api\ConnectorController::class, 'attendance'])->middleware('apikey:attendance.write');
+    Route::get('results', [IntegrationController::class, 'results'])->middleware(['apikey:results.read', 'module:question_bank']);
+    Route::post('attendance', [\App\Http\Controllers\Api\ConnectorController::class, 'attendance'])->middleware(['apikey:attendance.write', 'module:lms']);
     Route::get('analytics', [\App\Http\Controllers\Api\ConnectorController::class, 'analytics'])->middleware('apikey:analytics.read');
 });
 

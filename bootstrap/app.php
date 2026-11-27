@@ -82,6 +82,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 return back()->with('error', $e->getMessage());
             }
         });
+        // Moving inside the app (Inertia) to a page that is refused or missing: the same app page with
+        // the reason, Back and Home, instead of a bare error document in a pop-up
+        $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response, \Throwable $e, \Illuminate\Http\Request $request) {
+            $status = $response->getStatusCode();
+            if ($request->header('X-Inertia') && $request->isMethod('GET') && in_array($status, [403, 404, 500, 503], true) && ! app()->hasDebugModeEnabled()) {
+                $message = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface && $status !== 500 ? $e->getMessage() : '';
+
+                return \Inertia\Inertia::render('error', ['status' => $status, 'message' => $message])->toResponse($request)->setStatusCode($status);
+            }
+
+            return $response;
+        });
         // Subscription capacity reached: a clear message, never an error page
         $exceptions->dontReport(\App\Services\Billing\CapacityExceeded::class);
         $exceptions->render(function (\App\Services\Billing\CapacityExceeded $e, \Illuminate\Http\Request $request) {

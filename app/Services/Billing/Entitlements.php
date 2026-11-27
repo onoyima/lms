@@ -163,6 +163,7 @@ class Entitlements
         $planModules = (array) ($tenant->plan?->modules ?? []);
 
         return array_values(array_filter($this->modules->enabledFor($tenant), fn ($m) => ! ($this->modules->all()[$m]['always_on'] ?? false)
+            && ! isset($this->modules->all()[$m]['part_of']) // features inside a module are not counted separately
             && ! (in_array($m, $temporary, true) && ! in_array($m, $planModules, true))));
     }
 

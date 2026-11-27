@@ -5,11 +5,12 @@
     } catch (\Throwable) {
         $look = [];
     }
-    $theme = in_array($look['theme'] ?? null, ['sapphire', 'forest', 'plum'], true) ? $look['theme'] : 'sapphire';
+    $theme = in_array($look['theme'] ?? null, ['sapphire', 'forest', 'plum', 'midnight'], true) ? $look['theme'] : 'sapphire';
     $c = [
         'sapphire' => ['#0b1f4b', '#132e6b', '#3d7bff', '#ffffff', '#3d7bff', '#22c3a6', '#8b5cf6', '#f2f5fb'],
         'forest' => ['#08362b', '#0e4a3b', '#d9a43a', '#1b1405', '#1f9d6b', '#d9a43a', '#3e8ed0', '#f1f5f2'],
         'plum' => ['#1e1240', '#2e1d5e', '#8b6cff', '#ffffff', '#8b6cff', '#4cc3ff', '#ff7aa8', '#f4f2fb'],
+        'midnight' => ['#05070b', '#10141d', '#ff6a13', '#1a0a00', '#ff6a13', '#ffb347', '#c2410c', '#07090e'],
     ][$theme];
     $code = trim($__env->yieldContent('code'));
     $help = [

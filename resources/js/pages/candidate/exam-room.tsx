@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { AlertTriangle, Camera, CheckCircle2, ChevronLeft, ChevronRight, Clock, Flag, Hand, LayoutGrid, Loader2, Send, Shield, Wifi, WifiOff, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PreChecks, RoomScan } from '@/components/exam/pre-checks';
@@ -2331,6 +2331,7 @@ function Modal({ children, wide = false }: { children: React.ReactNode; wide?: b
 }
 
 function Done({ receipt, waiting = 0 }: { receipt: { submitted_at?: string; hash?: string; answered?: number; score?: { raw: number; max: number } | null; reason?: string } | null; waiting?: number }) {
+    const results = ((usePage().props as { modules?: string[] }).modules ?? []).includes('my_results');
     const pct = receipt?.score && Number(receipt.score.max) > 0 ? Math.round((Number(receipt.score.raw) / Number(receipt.score.max)) * 1000) / 10 : null;
 
     return (
@@ -2362,7 +2363,7 @@ function Done({ receipt, waiting = 0 }: { receipt: { submitted_at?: string; hash
                 )}
                 <div className="mt-8 flex flex-wrap justify-center gap-3">
                     <Link href="/my/exams" className="rounded-lg bg-brand px-6 py-3 font-medium text-brand-foreground">Back to My exams</Link>
-                    <Link href="/my/results" className="rounded-lg border border-border px-6 py-3 font-medium">My results</Link>
+                    {results && <Link href="/my/results" className="rounded-lg border border-border px-6 py-3 font-medium">My results</Link>}
                 </div>
             </div>
         </div>

@@ -39,6 +39,7 @@ import {
 } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
 import { Button } from '@/components/ui/button';
+import { usePlatform } from '@/hooks/use-platform';
 import { resumableUpload } from '@/lib/resumable';
 
 type Rubric = {
@@ -453,6 +454,7 @@ function StudentActions({
     const [body, setBody] = useState(note?.body ?? '');
     const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
     const bookmarked = !!note?.bookmarked;
+    const { hasModule } = usePlatform();
     const ask = `/learn/courses/${offering.id}?tab=requests&ask=${encodeURIComponent(item.title)}`;
 
     // notes save themselves a moment after typing stops
@@ -555,9 +557,11 @@ function StudentActions({
                         <Download className="size-4" /> Download
                     </a>
                 )}
-                <Link href={ask} className={chip}>
-                    <HelpCircle className="size-4" /> Ask about this
-                </Link>
+                {hasModule('course_feedback') && (
+                    <Link href={ask} className={chip}>
+                        <HelpCircle className="size-4" /> Ask about this
+                    </Link>
+                )}
             </div>
             {notesOpen && (
                 <label className="grid gap-1.5">

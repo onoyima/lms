@@ -219,7 +219,14 @@ class ExamBoardController extends Controller
             'bank_id' => ['nullable', 'integer'],
         ], \App\Services\Questions\Import\QuestionImportService::uploadMessages());
         $bank = isset($data['bank_id']) ? \App\Models\QuestionBank::forExam($exam)->findOrFail($data['bank_id']) : null;
-        $import = $imports->upload($data['file'], $exam->course_id, $request->user()->id, $data['reader'] ?? 'science', $bank, $data['images'] ?? [], ['exam_id' => $exam->id], $data['name'] ?? null);
+        try {
+            $import = $imports->upload($data['file'], $exam->course_id, $request->user()->id, $data['reader'] ?? 'science', $bank, $data['images'] ?? [], ['exam_id' => $exam->id], $data['name'] ?? null);
+        } catch (\Throwable $e) {
+            $ref = strtoupper(\Illuminate\Support\Str::random(8));
+            \Illuminate\Support\Facades\Log::error("Question upload failed [$ref]: ".$e->getMessage(), ['exception' => $e]);
+
+            return back()->withErrors(['file' => \App\Services\Questions\Import\QuestionImportService::explain($e, $ref)]);
+        }
 
         return redirect()->route('exam-board.import', [$exam, $import]);
     }

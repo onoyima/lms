@@ -1,5 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { BookOpen, Search } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useState } from 'react';
 import { inputClass } from '@/components/platform/ui';
 
@@ -13,6 +13,10 @@ type Props = {
 /** Application documentation, filtered to what the reader can use. */
 export default function Docs({ base, set, nav, page, q, results }: Props) {
     const [query, setQuery] = useState(q);
+    const order = nav.flatMap((g) => g.pages);
+    const at = order.findIndex((p) => p.slug === page.slug);
+    const prev = at > 0 ? order[at - 1] : null;
+    const next = at >= 0 && at < order.length - 1 ? order[at + 1] : null;
 
     return (
         <>
@@ -51,6 +55,22 @@ export default function Docs({ base, set, nav, page, q, results }: Props) {
                         className="mt-6 max-w-3xl leading-relaxed [&_a]:text-brand [&_a]:underline [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-[0.9em] [&_h2]:mt-8 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-6 [&_h3]:font-semibold [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-3 [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-muted [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:my-4 [&_table]:w-full [&_table]:text-sm [&_td]:border-t [&_td]:p-2 [&_td]:align-top [&_th]:p-2 [&_th]:text-left [&_ul]:list-disc [&_ul]:pl-6"
                         dangerouslySetInnerHTML={{ __html: page.html }}
                     />
+                    {(prev || next) && (
+                        <nav aria-label="Previous and next topic" className="mt-10 grid max-w-3xl gap-3 border-t pt-6 sm:grid-cols-2">
+                            {prev ? (
+                                <Link href={`${base}/${prev.slug}`} className="surface flex items-center gap-3 p-4 hover:bg-muted">
+                                    <ChevronLeft className="size-5 shrink-0 text-muted-foreground" />
+                                    <span><span className="block text-xs text-muted-foreground">Previous</span><span className="font-medium">{prev.title}</span></span>
+                                </Link>
+                            ) : <span />}
+                            {next && (
+                                <Link href={`${base}/${next.slug}`} className="surface flex items-center justify-end gap-3 p-4 text-right hover:bg-muted">
+                                    <span><span className="block text-xs text-muted-foreground">Next</span><span className="font-medium">{next.title}</span></span>
+                                    <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+                                </Link>
+                            )}
+                        </nav>
+                    )}
                 </main>
             </div>
         </>

@@ -41,7 +41,7 @@ class Tenant extends Model
             'short_name' => $this->short_name ?: $this->name,
             'slug' => $this->slug,
             'brand' => $this->brand_color,
-            'theme' => in_array($b['theme'] ?? null, ['sapphire', 'forest', 'plum'], true) ? $b['theme'] : 'sapphire',
+            'theme' => in_array($b['theme'] ?? null, ['sapphire', 'forest', 'plum', 'midnight'], true) ? $b['theme'] : 'sapphire',
             'brand_foreground' => Branding::readableTextOn($this->brand_color),
             'logo_url' => $this->logo_path ? asset('storage/'.$this->logo_path) : null,
             'accent' => $b['secondary_color'] ?? null,

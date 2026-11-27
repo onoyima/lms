@@ -41,6 +41,7 @@ import {
 } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
 import { Button } from '@/components/ui/button';
+import { usePlatform } from '@/hooks/use-platform';
 
 type Item = {
     id: number;
@@ -487,13 +488,13 @@ export default function Course({
         ['content', 'Content', null],
         ['assessments', 'Assessments', teacher ? toMark || null : toDo || null],
         ['announcements', 'Announcements', announcements.length || null],
-        ['polls', 'Polls', openPolls || null],
-        ['requests', 'Requests', teacher ? openRequests || null : null],
-        [
-            'reviews',
-            'Reviews',
-            fb.reviews.average ? `${fb.reviews.average}★` : null,
-        ],
+        ...((feedback
+            ? [
+                  ['polls', 'Polls', openPolls || null],
+                  ['requests', 'Requests', teacher ? openRequests || null : null],
+                  ['reviews', 'Reviews', fb.reviews.average ? `${fb.reviews.average}★` : null],
+              ]
+            : []) as [Tab, string, number | string | null][]),
         ['about', 'About', null],
     ];
 
@@ -1499,6 +1500,7 @@ function AddItem({
     sectionId: number;
     onDone: () => void;
 }) {
+    const quizzes = usePlatform().hasModule('question_bank');
     const form = useForm<{
         course_section_id: number;
         type: string;
@@ -1551,7 +1553,7 @@ function AddItem({
                     value={t}
                     onChange={(e) => form.setData('type', e.target.value)}
                 >
-                    {ITEM_TYPES.map(([k, l]) => (
+                    {ITEM_TYPES.filter(([k]) => k !== 'quiz' || quizzes).map(([k, l]) => (
                         <option key={k} value={k}>
                             {l}
                         </option>

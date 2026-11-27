@@ -339,6 +339,16 @@ class HardeningTest extends TestCase
         $this->get('/dashboard')->assertSee('data-theme="sapphire"', false)->assertDontSee('--wash-image:', false);
     }
 
+    public function test_the_midnight_theme_is_always_dark_and_gives_the_dashboard_its_own_layout(): void
+    {
+        $this->actingAs($this->admin)->post('/admin/branding', ['name' => 'V', 'brand_color' => '#123456', 'theme' => 'midnight'])->assertSessionHas('success');
+        $html = $this->get('/dashboard')->assertOk()->assertSee('data-theme="midnight"', false)->getContent();
+        $this->assertMatchesRegularExpression('/<html[^>]*class="dark"/', $html); // dark whatever the person's light/dark setting
+        $this->assertSame('midnight', $this->tenant->fresh()->brandPayload()['theme']);
+        $this->get('/dashboard')->assertInertia(fn ($p) => $p->component('dashboard')->where('tenant.theme', 'midnight'));
+        $this->post('/admin/branding', ['name' => 'V', 'brand_color' => '#123456', 'theme' => 'dusk'])->assertSessionHasErrors('theme');
+    }
+
     // ---------- reported faults ----------
 
     public function test_a_platform_administrator_with_two_factor_can_finish_signing_in_at_an_institution_address(): void

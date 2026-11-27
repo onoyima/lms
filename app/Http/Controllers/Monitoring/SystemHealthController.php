@@ -55,6 +55,16 @@ class SystemHealthController extends Controller
         return $last ? json_decode($last->data, true) + ['at' => $last->minute] : [];
     }
 
+    /** After an update: database changes not yet applied, and folders the server cannot write to. */
+    public static function setup(): array
+    {
+        $ran = DB::table('migrations')->pluck('migration')->all();
+        $pending = array_values(array_diff(array_map(fn ($f) => basename($f, '.php'), glob(database_path('migrations/*.php')) ?: []), $ran));
+        $unwritable = array_values(array_filter(['storage/app', 'storage/logs', 'storage/framework/cache', 'storage/framework/sessions', 'bootstrap/cache'], fn ($d) => ! is_writable(base_path($d))));
+
+        return ['pending' => $pending, 'unwritable' => $unwritable];
+    }
+
     public function platform(Request $request): Response
     {
         $range = (string) $request->query('range', '1h');
@@ -65,6 +75,7 @@ class SystemHealthController extends Controller
             'rules' => Alerts::RULES,
             'drills' => DB::table('dr_drills')->orderByDesc('id')->limit(12)->get()->map(fn ($d) => array_merge((array) $d, ['steps' => json_decode($d->steps ?? '[]', true) ?: []])),
             'webhook' => (bool) config('platform.alert_webhook'),
+            'setup' => self::setup(),
         ]);
     }
 

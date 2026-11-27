@@ -1,7 +1,11 @@
 import { router, usePage } from '@inertiajs/react';
 import { LifeBuoy, Megaphone, Wrench, X } from 'lucide-react';
+import { useEffect } from 'react';
+import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
+import { modulesFor } from '@/hooks/use-platform';
 import AppLayoutTemplate from '@/layouts/app/app-sidebar-layout';
+import { play } from '@/lib/ui-sound';
 import type { BreadcrumbItem } from '@/types';
 
 type Window = { id: number; starts_at: string; ends_at: string; message: string; blocks_exams: boolean };
@@ -80,6 +84,99 @@ function SupportBanner() {
     );
 }
 
+/**
+ * A link into a part of the platform that is switched off for this institution (a module) is
+ * shown dimmed and says so when tapped, instead of opening a page that would be refused. Pages
+ * themselves are refused on the server too.
+ */
+function ModuleLinkGuard() {
+    const modules = ((usePage().props as { modules?: string[] }).modules ?? []).join(',');
+
+    useEffect(() => {
+        const on = new Set(modules.split(',').filter(Boolean));
+        const off = (a: HTMLAnchorElement) => {
+            const href = a.getAttribute('href');
+
+            if (!href || href.startsWith('#') || /^(mailto|tel):/.test(href) || (a.host && a.host !== window.location.host)) {
+                return false;
+            }
+
+            return modulesFor(href).some((m) => !on.has(m));
+        };
+        const mark = () => document.querySelectorAll<HTMLAnchorElement>('main a[href], [data-slot=sidebar-inset] a[href]').forEach((a) => {
+            if (off(a)) {
+                a.dataset.moduleOff = '1';
+                a.setAttribute('aria-disabled', 'true');
+                a.title = 'Not available: switched off for your institution';
+            }
+        });
+        const click = (e: MouseEvent) => {
+            const a = (e.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+
+            if (a && off(a)) {
+                e.preventDefault();
+                e.stopPropagation();
+                play('nope');
+                toast.info('This feature is switched off for your institution. Ask your administrator if you need it.');
+            }
+        };
+        mark();
+        const mo = new MutationObserver(mark);
+        mo.observe(document.body, { childList: true, subtree: true });
+        document.addEventListener('click', click, true);
+
+        return () => {
+            mo.disconnect();
+            document.removeEventListener('click', click, true);
+        };
+    }, [modules]);
+
+    return null;
+}
+
+/**
+ * Midnight theme: a quiet click on anything that can be pressed, and an ember that follows the
+ * pointer inside tiles. Switched off with the speaker button; never on typing or in forms' fields.
+ */
+function MidnightFeel() {
+    const theme = (usePage().props as { tenant?: { theme?: string } | null }).tenant?.theme;
+
+    useEffect(() => {
+        if (theme !== 'midnight') {
+            return;
+        }
+
+        const down = (e: PointerEvent) => {
+            const el = (e.target as HTMLElement | null)?.closest?.('a[href], button, [role=tab], [role=menuitem], [role=option], [role=switch], [role=checkbox], summary, label') as HTMLElement | null;
+
+            if (!el || el.closest('[data-no-sound]') || el.getAttribute('aria-disabled') === 'true' || (el as HTMLButtonElement).disabled) {
+                return;
+            }
+
+            const role = el.getAttribute('role');
+            play(role === 'switch' || role === 'checkbox' || role === 'tab' || el.getAttribute('aria-expanded') !== null ? 'toggle' : 'tap');
+        };
+        const move = (e: PointerEvent) => {
+            const tile = (e.target as HTMLElement | null)?.closest?.('.mn-tile') as HTMLElement | null;
+
+            if (tile) {
+                const r = tile.getBoundingClientRect();
+                tile.style.setProperty('--mx', `${e.clientX - r.left}px`);
+                tile.style.setProperty('--my', `${e.clientY - r.top}px`);
+            }
+        };
+        document.addEventListener('pointerdown', down, true);
+        document.addEventListener('pointermove', move, { passive: true });
+
+        return () => {
+            document.removeEventListener('pointerdown', down, true);
+            document.removeEventListener('pointermove', move);
+        };
+    }, [theme]);
+
+    return null;
+}
+
 export default function AppLayout({
     breadcrumbs = [],
     children,
@@ -94,6 +191,8 @@ export default function AppLayout({
             <AnnouncementBanner />
             <MaintenanceBanner />
             {children}
+            <ModuleLinkGuard />
+            <MidnightFeel />
             <Toaster />
         </AppLayoutTemplate>
     );

@@ -50,15 +50,35 @@ class ImportController extends Controller
         abort_if($section && ! $request->user()->can('exams.manage'), 403);
         // uploaded straight onto a paper: the questions also go into that paper's own bank
         if ($section && ! $bank) {
-            $bank = \App\Models\QuestionBank::firstOrCreate(['exam_id' => $section->exam_id, 'name' => 'Uploaded questions'], ['course_id' => $section->exam->course_id, 'created_by' => $request->user()->id]);
+            try {
+                $bank = \App\Models\QuestionBank::firstOrCreate(['exam_id' => $section->exam_id, 'name' => 'Uploaded questions'], ['course_id' => $section->exam->course_id, 'created_by' => $request->user()->id]);
+            } catch (\Throwable $e) {
+                return $this->uploadFailed($e);
+            }
         }
 
         // without "write questions", uploads go only into an exam's own banks
         abort_if(! $request->user()->can('questions.create') && ! ($bank && ($bank->exam_id || $bank->exam_group_id)), 403);
-        $import = $this->imports->upload($data['file'], $data['course_id'] ?? $section?->exam?->course_id, $request->user()->id, $data['reader'] ?? 'standard',
-            $bank, $data['images'] ?? [], array_filter(['section_id' => $section?->id, 'exam_id' => $section?->exam_id ?? $bank?->exam_id]), $data['name'] ?? null);
+        try {
+            $import = $this->imports->upload($data['file'], $data['course_id'] ?? $section?->exam?->course_id, $request->user()->id, $data['reader'] ?? 'standard',
+                $bank, $data['images'] ?? [], array_filter(['section_id' => $section?->id, 'exam_id' => $section?->exam_id ?? $bank?->exam_id]), $data['name'] ?? null);
+        } catch (\Throwable $e) {
+            return $this->uploadFailed($e);
+        }
 
         return redirect()->route('question-bank.imports.show', $import);
+    }
+
+    /** An upload the server could not save: the reason in plain words, the details in the log. */
+    private function uploadFailed(\Throwable $e): RedirectResponse
+    {
+        if ($e instanceof \Illuminate\Validation\ValidationException || $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+            throw $e;
+        }
+        $ref = strtoupper(\Illuminate\Support\Str::random(8));
+        \Illuminate\Support\Facades\Log::error("Question upload failed [$ref]: ".$e->getMessage(), ['exception' => $e]);
+
+        return back()->withErrors(['file' => \App\Services\Questions\Import\QuestionImportService::explain($e, $ref)]);
     }
 
     /**

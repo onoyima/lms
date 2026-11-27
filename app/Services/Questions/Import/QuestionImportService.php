@@ -30,6 +30,29 @@ class QuestionImportService
      * @param  list<UploadedFile>  $images  pictures named on IMAGE: lines or in CSV picture columns (or one .zip of them)
      * @param  array{section_id?: int, exam_id?: int, source?: string}  $options  where the questions go once saved
      */
+    /**
+     * Why an upload could not be saved, in words the person can act on. The full error goes to
+     * the server log under the same reference.
+     */
+    public static function explain(\Throwable $e, string $ref): string
+    {
+        $m = $e->getMessage();
+        if ($e instanceof \Illuminate\Database\QueryException && preg_match("/doesn't exist|Unknown column|no such (table|column)|has no column named|Base table or view not found|Column not found/i", $m)) {
+            return "The server's database is behind this version of the platform. The administrator should run \"php artisan migrate\" on the server, then try again. (Reference $ref)";
+        }
+        if (preg_match('/Permission denied|failed to open stream|Unable to (write|create)|mkdir|is not writable|UnableToWriteFile|UnableToCreateDirectory/i', $m) || $e instanceof \League\Flysystem\FilesystemException) {
+            return "The server could not save the file: its storage folder is not writable. The administrator should give the web server write access to the storage folder. (Reference $ref)";
+        }
+        if (preg_match('/Allowed memory size|Maximum execution time/i', $m)) {
+            return "This file is too big for the server to read in one go. Split the paper into two files, or compress its pictures. (Reference $ref)";
+        }
+        if (preg_match('/Class "?ZipArchive|Call to undefined function (mb_|zip_|finfo)/i', $m)) {
+            return "A PHP extension the reader needs is missing on the server (zip, mbstring or fileinfo). The administrator should enable it. (Reference $ref)";
+        }
+
+        return "The file could not be saved on the server. The details are in the server log under reference $ref.";
+    }
+
     /** Plain messages for a question file the server refuses. */
     public static function uploadMessages(): array
     {

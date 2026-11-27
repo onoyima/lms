@@ -40,6 +40,11 @@ class SmsSender
 
     public static function enabled(?Tenant $tenant = null): bool
     {
+        $tenant ??= tenant();
+        if ($tenant && ! app(\App\Services\Modules\ModuleRegistry::class)->isEnabled($tenant, 'sms')) {
+            return false; // switched off for this institution by the platform
+        }
+
         return self::settings($tenant) !== null;
     }
 
@@ -67,6 +72,9 @@ class SmsSender
         // the public demo never sends text messages (it would use the platform's shared credit)
         if (($tenant ?? tenant())?->isDemo()) {
             return false;
+        }
+        if (($t = $tenant ?? tenant()) && ! app(\App\Services\Modules\ModuleRegistry::class)->isEnabled($t, 'sms')) {
+            return false; // text messages are switched off for this institution
         }
         $s = $settings ?? self::settings($tenant);
         $number = self::normalise($to);

@@ -22,6 +22,7 @@ const THEMES = [
     { key: 'sapphire', name: 'Sapphire', deep: '#0b1f4b', primary: '#3d7bff', canvas: '#f2f5fb' },
     { key: 'forest', name: 'Forest & gold', deep: '#08362b', primary: '#d9a43a', canvas: '#f1f5f2' },
     { key: 'plum', name: 'Plum', deep: '#1e1240', primary: '#8b6cff', canvas: '#f4f2fb' },
+    { key: 'midnight', name: 'Midnight', deep: '#04060a', primary: '#ff6a13', canvas: '#0e1219' },
 ];
 
 export default function BrandingPage({ branding }: { branding: Branding }) {
@@ -78,11 +79,12 @@ export default function BrandingPage({ branding }: { branding: Branding }) {
                     {flash?.success && <p className="text-sm text-status-good">{flash.success}</p>}
                     <fieldset className="grid gap-2">
                         <legend className="mb-2 text-sm font-medium">Theme</legend>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             {THEMES.map((t) => (
                                 <button key={t.key} type="button" aria-pressed={form.data.theme === t.key} onClick={() => {
                                     form.setData('theme', t.key);
                                     document.documentElement.dataset.theme = t.key; // preview straight away
+                                    { const a = localStorage.getItem('appearance'); document.documentElement.classList.toggle('dark', t.key === 'midnight' || a === 'dark' || (a !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)); }
                                 }}
                                 className={`group overflow-hidden rounded-2xl border text-left transition-[transform,box-shadow] hover:-translate-y-0.5 ${form.data.theme === t.key ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border'}`}>
                                     <span className="flex h-20" style={{ background: t.deep }}>

@@ -44,6 +44,17 @@ class HealthController extends Controller
         } catch (\Throwable) {
             $checks['queue'] = ['ok' => false];
         }
+        // a deploy without "php artisan migrate", or a storage folder the web server cannot write to,
+        // breaks uploads and saving: both show here
+        try {
+            $ran = DB::table('migrations')->pluck('migration')->all();
+            $files = array_map(fn ($f) => basename($f, '.php'), glob(database_path('migrations/*.php')) ?: []);
+            $pending = array_values(array_diff($files, $ran));
+            $checks['migrations'] = ['ok' => $pending === [], 'pending' => count($pending), 'first' => $pending[0] ?? null];
+        } catch (\Throwable) {
+            $checks['migrations'] = ['ok' => false];
+        }
+        $checks['storage'] = ['ok' => is_writable(storage_path('app')) && is_writable(storage_path('logs')) && is_writable(storage_path('framework/cache'))];
         $free = @disk_free_space(storage_path()) ?: 0;
         $total = @disk_total_space(storage_path()) ?: 1;
         $checks['disk'] = ['ok' => $free / $total > 0.1, 'free_gb' => round($free / 1073741824, 1), 'free_pct' => round($free / $total * 100)];

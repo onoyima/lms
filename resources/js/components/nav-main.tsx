@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     SidebarGroup,
     SidebarMenu,
@@ -51,14 +51,27 @@ export function NavMain({ items = [] }: { items: NavItem[]; label?: string }) {
 
 /**
  * A folding group of related pages (Exams, Exam day, Teaching…). It opens by itself when one of
- * its pages is showing; otherwise it remembers whether the person left it open.
+ * its pages is opened, and otherwise remembers whether the person left it open. Any group can be
+ * closed, including the one holding the page in view.
  */
 export function NavGroup({ label, icon: Icon, items, badge }: { label: string; icon?: LucideIcon; items: NavItem[]; badge?: string | null }) {
-    const { isCurrentUrl, isCurrentOrParentUrl } = useCurrentUrl();
+    const { isCurrentUrl, isCurrentOrParentUrl, currentUrl } = useCurrentUrl();
     const { state, setOpen: setSidebarOpen } = useSidebar();
     // the group holding the page in view (also its sub-pages, e.g. one exam under "All exams")
     const containsCurrent = items.some((i) => isCurrentOrParentUrl(i.href));
     const [open, setOpen] = useState(() => containsCurrent || readOpen().includes(label));
+    // moving to a page of this group opens it (once); the person can still close it again
+    const lastUrl = useRef(currentUrl);
+
+    useEffect(() => {
+        if (lastUrl.current !== currentUrl) {
+            lastUrl.current = currentUrl;
+
+            if (containsCurrent) {
+                setOpen(true); // eslint-disable-line react-hooks/set-state-in-effect
+            }
+        }
+    }, [currentUrl, containsCurrent]);
 
     if (items.length === 0) {
         return null;
@@ -82,7 +95,7 @@ export function NavGroup({ label, icon: Icon, items, badge }: { label: string; i
             // private window: the group simply starts closed next time
         }
     };
-    const shown = open || containsCurrent;
+    const shown = open;
 
     return (
         <SidebarGroup className="px-2 py-0">

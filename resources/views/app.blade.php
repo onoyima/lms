@@ -2,9 +2,9 @@
 @php($platformBrand = \App\Support\Platform\PlatformSettings::brand())
 @php($brand = \App\Http\Middleware\HandleInertiaRequests::showsPlatform(request()) ? null : tenant()?->brandPayload())
 @php($look = $brand ?? $platformBrand)
-@php($theme = in_array($look['theme'] ?? null, ['sapphire', 'forest', 'plum'], true) ? $look['theme'] : 'sapphire')
+@php($theme = in_array($look['theme'] ?? null, ['sapphire', 'forest', 'plum', 'midnight'], true) ? $look['theme'] : 'sapphire')
 @php($wash = ($look['background_mode'] ?? 'theme') === 'none' ? 'none' : (! empty($look['background_url']) ? 'url('.str_replace(['(', ')', ' ', '"', "'"], '', $look['background_url']).')' : null))
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="{{ $theme }}" @if ($wash) style="--wash-image: {{ $wash }}" @endif @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="{{ $theme }}" @if ($wash) style="--wash-image: {{ $wash }}" @endif @class(['dark' => ($appearance ?? 'system') == 'dark' || $theme === 'midnight'])>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,7 +14,9 @@
             (function() {
                 const appearance = '{{ $appearance ?? "system" }}';
 
-                if (appearance === 'system') {
+                if (document.documentElement.dataset.theme === 'midnight') {
+                    document.documentElement.classList.add('dark');
+                } else if (appearance === 'system') {
                     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
                     if (prefersDark) {
@@ -27,7 +29,7 @@
         {{-- Inline style to set the HTML background color based on our theme in app.css --}}
         <style>
             html {
-                background-color: {{ ['sapphire' => '#f2f5fb', 'forest' => '#f1f5f2', 'plum' => '#f4f2fb'][$theme] }};
+                background-color: {{ ['sapphire' => '#f2f5fb', 'forest' => '#f1f5f2', 'plum' => '#f4f2fb', 'midnight' => '#07090e'][$theme] }};
             }
 
             html.dark {

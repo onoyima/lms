@@ -23,9 +23,9 @@ Route::get('demo', [\App\Http\Controllers\DemoController::class, 'show'])->name(
 Route::post('demo/{role}', [\App\Http\Controllers\DemoController::class, 'enter'])->where('role', '[a-z]+')->middleware('throttle:20,1,demoin')->name('demo.enter');
 
 // a lab computer opens a computer check by its link; no sign-in needed
-Route::get('check/{code}', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'run'])->where('code', '[a-z0-9]{8}')->middleware('throttle:120,1,ccrun')->name('check.run');
-Route::get('check/{code}/payload', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'payload'])->where('code', '[a-z0-9]{8}')->middleware('throttle:120,1,ccpay')->name('check.payload');
-Route::post('check/{code}/report', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'report'])->where('code', '[a-z0-9]{8}')->middleware('throttle:60,1,ccrep')->name('check.report');
+Route::get('check/{code}', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'run'])->where('code', '[a-z0-9]{8}')->middleware(['module:computer_checks', 'throttle:120,1,ccrun'])->name('check.run');
+Route::get('check/{code}/payload', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'payload'])->where('code', '[a-z0-9]{8}')->middleware(['module:computer_checks', 'throttle:120,1,ccpay'])->name('check.payload');
+Route::post('check/{code}/report', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'report'])->where('code', '[a-z0-9]{8}')->middleware(['module:computer_checks', 'throttle:60,1,ccrep'])->name('check.report');
 Route::post('apply', [\App\Http\Controllers\LandingController::class, 'apply'])->middleware('throttle:5,10,apply')->name('apply.store');
 
 // Sign in with a one-time code (email or text message) instead of a password
@@ -82,10 +82,10 @@ Route::middleware(['module:conferencing'])->group(function () {
     Route::post('join/{token}/room/leave', [$rc, 'leave'])->where('token', '[A-Za-z0-9]{32}');
 });
 // Exam links: candidates open /x/{token}; students sign in, or (if the sitting allows) anyone enters with a name
-Route::get('x/{token}', [\App\Http\Controllers\Exam\ExamLinkController::class, 'show'])->where('token', '[A-Za-z0-9]{32}')->middleware('throttle:60,1,examlink')->name('exam-link.show');
-Route::post('x/{token}', [\App\Http\Controllers\Exam\ExamLinkController::class, 'enter'])->where('token', '[A-Za-z0-9]{32}')->middleware('throttle:10,1,examlinkenter')->name('exam-link.enter');
+Route::get('x/{token}', [\App\Http\Controllers\Exam\ExamLinkController::class, 'show'])->where('token', '[A-Za-z0-9]{32}')->middleware(['module:question_bank', 'throttle:60,1,examlink'])->name('exam-link.show');
+Route::post('x/{token}', [\App\Http\Controllers\Exam\ExamLinkController::class, 'enter'])->where('token', '[A-Za-z0-9]{32}')->middleware(['module:question_bank', 'throttle:10,1,examlinkenter'])->name('exam-link.enter');
 // Preloaded slides, fetched by the BigBlueButton server through a short-lived signed link
-Route::get('conferencing/slides/{meeting}/{index}', [\App\Http\Controllers\Conferencing\MeetingController::class, 'slide'])->whereNumber('index')->middleware(['signed', 'throttle:60,1,bbbslide'])->name('conferencing.slide');
+Route::get('conferencing/slides/{meeting}/{index}', [\App\Http\Controllers\Conferencing\MeetingController::class, 'slide'])->whereNumber('index')->middleware(['signed', 'module:conferencing', 'throttle:60,1,bbbslide'])->name('conferencing.slide');
 
 // Platform support sign-in (single-use link from the platform console; see SupportSessionController)
 Route::get('support/enter/{token}', [\App\Http\Controllers\SupportSessionController::class, 'enter'])->where('token', '[A-Za-z0-9]{48}')->middleware(['auth', 'throttle:10,1,supenter'])->name('support.enter');
@@ -174,13 +174,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('{provider}', [\App\Http\Controllers\Auth\SsoController::class, 'update'])->name('sso.update');
         Route::delete('{provider}', [\App\Http\Controllers\Auth\SsoController::class, 'destroy'])->name('sso.destroy');
     });
-    Route::prefix('my/identity')->middleware('throttle:identity')->group(function () {
+    Route::prefix('my/identity')->middleware(['module:identity_checks', 'throttle:identity'])->group(function () {
         Route::get('/', [\App\Http\Controllers\IdentityController::class, 'mine'])->name('identity.mine');
         Route::post('/', [\App\Http\Controllers\IdentityController::class, 'enrol'])->middleware('throttle:face-enrol')->name('identity.enrol');
         Route::get('photo', [\App\Http\Controllers\IdentityController::class, 'photo'])->name('identity.photo');
         Route::delete('/', [\App\Http\Controllers\IdentityController::class, 'eraseMine'])->name('identity.erase-mine');
     });
-    Route::prefix('admin/identity')->middleware('permission:users.manage')->group(function () {
+    Route::prefix('admin/identity')->middleware(['module:identity_checks', 'permission:users.manage'])->group(function () {
         Route::get('/', [\App\Http\Controllers\IdentityController::class, 'index'])->name('identity.index');
         Route::post('id-photo', [\App\Http\Controllers\IdentityController::class, 'idPhoto'])->middleware('throttle:600,1,web50')->name('identity.id-photo');
         Route::get('{profile}/photo/{which}', [\App\Http\Controllers\IdentityController::class, 'staffPhoto'])->name('identity.staff-photo');
@@ -188,13 +188,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('{profile}', [\App\Http\Controllers\IdentityController::class, 'erase'])->name('identity.erase');
     });
     Route::prefix('my/documents')->middleware('throttle:20,1,web55')->group(function () {
-        Route::get('result-statement', [\App\Http\Controllers\DocumentController::class, 'resultStatement'])->name('documents.statement');
+        Route::get('result-statement', [\App\Http\Controllers\DocumentController::class, 'resultStatement'])->middleware('module:my_results')->name('documents.statement');
         Route::get('transcript', [\App\Http\Controllers\DocumentController::class, 'transcript'])->name('documents.transcript');
-        Route::get('registration-slip', [\App\Http\Controllers\DocumentController::class, 'registrationSlip'])->name('documents.slip');
-        Route::get('exam-slip/{candidate}', [\App\Http\Controllers\DocumentController::class, 'examSlip'])->name('documents.exam-slip');
+        Route::get('registration-slip', [\App\Http\Controllers\DocumentController::class, 'registrationSlip'])->middleware('module:lms')->name('documents.slip');
+        Route::get('exam-slip/{candidate}', [\App\Http\Controllers\DocumentController::class, 'examSlip'])->middleware('module:question_bank')->name('documents.exam-slip');
     });
     Route::middleware('permission:academics.manage')->group(function () {
-        Route::get('admin/students/{student}/result-statement', [\App\Http\Controllers\DocumentController::class, 'resultStatement']);
+        Route::get('admin/students/{student}/result-statement', [\App\Http\Controllers\DocumentController::class, 'resultStatement'])->middleware('module:my_results');
         Route::get('admin/students/{student}/transcript', [\App\Http\Controllers\DocumentController::class, 'transcript']);
     });
 
@@ -203,19 +203,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('docs/{slug?}', [\App\Http\Controllers\DocsController::class, 'institution'])->where('slug', '[a-z0-9-]+')->name('docs');
     Route::get('templates', [\App\Http\Controllers\TemplateController::class, 'index'])->name('templates');
     Route::get('templates/{key}', [\App\Http\Controllers\TemplateController::class, 'download'])->where('key', '[a-z_]+')->middleware('throttle:60,1,tpl')->name('templates.download');
-    Route::post('learn/submissions/{submission}/plagiarism', [\App\Http\Controllers\Admin\IntegrationController::class, 'checkSubmission'])->whereNumber('submission')->middleware('throttle:30,1,plagck');
+    Route::post('learn/submissions/{submission}/plagiarism', [\App\Http\Controllers\Admin\IntegrationController::class, 'checkSubmission'])->whereNumber('submission')->middleware(['module:lms', 'throttle:30,1,plagck']);
     Route::put('dashboard/layout', [DashboardController::class, 'saveLayout'])->middleware('throttle:30,1,dashlay')->name('dashboard.layout');
 
     // Formal exception requests (LMS 178) and the hardware exception register (Target 141)
     $ex = \App\Http\Controllers\Admin\ExceptionController::class;
-    Route::get('my/exceptions', [$ex, 'mine'])->name('exceptions.mine');
-    Route::post('my/exceptions', [$ex, 'store'])->middleware('throttle:10,10,exreq')->name('exceptions.store');
-    Route::post('my/exceptions/{exception}/withdraw', [$ex, 'withdraw'])->whereNumber('exception');
-    Route::get('exceptions/{exception}/evidence', [$ex, 'evidence'])->whereNumber('exception')->middleware('throttle:30,1,exev')->name('exceptions.evidence');
-    Route::get('admin/exceptions', [$ex, 'index'])->name('exceptions.index');
-    Route::post('admin/exceptions/{exception}/decide', [$ex, 'decide'])->whereNumber('exception');
-    Route::post('admin/hardware-exceptions', [$ex, 'storeHardware'])->middleware('throttle:60,1,hwex');
-    Route::post('admin/hardware-exceptions/{hardware}', [$ex, 'decideHardware'])->whereNumber('hardware');
+    Route::get('my/exceptions', [$ex, 'mine'])->middleware('module:student_requests')->name('exceptions.mine');
+    Route::post('my/exceptions', [$ex, 'store'])->middleware('module:student_requests')->middleware('throttle:10,10,exreq')->name('exceptions.store');
+    Route::post('my/exceptions/{exception}/withdraw', [$ex, 'withdraw'])->middleware('module:student_requests')->whereNumber('exception');
+    Route::get('exceptions/{exception}/evidence', [$ex, 'evidence'])->middleware('module:student_requests')->whereNumber('exception')->middleware('throttle:30,1,exev')->name('exceptions.evidence');
+    Route::get('admin/exceptions', [$ex, 'index'])->middleware('module:student_requests')->name('exceptions.index');
+    Route::post('admin/exceptions/{exception}/decide', [$ex, 'decide'])->middleware('module:student_requests')->whereNumber('exception');
+    Route::post('admin/hardware-exceptions', [$ex, 'storeHardware'])->middleware('module:question_bank')->middleware('throttle:60,1,hwex');
+    Route::post('admin/hardware-exceptions/{hardware}', [$ex, 'decideHardware'])->middleware('module:question_bank')->whereNumber('hardware');
 
     // Institution settings
     Route::middleware('permission:users.manage')->prefix('admin/people')->group(function () {
@@ -283,12 +283,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('permission:institution.manage')->group(function () {
         Route::get('admin/branding', [BrandingController::class, 'edit'])->name('admin.branding.edit');
         Route::post('admin/branding', [BrandingController::class, 'update'])->name('admin.branding.update');
-        Route::get('admin/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'institution'])->name('admin.ai');
-        Route::put('admin/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'saveInstitution'])->name('admin.ai.update');
-        Route::get('admin/sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'institution'])->name('admin.sms');
-        Route::put('admin/sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'saveInstitution'])->name('admin.sms.update');
-        Route::post('admin/sms/test', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'test'])->middleware('throttle:5,1,smstest')->name('admin.sms.test');
-        Route::post('admin/ai/test', [\App\Http\Controllers\Admin\AiSettingsController::class, 'test'])->middleware('throttle:10,1,aitest')->name('admin.ai.test');
+        Route::get('admin/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'institution'])->middleware('module:ai_tools')->name('admin.ai');
+        Route::put('admin/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'saveInstitution'])->middleware('module:ai_tools')->name('admin.ai.update');
+        Route::get('admin/sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'institution'])->middleware('module:sms')->name('admin.sms');
+        Route::put('admin/sms', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'saveInstitution'])->middleware('module:sms')->name('admin.sms.update');
+        Route::post('admin/sms/test', [\App\Http\Controllers\Admin\SmsSettingsController::class, 'test'])->middleware(['module:sms', 'throttle:5,1,smstest'])->name('admin.sms.test');
+        Route::post('admin/ai/test', [\App\Http\Controllers\Admin\AiSettingsController::class, 'test'])->middleware(['module:ai_tools', 'throttle:10,1,aitest'])->name('admin.ai.test');
     });
 
     // Institution billing: the institution's own subscription, invoices and payments
@@ -385,7 +385,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('preview', [QuestionController::class, 'preview'])->middleware('throttle:120,1,web125')->name('preview');
             Route::get('import', [ImportController::class, 'create'])->name('import.create');
             Route::post('imports/{import}/retry', [ImportController::class, 'retry'])->name('imports.retry');
-            Route::post('write', [ImportController::class, 'write'])->middleware('throttle:20,1,aiwrite')->name('write');
+            Route::post('write', [ImportController::class, 'write'])->middleware(['module:ai_tools', 'throttle:20,1,aiwrite'])->name('write');
             Route::get('imports/{import}/pages/{n}', [ImportController::class, 'page'])->whereNumber('n')->name('imports.page');
         });
         Route::post('moderate', [QuestionController::class, 'moderate'])->middleware('permission:questions.moderate')->name('moderate');
@@ -485,12 +485,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('sessions/{session}/proctors', [SessionController::class, 'assignProctor'])->name('sessions.proctors.store');
         Route::delete('sessions/{session}/proctors/{assignment}', [SessionController::class, 'removeProctor'])->name('sessions.proctors.destroy');
 
-        Route::get('computer-checks', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'index'])->name('computer-checks.index');
-        Route::post('computer-checks', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'store'])->name('computer-checks.store');
-        Route::get('computer-checks/{check}', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'show'])->name('computer-checks.show');
-        Route::get('computer-checks/{check}/rows', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'rows'])->name('computer-checks.rows');
-        Route::post('computer-checks/{check}/close', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'close'])->name('computer-checks.close');
-        Route::post('computer-checks/{check}/approve', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'approve'])->name('computer-checks.approve');
+        Route::get('computer-checks', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'index'])->middleware('module:computer_checks')->name('computer-checks.index');
+        Route::post('computer-checks', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'store'])->middleware('module:computer_checks')->name('computer-checks.store');
+        Route::get('computer-checks/{check}', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'show'])->middleware('module:computer_checks')->name('computer-checks.show');
+        Route::get('computer-checks/{check}/rows', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'rows'])->middleware('module:computer_checks')->name('computer-checks.rows');
+        Route::post('computer-checks/{check}/close', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'close'])->middleware('module:computer_checks')->name('computer-checks.close');
+        Route::post('computer-checks/{check}/approve', [\App\Http\Controllers\Exam\ComputerCheckController::class, 'approve'])->middleware('module:computer_checks')->name('computer-checks.approve');
         Route::get('exam-network', [\App\Http\Controllers\Exam\NetworkController::class, 'index'])->name('exams.network')->middleware('module:cbt_halls');
         Route::get('exam-network/history', [\App\Http\Controllers\Exam\NetworkController::class, 'batch'])->name('exams.network.history')->middleware('module:cbt_halls');
         Route::put('exam-network', [\App\Http\Controllers\Exam\NetworkController::class, 'saveAddress'])->name('exams.network.save')->middleware('module:cbt_halls');
@@ -508,7 +508,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware(['module:question_bank', 'permission:exams.invigilate'])->name('sessions.check-in');
 
     // ── Exam board: live statistics, score board, rescaling (exams office: all; examiners: their own) ──
-    Route::middleware(['module:question_bank'])->prefix('exam-board')->name('exam-board.')->group(function () {
+    Route::middleware(['module:question_bank', 'module:exam_board'])->prefix('exam-board')->name('exam-board.')->group(function () {
         $c = \App\Http\Controllers\Exam\ExamBoardController::class;
         Route::get('/', [$c, 'index'])->name('index');
         Route::get('{exam}', [$c, 'show'])->name('show');
@@ -597,9 +597,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // ── Certificates and badges ─────────────────────────────────────────────
-    Route::get('my/certificates', [\App\Http\Controllers\CertificateController::class, 'mine'])->name('certificates.mine');
-    Route::get('certificates/{code}.pdf', [\App\Http\Controllers\CertificateController::class, 'pdf'])->where('code', '[A-Za-z0-9]{16}')->name('certificates.pdf');
-    Route::middleware('permission:exams.manage')->group(function () {
+    Route::get('my/certificates', [\App\Http\Controllers\CertificateController::class, 'mine'])->middleware('module:certificates')->name('certificates.mine');
+    Route::get('certificates/{code}.pdf', [\App\Http\Controllers\CertificateController::class, 'pdf'])->where('code', '[A-Za-z0-9]{16}')->middleware('module:certificates')->name('certificates.pdf');
+    Route::middleware(['module:certificates', 'permission:exams.manage'])->group(function () {
         Route::get('certificates', [\App\Http\Controllers\CertificateController::class, 'index'])->name('certificates.index');
         Route::post('certificates', [\App\Http\Controllers\CertificateController::class, 'store'])->name('certificates.store');
         Route::put('certificates/{template}', [\App\Http\Controllers\CertificateController::class, 'update'])->name('certificates.update');
@@ -613,8 +613,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('exams/{candidate}', [CandidateExamController::class, 'room'])->name('room');
         Route::post('exams/{candidate}/start', [CandidateExamController::class, 'start'])->middleware('throttle:exam-start')->name('start');
         Route::get('exams/{candidate}/seb', [CandidateExamController::class, 'sebConfig'])->name('seb')->middleware('module:secure_client');
-        Route::get('results', [CandidateExamController::class, 'results'])->name('results');
-        Route::post('results/{result}/appeal', [CandidateExamController::class, 'appeal'])->name('appeal');
+        Route::get('results', [CandidateExamController::class, 'results'])->middleware('module:my_results')->name('results');
+        Route::post('results/{result}/appeal', [CandidateExamController::class, 'appeal'])->middleware('module:my_results')->name('appeal');
     });
 
     // ── LMS (native) ─────────────────────────────────────────────────────────
@@ -680,10 +680,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('items/{item}/release', [Lms\ItemController::class, 'release']);
         Route::post('items/{item}/extensions', [Lms\ItemController::class, 'extend']);
         Route::post('items/{item}/groups', [Lms\ItemController::class, 'saveGroups']);
-        Route::post('items/{item}/quiz/start', [Lms\ItemController::class, 'startQuiz']);
-        Route::post('items/{item}/quiz/publish', [Lms\ItemController::class, 'publishQuiz']);
-        Route::get('items/{item}/quiz/questions', [Lms\ItemController::class, 'quizQuestions']);
-        Route::post('items/{item}/quiz/questions', [Lms\ItemController::class, 'quizAttach']);
+        Route::post('items/{item}/quiz/start', [Lms\ItemController::class, 'startQuiz'])->middleware('module:question_bank'); // course quizzes run on the exam engine
+        Route::post('items/{item}/quiz/publish', [Lms\ItemController::class, 'publishQuiz'])->middleware('module:question_bank'); // course quizzes run on the exam engine
+        Route::get('items/{item}/quiz/questions', [Lms\ItemController::class, 'quizQuestions'])->middleware('module:question_bank'); // course quizzes run on the exam engine
+        Route::post('items/{item}/quiz/questions', [Lms\ItemController::class, 'quizAttach'])->middleware('module:question_bank'); // course quizzes run on the exam engine
         Route::post('items/{item}/threads', [Lms\ItemController::class, 'storeThread'])->middleware('throttle:10,1,web268');
         Route::get('submissions/{submission}/file', [Lms\ItemController::class, 'submissionFile']);
         Route::post('submissions/{submission}/mark', [Lms\ItemController::class, 'mark']);
@@ -701,6 +701,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // reviews, polls, requests for topics, notes and bookmarks
         $fb = Lms\CourseFeedbackController::class;
+        Route::middleware('module:course_feedback')->group(function () use ($fb) {
         Route::post('courses/{offering}/reviews', [$fb, 'review'])->middleware('throttle:20,1,lmsrev');
         Route::delete('reviews/{review}', [$fb, 'deleteReview']);
         Route::post('reviews/{review}/reply', [$fb, 'replyReview']);
@@ -712,6 +713,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('topic-requests/{topic}/vote', [$fb, 'voteRequest'])->middleware('throttle:60,1,lmsreqv');
         Route::post('topic-requests/{topic}/respond', [$fb, 'respondRequest']);
         Route::delete('topic-requests/{topic}', [$fb, 'deleteRequest']);
+        });
         Route::put('items/{item}/note', [$fb, 'note'])->middleware('throttle:60,1,lmsnote');
         Route::delete('items/{item}/complete', [$fb, 'undo']);
         Route::get('items/{item}/preview', [Lms\ItemController::class, 'preview'])->middleware('throttle:60,1,lmsprev')->name('item.preview');

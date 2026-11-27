@@ -30,7 +30,7 @@ class ModuleController extends Controller
             'plans' => Plan::orderBy('sort')->get(['id', 'key', 'name', 'description', 'modules']),
             'modules' => collect($this->modules->all())->map(fn ($m, $key) => [
                 'key' => $key, 'name' => $m['name'], 'description' => $m['description'],
-                'always_on' => (bool) ($m['always_on'] ?? false), 'requires' => $m['requires'] ?? [], 'items' => $m['items'] ?? null,
+                'always_on' => (bool) ($m['always_on'] ?? false), 'requires' => $m['requires'] ?? [], 'part_of' => $m['part_of'] ?? null, 'items' => $m['items'] ?? null,
             ])->values(),
             'tenants' => $tenants->map(fn (Tenant $t) => [
                 'id' => $t->id, 'name' => $t->name, 'slug' => $t->slug, 'status' => $t->status,

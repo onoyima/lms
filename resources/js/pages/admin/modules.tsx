@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 type Plan = { id: number; key: string; name: string; description: string; modules: string[] };
-type ModuleDef = { key: string; name: string; description: string; always_on: boolean; requires: string[]; items: string | null };
+type ModuleDef = { key: string; name: string; description: string; always_on: boolean; requires: string[]; part_of?: string | null; items: string | null };
 type TenantRow = {
     id: number;
     name: string;
@@ -76,7 +76,8 @@ function TenantCard({ tenant, plans, modules }: { tenant: TenantRow; plans: Plan
 
             <div className="mt-6 grid gap-3 md:grid-cols-2">
                 {modules.map((m) => {
-                    const inPlan = m.always_on || Boolean(plan?.modules.includes(m.key));
+                    const inPlan = m.always_on || Boolean(plan?.modules.includes(m.key)) || m.part_of === 'core' || Boolean(m.part_of && plan?.modules.includes(m.part_of));
+                    const name = (k: string) => modules.find((x) => x.key === k)?.name ?? k;
                     const active = tenant.enabled.includes(m.key);
 
                     return (
@@ -87,8 +88,9 @@ function TenantCard({ tenant, plans, modules }: { tenant: TenantRow; plans: Plan
                                     {active ? <Badge className="bg-brand text-brand-foreground">On</Badge> : <Badge variant="outline">Off</Badge>}
                                 </div>
                                 <p className="mt-1 text-xs text-muted-foreground">{m.description}</p>
+                                {m.part_of && <p className="mt-1 text-[11px] text-muted-foreground">Comes with {m.part_of === 'core' ? 'every plan' : name(m.part_of)}; can be switched off on its own.</p>}
                                 {m.requires.length > 0 && (
-                                    <p className="mt-1 font-mono text-[11px] text-muted-foreground">needs: {m.requires.join(', ')}</p>
+                                    <p className="mt-1 text-[11px] text-muted-foreground">Needs: {m.requires.map(name).join(', ')}</p>
                                 )}
                             </div>
                             {m.always_on ? (

@@ -11,7 +11,7 @@ type Props = { range: string; series: SeriesPoint[]; current: Record<string, num
 const dur = (s: number | null) => (s === null ? '—' : s < 120 ? `${s} s` : s < 7200 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`);
 
 /** Service health for the platform operator: live figures, alerts and recovery drills (LMS 140, 143, 243, 245; Target 186). */
-export default function Health({ range, series, current, alerts, drills, webhook }: Props) {
+export default function Health({ range, series, current, alerts, drills, webhook, setup }: Props & { setup?: { pending: string[]; unwritable: string[] } }) {
     const open = alerts.filter((a) => !a.resolved_at);
 
     return (
@@ -21,6 +21,17 @@ export default function Health({ range, series, current, alerts, drills, webhook
                 <PageHeader title="System health" lead={`Recorded every minute by the scheduler. Alerts go to every platform administrator${webhook ? ' and the alert webhook' : ''}.`}
                     actions={['1h', '24h', '7d'].map((r) => <Button key={r} size="sm" variant={range === r ? 'default' : 'outline'} onClick={() => router.get('/platform/health', { range: r }, { preserveScroll: true })}>{r === '1h' ? 'Last hour' : r === '24h' ? '24 hours' : '7 days'}</Button>)} />
                 <Flash />
+                {setup && (setup.pending.length > 0 || setup.unwritable.length > 0) && (
+                    <div className="grid gap-2 rounded-xl border border-status-critical/40 bg-status-critical/8 p-5 text-sm" role="alert">
+                        <p className="font-semibold">The server needs attention after the last update</p>
+                        {setup.pending.length > 0 && (
+                            <p>
+                                {setup.pending.length} database change{setup.pending.length === 1 ? ' has' : 's have'} not been applied (first: <code>{setup.pending[0]}</code>). Uploads and saving can fail until you run <code>php artisan migrate</code> on the server.
+                            </p>
+                        )}
+                        {setup.unwritable.length > 0 && <p>The web server cannot write to: {setup.unwritable.map((d) => <code key={d} className="mr-2">{d}</code>)}. Give it write access, or uploads will fail.</p>}
+                    </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <Stat label="Candidates writing" value={current.candidates_writing ?? '—'} />
                     <Stat label="Requests last minute" value={current.requests ?? '—'} />

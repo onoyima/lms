@@ -81,7 +81,7 @@ type Group = { label: string; icon?: LucideIcon; badge?: string | null; flat?: b
 function useMenu(): { home: string; groups: Group[] } {
     const { hasModule, can, canAny, isPlatformAdmin, userType } = usePlatform();
     const page = usePage().props as { auth?: { examBoard?: boolean; sitsExams?: boolean; examinerExam?: { id: number; title: string } | null }; liveWriting?: number };
-    const examBoard = Boolean(page.auth?.examBoard);
+    const examBoard = Boolean(page.auth?.examBoard) && hasModule('exam_board');
     const sitsExams = Boolean(page.auth?.sitsExams);
     const examinerExam = page.auth?.examinerExam;
     const live = Number(page.liveWriting ?? 0);
@@ -151,10 +151,10 @@ function useMenu(): { home: string; groups: Group[] } {
         ]);
         push('My exams', GraduationCap, [
             exams && { title: 'Exams', href: '/my/exams', icon: GraduationCap },
-            exams && { title: 'Results', href: '/my/results', icon: Trophy },
-            { title: 'Requests & exceptions', href: '/my/exceptions', icon: FileQuestion },
-            { title: 'Face identity', href: '/my/identity', icon: ScanFace },
-            exams && { title: 'Certificates', href: '/my/certificates', icon: Award },
+            exams && hasModule('my_results') && { title: 'Results', href: '/my/results', icon: Trophy },
+            hasModule('student_requests') && { title: 'Requests & exceptions', href: '/my/exceptions', icon: FileQuestion },
+            hasModule('identity_checks') && { title: 'Face identity', href: '/my/identity', icon: ScanFace },
+            hasModule('certificates') && { title: 'Certificates', href: '/my/certificates', icon: Award },
             hasModule('test_shop') && { title: 'Test series', href: '/my/test-series', icon: ShoppingBag },
             exams && hasModule('secure_client') && { title: 'Safe Exam Browser', href: '/safe-exam-browser', icon: ShieldCheck },
         ]);
@@ -163,7 +163,7 @@ function useMenu(): { home: string; groups: Group[] } {
     if (!student && sitsExams && exams) {
         push('My exams', GraduationCap, [
             { title: 'Exams I sit', href: '/my/exams', icon: GraduationCap },
-            { title: 'My results', href: '/my/results', icon: Trophy },
+            hasModule('my_results') && { title: 'My results', href: '/my/results', icon: Trophy },
         ]);
     }
 
@@ -174,24 +174,25 @@ function useMenu(): { home: string; groups: Group[] } {
             can('questions.create') && { title: 'Upload questions', href: '/question-bank/import', icon: FileUp },
             can('exams.manage') && { title: 'Timetable', href: '/exam-calendar', icon: CalendarDays },
             can('results.mark') && { title: 'Marking', href: '/marking', icon: ClipboardCheck },
-            can('exams.manage') && { title: 'Certificates', href: '/certificates', icon: Award },
+            can('exams.manage') && hasModule('certificates') && { title: 'Certificates', href: '/certificates', icon: Award },
             can('exams.manage') && hasModule('test_shop') && { title: 'Test-series shop', href: '/admin/shop', icon: ShoppingBag },
             examBoard && { title: 'Exam board', href: '/exam-board', icon: MonitorPlay },
         ]);
     }
 
-    if (proctoring && !student && canAny('exams.proctor', 'exams.invigilate', 'exams.manage')) {
+    // Exam day: each tool shows with its own module (halls, checks and centres work without proctoring)
+    if (exams && !student && canAny('exams.proctor', 'exams.invigilate', 'exams.manage')) {
         push('Exam day', Radio, [
-            { title: 'Live monitoring', href: '/proctor', icon: Video },
-            { title: 'Incidents', href: '/incidents', icon: ShieldAlert },
-            { title: 'Proctor shifts', href: '/proctor/shifts', icon: CalendarClock },
+            proctoring && { title: 'Live monitoring', href: '/proctor', icon: Video },
+            proctoring && { title: 'Incidents', href: '/incidents', icon: ShieldAlert },
+            proctoring && { title: 'Proctor shifts', href: '/proctor/shifts', icon: CalendarClock },
             hasModule('cbt_halls') && can('exams.manage') && { title: 'Halls & computers', href: '/venues', icon: Building2 },
             hasModule('cbt_halls') && can('exams.manage') && { title: 'Exam network', href: '/exam-network', icon: Network },
-            can('exams.manage') && { title: 'Computer checks', href: '/computer-checks', icon: MonitorCheck },
+            hasModule('computer_checks') && can('exams.manage') && { title: 'Computer checks', href: '/computer-checks', icon: MonitorCheck },
             can('exams.manage') && { title: 'Exam centres', href: '/exam-centres', icon: Building2 },
             hasModule('secure_client') && can('exams.manage') && { title: 'Safe Exam Browser', href: '/admin/safe-exam-browser', icon: ShieldCheck },
-        ], { badge: live > 0 ? `${live} live` : null });
-    } else if (proctoring && !student && examBoard) {
+        ], { badge: proctoring && live > 0 ? `${live} live` : null });
+    } else if (exams && proctoring && !student && examBoard) {
         // examiners and course lecturers watch their own exams' sittings
         push('Exam day', Radio, [{ title: 'Live monitoring', href: '/proctor', icon: Video }], { badge: live > 0 ? `${live} live` : null });
     }
@@ -211,9 +212,9 @@ function useMenu(): { home: string; groups: Group[] } {
     push('People & records', UsersRound, [
         can('users.manage') && { title: 'People', href: '/admin/people', icon: UsersRound },
         can('academics.manage') && { title: 'Academic structure', href: '/admin/academics', icon: Landmark },
-        canAny('exams.manage', 'academics.manage', 'results.approve', 'users.manage') && { title: 'Exceptions', href: '/admin/exceptions', icon: FileQuestion },
+        hasModule('student_requests') && canAny('exams.manage', 'academics.manage', 'results.approve', 'users.manage') && { title: 'Exceptions', href: '/admin/exceptions', icon: FileQuestion },
         canAny('audit.view', 'results.approve', 'exams.manage', 'academics.manage') && { title: 'Reports', href: '/admin/reports', icon: BarChart3 },
-        can('users.manage') && { title: 'Identity checks', href: '/admin/identity', icon: ScanFace },
+        hasModule('identity_checks') && can('users.manage') && { title: 'Identity checks', href: '/admin/identity', icon: ScanFace },
         can('roles.manage') && { title: 'Roles & permissions', href: '/admin/roles', icon: ShieldCheck },
         can('users.manage') && { title: 'Access review', href: '/admin/access-review', icon: UserCheck },
         can('audit.view') && { title: 'Audit trail', href: '/admin/audit', icon: ScrollText },
@@ -221,8 +222,8 @@ function useMenu(): { home: string; groups: Group[] } {
 
     push('Settings', Settings2, [
         can('institution.manage') && { title: 'Branding & theme', href: '/admin/branding', icon: Palette },
-        can('institution.manage') && { title: 'AI', href: '/admin/ai', icon: Sparkles },
-        can('institution.manage') && { title: 'Text messages', href: '/admin/sms', icon: MessageSquareText },
+        hasModule('ai_tools') && can('institution.manage') && { title: 'AI', href: '/admin/ai', icon: Sparkles },
+        hasModule('sms') && can('institution.manage') && { title: 'Text messages', href: '/admin/sms', icon: MessageSquareText },
         can('institution.manage') && { title: 'Policy', href: '/admin/policy', icon: Scale },
         can('billing.manage') && { title: 'Subscription & billing', href: '/institution/billing', icon: CreditCard },
         hasModule('enterprise_hosting') && can('institution.manage') && { title: 'Single sign-on', href: '/admin/sso', icon: KeyRound },
@@ -231,7 +232,7 @@ function useMenu(): { home: string; groups: Group[] } {
         can('institution.manage') && { title: 'E-mail delivery', href: '/admin/mail-log', icon: MailCheck },
         can('institution.manage') && { title: 'System health', href: '/admin/system-health', icon: Activity },
         can('institution.manage') && { title: 'Maintenance', href: '/admin/maintenance', icon: Wrench },
-        !student && { title: 'Face identity', href: '/my/identity', icon: ScanFace },
+        !student && hasModule('identity_checks') && { title: 'Face identity', href: '/my/identity', icon: ScanFace },
     ]);
 
     push('Help', LifeBuoy, [

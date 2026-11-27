@@ -31,7 +31,23 @@ class ModulesTest extends TestCase
         $this->usePlan('exams_only');
         $enabled = app(ModuleRegistry::class)->enabledFor($this->tenant);
 
-        $this->assertEqualsCanonicalizing(['core', 'question_bank', 'browser_proctoring'], $enabled);
+        // the plan's modules, plus the parts that come with them (each can still be switched off on its own)
+        $this->assertEqualsCanonicalizing(['core', 'question_bank', 'browser_proctoring',
+            'exam_board', 'computer_checks', 'identity_checks', 'my_results',
+            'certificates', 'student_requests', 'ai_tools', 'sms'], $enabled);
+        $this->assertNotContains('lms', $enabled);
+        $this->assertNotContains('conferencing', $enabled);
+    }
+
+    public function test_a_part_can_be_switched_off_without_touching_its_parent(): void
+    {
+        $this->usePlan('exams_only');
+        \Illuminate\Support\Facades\DB::table('tenant_modules')->insert(['tenant_id' => $this->tenant->id, 'module' => 'exam_board', 'enabled' => false, 'created_at' => now(), 'updated_at' => now()]);
+        $enabled = app(ModuleRegistry::class)->enabledFor($this->tenant->fresh());
+
+        $this->assertNotContains('exam_board', $enabled);
+        $this->assertContains('question_bank', $enabled);
+        $this->assertContains('my_results', $enabled);
     }
 
     public function test_an_add_on_can_be_switched_on_without_changing_the_plan(): void

@@ -189,6 +189,110 @@ class WholeSystemTest extends TestCase
         $this->assertGreaterThanOrEqual(8, count($byModule), 'Modules with pages: '.implode(', ', array_keys($byModule)));
     }
 
+    /**
+     * Modules are independent: switching any one off for an institution closes only that module's
+     * pages (and those of modules that cannot run without it). Every other page keeps working
+     * exactly as before, for every kind of person, and nothing fails with a server error.
+     */
+    public function test_switching_any_module_off_leaves_every_other_page_working(): void
+    {
+        $registry = app(ModuleRegistry::class);
+        $who = ['admin', 'lecturer', 'student'];
+        $pages = array_values(array_filter($this->pages(), fn ($p) => ! str_starts_with($p[0], 'platform')));
+        $guards = fn ($route) => array_values(array_map(fn ($m) => substr($m, 7), array_filter($route->gatherMiddleware(), fn ($m) => is_string($m) && str_starts_with($m, 'module:'))));
+        $baseline = [];
+        foreach ($pages as [$uri, $route]) {
+            foreach ($who as $w) {
+                $baseline["$w /$uri"] = $this->openedFor($w, $uri);
+            }
+        }
+
+        $problems = [];
+        foreach (array_keys($registry->all()) as $module) {
+            if ($registry->all()[$module]['always_on'] ?? false) {
+                continue;
+            }
+            DB::table('tenant_modules')->updateOrInsert(['tenant_id' => $this->institution->id, 'module' => $module], ['enabled' => false, 'updated_at' => now(), 'created_at' => now()]);
+            \Illuminate\Support\Facades\Cache::flush();
+            $closed = array_merge([$module], $this->allDependents($registry, $module));
+            foreach ($pages as [$uri, $route]) {
+                $affected = array_intersect($guards($route), $closed) !== [];
+                foreach ($who as $w) {
+                    $s = $this->openedFor($w, $uri);
+                    $before = $baseline["$w /$uri"];
+                    if ($s >= 500) {
+                        $problems[] = "$module off: $w /$uri → $s";
+                    } elseif (! $affected && $s !== $before) {
+                        $problems[] = "$module off: $w /$uri changed $before → $s";
+                    } elseif ($affected && $s === 200) {
+                        $problems[] = "$module off: $w /$uri still opens";
+                    }
+                }
+            }
+            DB::table('tenant_modules')->where(['tenant_id' => $this->institution->id, 'module' => $module])->delete();
+            \Illuminate\Support\Facades\Cache::flush();
+        }
+
+        $this->assertSame([], $problems, implode("\n", array_slice($problems, 0, 60)));
+    }
+
+    /** An institution can have any single module on its own (with only what it truly needs). */
+    public function test_an_institution_can_have_just_one_module(): void
+    {
+        $registry = app(ModuleRegistry::class);
+        $pages = array_values(array_filter($this->pages(), fn ($p) => ! str_starts_with($p[0], 'platform')));
+        $guards = fn ($route) => array_values(array_map(fn ($m) => substr($m, 7), array_filter($route->gatherMiddleware(), fn ($m) => is_string($m) && str_starts_with($m, 'module:'))));
+        $all = array_keys(array_filter($registry->all(), fn ($m) => ! ($m['always_on'] ?? false)));
+        $problems = [];
+        foreach (['lms', 'exam_board', 'conferencing', 'results', 'question_bank', 'certificates'] as $only) {
+            $keep = array_merge([$only], $this->allRequirements($registry, $only));
+            foreach ($all as $m) {
+                DB::table('tenant_modules')->updateOrInsert(['tenant_id' => $this->institution->id, 'module' => $m], ['enabled' => in_array($m, $keep, true), 'updated_at' => now(), 'created_at' => now()]);
+            }
+            \Illuminate\Support\Facades\Cache::flush();
+            $this->assertEqualsCanonicalizing(array_merge(['core'], $keep), $registry->enabledFor($this->institution->fresh()), "only $only");
+            $opened = 0;
+            foreach ($pages as [$uri, $route]) {
+                $mods = $guards($route);
+                foreach (['admin', 'lecturer', 'student'] as $w) {
+                    $s = $this->openedFor($w, $uri);
+                    if ($s >= 500) {
+                        $problems[] = "only $only: $w /$uri → $s";
+                    } elseif ($s === 200 && array_diff($mods, $keep) !== []) {
+                        $problems[] = "only $only: $w /$uri opens but needs ".implode(', ', array_diff($mods, $keep));
+                    }
+                    $opened += (int) ($s === 200 && in_array($only, $mods, true));
+                }
+            }
+            $this->assertGreaterThan(0, $opened, "Nothing of $only opened when it was the only module");
+        }
+        DB::table('tenant_modules')->where('tenant_id', $this->institution->id)->delete();
+
+        $this->assertSame([], $problems, implode("\n", array_slice($problems, 0, 60)));
+    }
+
+    /** @return list<string> */
+    private function allDependents(ModuleRegistry $r, string $key): array
+    {
+        $out = [];
+        foreach ($r->dependents($key) as $d) {
+            $out = array_merge($out, [$d], $this->allDependents($r, $d));
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /** @return list<string> */
+    private function allRequirements(ModuleRegistry $r, string $key): array
+    {
+        $out = [];
+        foreach ($r->all()[$key]['requires'] ?? [] as $q) {
+            $out = array_merge($out, [$q], $this->allRequirements($r, $q));
+        }
+
+        return array_values(array_unique($out));
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private function openedFor(string $who, string $uri): int

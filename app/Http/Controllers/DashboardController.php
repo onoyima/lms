@@ -17,11 +17,18 @@ use Inertia\Response;
  */
 class DashboardController extends Controller
 {
+    /** @var \Closure(string): bool whether a module is on for this institution */
+    private \Closure $on;
+
     public function __invoke(Request $request, ModuleRegistry $modules, ReportCatalog $catalog): Response
     {
         $user = $request->user();
         $tid = tenant_id();
         $enabled = $modules->enabledFor(tenant());
+        // every panel and figure belongs to a module: one switched off leaves the rest working
+        $on = fn (string $m) => in_array($m, $enabled, true);
+        $exams = $on('question_bank');
+        $this->on = $on;
         $semester = DB::table('semesters')->where('tenant_id', $tid)->where('is_current', true)->first();
         $panels = [];
 
@@ -30,24 +37,24 @@ class DashboardController extends Controller
                 'students' => DB::table('users')->where('tenant_id', $tid)->where('user_type', 'student')->where('status', 'active')->count(),
                 'staff' => DB::table('users')->where('tenant_id', $tid)->where('user_type', 'staff')->where('status', 'active')->count(),
                 'courses' => $semester ? DB::table('course_offerings')->where('semester_id', $semester->id)->count() : 0,
-                'live_attempts' => DB::table('attempts')->where('tenant_id', $tid)->whereIn('status', ['in_progress', 'paused', 'locked'])->count(),
-                'open_incidents' => DB::table('incidents')->where('tenant_id', $tid)->whereIn('status', ['open', 'investigating', 'escalated'])->count(),
-                'results_waiting' => DB::table('results')->where('tenant_id', $tid)->whereIn('status', ['draft', 'moderated', 'approved'])->count(),
-                'pending_registrations' => DB::table('enrolments')->where('tenant_id', $tid)->where('status', 'pending')->count(),
+                'live_attempts' => ! $exams ? null : DB::table('attempts')->where('tenant_id', $tid)->whereIn('status', ['in_progress', 'paused', 'locked'])->count(),
+                'open_incidents' => ! $on('browser_proctoring') ? null : DB::table('incidents')->where('tenant_id', $tid)->whereIn('status', ['open', 'investigating', 'escalated'])->count(),
+                'results_waiting' => ! $on('question_bank') ? null : DB::table('results')->where('tenant_id', $tid)->whereIn('status', ['draft', 'moderated', 'approved'])->count(),
+                'pending_registrations' => ! $on('lms') ? null : DB::table('enrolments')->where('tenant_id', $tid)->where('status', 'pending')->count(),
                 'pending_exports' => DB::table('export_requests')->where('tenant_id', $tid)->where('status', 'pending')->count(),
                 'failed_logins_24h' => DB::table('security_events')->where('tenant_id', $tid)->where('type', 'login_failed')->where('created_at', '>', now()->subDay())->count(),
                 'last_backup' => DB::table('backup_runs')->where('kind', 'backup')->where('status', 'ok')->max('created_at'),
                 'access_review_due' => ($last = DB::table('access_reviews')->where('tenant_id', $tid)->max('completed_at')) === null
                     || now()->diffInDays($last, true) > Policy::get('access_review_days'),
             ];
-            $panels['upcoming'] = DB::table('exam_sessions as s')->join('exams as e', 'e.id', '=', 's.exam_id')->leftJoin('venues as v', 'v.id', '=', 's.venue_id')
+            $panels['upcoming'] = ! $exams ? null : DB::table('exam_sessions as s')->join('exams as e', 'e.id', '=', 's.exam_id')->leftJoin('venues as v', 'v.id', '=', 's.venue_id')
                 ->where('s.tenant_id', $tid)->whereBetween('s.starts_at', [now()->subHours(3), now()->addDays(7)])->where('s.is_practice', false)
                 ->orderBy('s.starts_at')->limit(12)
                 ->get(['s.id', 'e.title', 's.starts_at', 's.ends_at', 's.status', 'v.name as venue',
                     DB::raw('(SELECT COUNT(*) FROM exam_candidates c WHERE c.exam_session_id = s.id) as candidates')]);
         }
 
-        if ($user->can('results.approve') && ! $user->can('reports.all_departments') && ($scope = $catalog->scope($user)) !== null) {
+        if ($on('lms') && $user->can('results.approve') && ! $user->can('reports.all_departments') && ($scope = $catalog->scope($user)) !== null) {
             $grades = DB::table('course_grades as g')->join('course_offerings as o', 'o.id', '=', 'g.course_offering_id')->join('courses as c', 'c.id', '=', 'o.course_id')
                 ->whereIn('c.department_id', $scope)->when($semester, fn ($q) => $q->where('o.semester_id', $semester->id));
             $total = (clone $grades)->count();
@@ -82,10 +89,10 @@ class DashboardController extends Controller
             $offerings = DB::table('enrolments')->where('user_id', $user->id)->where('status', 'active')->pluck('course_offering_id');
             $panels['student'] = [
                 'courses' => $offerings->count(),
-                'due' => DB::table('course_items as i')->join('course_offerings as o', 'o.id', '=', 'i.course_offering_id')->join('courses as c', 'c.id', '=', 'o.course_id')
-                    ->whereIn('i.course_offering_id', $offerings)->whereIn('i.type', ['assignment', 'quiz'])->where('i.visible', true)->whereNull('i.deleted_at')
+                'due' => ! $on('lms') ? null : DB::table('course_items as i')->join('course_offerings as o', 'o.id', '=', 'i.course_offering_id')->join('courses as c', 'c.id', '=', 'o.course_id')
+                    ->whereIn('i.course_offering_id', $offerings)->whereIn('i.type', $exams ? ['assignment', 'quiz'] : ['assignment'])->where('i.visible', true)->whereNull('i.deleted_at')
                     ->whereBetween('i.due_at', [now(), now()->addDays(14)])->orderBy('i.due_at')->limit(8)->get(['i.id', 'i.title', 'i.type', 'i.due_at', 'c.code']),
-                'exams' => DB::table('exam_candidates as ec')->join('exam_sessions as s', 's.id', '=', 'ec.exam_session_id')->join('exams as e', 'e.id', '=', 's.exam_id')
+                'exams' => ! $exams ? null : DB::table('exam_candidates as ec')->join('exam_sessions as s', 's.id', '=', 'ec.exam_session_id')->join('exams as e', 'e.id', '=', 's.exam_id')
                     ->where('ec.user_id', $user->id)->where('s.ends_at', '>', now())->whereNotIn('e.category', ['quiz'])->orderBy('s.starts_at')->limit(5)
                     ->get(['ec.id', 'e.title', 's.starts_at']),
                 'unread' => $user->unreadNotifications()->count(),
@@ -93,13 +100,13 @@ class DashboardController extends Controller
         }
 
         // Exam day board, decisions waiting, and exams with their papers (exams office, proctors, approvers)
-        if ($user->canAny(['exams.manage', 'exams.proctor', 'exams.invigilate', 'results.approve'])) {
+        if ($exams && $user->canAny(['exams.manage', 'exams.proctor', 'exams.invigilate', 'results.approve'])) {
             $panels['day'] = $this->examDay($tid);
         }
         if ($user->canAny(['exams.manage', 'results.approve', 'academics.manage', 'users.manage'])) {
             $panels['decisions'] = $this->decisions($user, $tid);
         }
-        if ($user->can('exams.manage')) {
+        if ($exams && $user->can('exams.manage')) {
             $panels['exams'] = $this->examsInProgress();
         }
         if ($user->can('reports.all_departments')) {
@@ -107,11 +114,11 @@ class DashboardController extends Controller
         }
 
         if ($user->can('exams.manage') || $user->can('academics.manage') || $user->can('results.approve')) {
-            $panels['casework'] = [
-                'requests' => DB::table('exception_requests')->where('tenant_id', $tid)->where('status', 'pending')->count(),
-                'hardware' => DB::table('hardware_exceptions')->where('tenant_id', $tid)->where('status', 'pending')->count(),
-                'anomalies' => DB::table('attempt_anomalies')->where('tenant_id', $tid)->where('review', 'open')->count(),
-            ];
+            $panels['casework'] = array_filter([
+                'requests' => $on('student_requests') ? DB::table('exception_requests')->where('tenant_id', $tid)->where('status', 'pending')->count() : null,
+                'hardware' => $exams ? DB::table('hardware_exceptions')->where('tenant_id', $tid)->where('status', 'pending')->count() : null,
+                'anomalies' => $exams && $on('analytics') ? DB::table('attempt_anomalies')->where('tenant_id', $tid)->where('review', 'open')->count() : null,
+            ], fn ($v) => $v !== null) ?: null;
         }
 
         return Inertia::render('dashboard', [
@@ -165,7 +172,8 @@ class DashboardController extends Controller
     private function decisions($user, int $tid): array
     {
         $items = [];
-        if ($user->canAny(['exams.manage', 'exams.proctor'])) {
+        $on = $this->on;
+        if ($on('browser_proctoring') && $user->canAny(['exams.manage', 'exams.proctor'])) {
             foreach (DB::table('incidents as i')->leftJoin('attempts as a', 'a.id', '=', 'i.attempt_id')->leftJoin('users as u', 'u.id', '=', 'a.user_id')
                 ->leftJoin('exams as e', 'e.id', '=', 'a.exam_id')
                 ->where('i.tenant_id', $tid)->whereIn('i.status', ['open', 'investigating', 'escalated'])
@@ -176,14 +184,14 @@ class DashboardController extends Controller
                     'href' => '/incidents/'.$r->id, 'action' => 'Review'];
             }
         }
-        if ($user->canAny(['exams.manage', 'questions.moderate'])) {
+        if ($on('question_bank') && $user->canAny(['exams.manage', 'questions.moderate'])) {
             foreach (DB::table('exams as e')->leftJoin('users as u', 'u.id', '=', 'e.created_by')->where('e.tenant_id', $tid)->where('e.status', 'submitted')
                 ->where('e.created_by', '!=', $user->id)->whereNull('e.deleted_at')->latest('e.updated_at')->limit(4)->get(['e.id', 'e.title', 'u.name']) as $r) {
                 $items[] = ['kind' => 'approvals', 'tone' => 'warning', 'icon' => 'check', 'title' => $r->title.' is waiting for your approval',
                     'detail' => 'Set by '.($r->name ?? 'a colleague'), 'href' => '/exams/'.$r->id, 'action' => 'Approve'];
             }
         }
-        if ($user->can('results.approve')) {
+        if ($on('results') && $user->can('results.approve')) {
             foreach (DB::table('results as r')->join('exams as e', 'e.id', '=', 'r.exam_id')->where('r.tenant_id', $tid)->where('r.status', 'approved')
                 ->groupBy('e.id', 'e.title')->limit(3)->get(['e.id', 'e.title', DB::raw('count(*) as n')]) as $r) {
                 $items[] = ['kind' => 'approvals', 'tone' => 'warning', 'icon' => 'send', 'title' => 'Publish '.$r->n.' '.$r->title.' '.($r->n == 1 ? 'result' : 'results'),
@@ -191,12 +199,12 @@ class DashboardController extends Controller
             }
         }
         if ($user->canAny(['exams.manage', 'academics.manage', 'results.approve', 'users.manage'])) {
-            foreach (DB::table('exception_requests as x')->join('users as u', 'u.id', '=', 'x.user_id')->where('x.tenant_id', $tid)->where('x.status', 'pending')
+            foreach (! $on('student_requests') ? [] : DB::table('exception_requests as x')->join('users as u', 'u.id', '=', 'x.user_id')->where('x.tenant_id', $tid)->where('x.status', 'pending')
                 ->latest('x.id')->limit(3)->get(['x.id', 'x.subject', 'x.type', 'u.name']) as $r) {
                 $items[] = ['kind' => 'requests', 'tone' => 'info', 'icon' => 'timer', 'title' => $r->subject.' — '.$r->name,
                     'detail' => str_replace('_', ' ', ucfirst($r->type)), 'href' => '/admin/exceptions', 'action' => 'Decide'];
             }
-            foreach (DB::table('appeals as a')->join('users as u', 'u.id', '=', 'a.user_id')->join('results as r', 'r.id', '=', 'a.result_id')->join('exams as e', 'e.id', '=', 'r.exam_id')
+            foreach (! $on('results') ? [] : DB::table('appeals as a')->join('users as u', 'u.id', '=', 'a.user_id')->join('results as r', 'r.id', '=', 'a.result_id')->join('exams as e', 'e.id', '=', 'r.exam_id')
                 ->where('a.tenant_id', $tid)->where('a.status', 'submitted')
                 ->latest('a.id')->limit(2)->get(['a.id', 'a.kind', 'u.name', 'e.id as exam_id', 'e.title']) as $r) {
                 $items[] = ['kind' => 'requests', 'tone' => 'info', 'icon' => 'scale', 'title' => 'Result '.$r->kind.' request — '.$r->name,
@@ -237,7 +245,8 @@ class DashboardController extends Controller
         $students = DB::table('users')->where('tenant_id', $tid)->where('user_type', 'student')->where('status', 'active');
         $weeks = collect(range(7, 0))->map(fn ($w) => (clone $students)->where('created_at', '<=', now()->subWeeks($w))->count());
         $passMin = Policy::get('grading_scale')[Policy::get('pass_grade_min')] ?? 40;
-        $recent = DB::table('results as r')->join('exams as e', 'e.id', '=', 'r.exam_id')->where('r.tenant_id', $tid)->where('r.status', 'published')
+        $on = $this->on;
+        $recent = ! $on('question_bank') ? collect() : DB::table('results as r')->join('exams as e', 'e.id', '=', 'r.exam_id')->where('r.tenant_id', $tid)->where('r.status', 'published')
             ->select('e.id', DB::raw('MAX(r.published_at) as at'), DB::raw('AVG(CASE WHEN r.max_score > 0 AND r.raw_score * 100 / r.max_score >= '.(float) $passMin.' THEN 100 ELSE 0 END) as pass'))
             ->groupBy('e.id')->orderByDesc('at')->limit(5)->get()->reverse()->values();
 
@@ -247,10 +256,10 @@ class DashboardController extends Controller
             'students_trend' => $weeks->values(),
             'pass_rate' => $recent->isNotEmpty() ? (int) round($recent->avg('pass')) : null,
             'pass_trend' => $recent->pluck('pass')->map(fn ($v) => (int) round((float) $v))->values(),
-            'results_to_approve' => DB::table('results')->where('tenant_id', $tid)->whereIn('status', ['draft', 'moderated'])->count(),
-            'results_ready' => DB::table('results')->where('tenant_id', $tid)->where('status', 'approved')->count(),
-            'open_incidents' => DB::table('incidents')->where('tenant_id', $tid)->whereIn('status', ['open', 'investigating', 'escalated'])->count(),
-            'urgent_incidents' => DB::table('incidents')->where('tenant_id', $tid)->whereIn('status', ['open', 'escalated'])->whereIn('severity', ['high', 'critical'])->count(),
+            'results_to_approve' => ! $on('results') ? null : DB::table('results')->where('tenant_id', $tid)->whereIn('status', ['draft', 'moderated'])->count(),
+            'results_ready' => ! $on('results') ? null : DB::table('results')->where('tenant_id', $tid)->where('status', 'approved')->count(),
+            'open_incidents' => ! $on('browser_proctoring') ? null : DB::table('incidents')->where('tenant_id', $tid)->whereIn('status', ['open', 'investigating', 'escalated'])->count(),
+            'urgent_incidents' => ! $on('browser_proctoring') ? null : DB::table('incidents')->where('tenant_id', $tid)->whereIn('status', ['open', 'escalated'])->whereIn('severity', ['high', 'critical'])->count(),
         ];
     }
 

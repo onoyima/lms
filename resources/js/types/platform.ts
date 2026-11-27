@@ -11,6 +11,7 @@ export type TenantBrand = {
     login_title: string | null;
     login_message: string | null;
     welcome_message: string | null;
+    theme?: 'sapphire' | 'forest' | 'plum' | 'midnight';
     contact: { email?: string; phone?: string; address?: string } | null;
 };
 

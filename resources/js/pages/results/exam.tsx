@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { BarChart3, Download, ListChecks, Users } from 'lucide-react';
 import { PageHeader, Stat, Status, Table, Td } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
+import { usePlatform } from '@/hooks/use-platform';
 import type { Paginated } from '@/types';
 
 type Row = { id: number; name: string; identifier: string | null; raw: number | null; max: number | null; final: number | null; grade: string | null; status: string; locked: boolean; withheld_reason: string | null; attempt_id?: number | null };
@@ -12,6 +13,7 @@ export default function ExamResults({ exam, results, stats, changes, appeals, ca
     changes: { id: number; candidate: string; from: number; to: number; reason: string; requested_by: string | null; answer?: { number: number | null; attempt_id: number } | null }[];
     appeals: { id: number; candidate: string; statement: string; status: string }[]; canApprove: boolean; canPublish: boolean;
 }) {
+    const { opens, hasModule } = usePlatform();
     const { flash } = usePage().props;
     const move = (to: string) => confirm(`Mark all eligible results as ${to}?`) && router.post(`/results/${exam.id}/transition`, { to }, { preserveScroll: true });
 
@@ -32,9 +34,9 @@ export default function ExamResults({ exam, results, stats, changes, appeals, ca
                     }
                 />
                 <nav className="flex flex-wrap gap-2" aria-label="More about these results">
-                    <Button variant="secondary" asChild><Link href={`/exam-board/${exam.id}`}><Users className="size-4" /> Overview and scoreboard</Link></Button>
+                    {opens('/exam-board') && <Button variant="secondary" asChild><Link href={`/exam-board/${exam.id}`}><Users className="size-4" /> Overview and scoreboard</Link></Button>}
                     <Button variant="secondary" asChild><Link href={`/results/${exam.id}/questions`}><ListChecks className="size-4" /> Question by question</Link></Button>
-                    <Button variant="secondary" asChild><Link href={`/results/${exam.id}/analytics`}><BarChart3 className="size-4" /> Analysis</Link></Button>
+                    {hasModule('analytics') && <Button variant="secondary" asChild><Link href={`/results/${exam.id}/analytics`}><BarChart3 className="size-4" /> Analysis</Link></Button>}
                     <span className="mx-1 hidden w-px bg-border sm:block" />
                     <Button variant="outline" asChild><a href={`/results/${exam.id}/score-sheet.xlsx`}><Download className="size-4" /> Scores per question (Excel)</a></Button>
                     <Button variant="outline" asChild><a href={`/results/${exam.id}/export?format=xlsx`}><Download className="size-4" /> Results (Excel)</a></Button>

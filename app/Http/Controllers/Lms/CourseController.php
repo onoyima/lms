@@ -42,7 +42,8 @@ class CourseController extends Controller
                 'semester' => $e->offering->semesterLabel(), 'status' => $e->status, 'category' => $e->category, 'progress' => $this->content->progress($e->offering, $user)]);
 
         $offeringIds = $enrolled->where('status', 'active')->pluck('id');
-        $upcoming = CourseItem::with('offering.course')->whereIn('course_offering_id', $offeringIds)->whereIn('type', ['assignment', 'quiz'])
+        $upcoming = CourseItem::with('offering.course')->whereIn('course_offering_id', $offeringIds)
+            ->whereIn('type', app(\App\Services\Modules\ModuleRegistry::class)->isEnabled(tenant(), 'question_bank') ? ['assignment', 'quiz'] : ['assignment'])
             ->where('visible', true)->whereNotNull('due_at')->where('due_at', '>=', now()->subDay())->orderBy('due_at')->limit(12)->get()
             ->map(fn ($i) => ['id' => $i->id, 'title' => $i->title, 'type' => $i->type, 'course' => $i->offering->course->code, 'due_at' => $i->due_at,
                 'submitted' => $i->type === 'assignment' && DB::table('assignment_submissions')->where('course_item_id', $i->id)->where('user_id', $user->id)->where('status', '!=', 'draft')->exists()]);
@@ -57,6 +58,8 @@ class CourseController extends Controller
         $teacher = $this->access->teaches($user, $offering);
         $completed = $teacher ? [] : $this->access->completedIds($user, $offering);
         $offering->load('course.department', 'semester', 'staff');
+        // course quizzes run on the exam engine: without the exams module they are left out
+        $quizzes = app(\App\Services\Modules\ModuleRegistry::class)->isEnabled(tenant(), 'question_bank');
         $bookmarks = $teacher ? [] : \App\Models\CourseItemNote::where('user_id', $user->id)->where('bookmarked', true)
             ->whereIn('course_item_id', CourseItem::where('course_offering_id', $offering->id)->pluck('id'))->pluck('course_item_id')->all();
 
@@ -65,11 +68,11 @@ class CourseController extends Controller
             ->filter(fn ($s) => $teacher || ($s->visible && (! $s->release_at || $s->release_at->isPast())))
             ->map(fn ($s) => [
                 'id' => $s->id, 'title' => $s->title, 'summary' => $s->summary, 'visible' => $s->visible, 'release_at' => $s->release_at,
-                'items' => $s->items->map(function (CourseItem $i) use ($teacher, $completed, $s, $bookmarks) {
+                'items' => $s->items->map(function (CourseItem $i) use ($teacher, $completed, $s, $bookmarks, $quizzes) {
                     $i->setRelation('section', $s);
                     [$open, $why] = $teacher ? [true, null] : $this->access->availability($i, $completed);
 
-                    return $teacher || $why !== 'hidden' ? [
+                    return ($teacher || $why !== 'hidden') && ($quizzes || $i->type !== 'quiz') ? [
                         'id' => $i->id, 'type' => $i->type, 'title' => $i->title, 'visible' => $i->visible, 'release_at' => $i->release_at, 'due_at' => $i->due_at,
                         'open' => $open, 'locked_reason' => $why, 'done' => in_array($i->id, $completed, true), 'file_name' => $i->file_name,
                         'file_mime' => $i->file_mime, 'file_size' => $i->file_size, 'url' => in_array($i->type, ['video', 'link'], true) ? $i->url : null,
@@ -95,8 +98,9 @@ class CourseController extends Controller
             'previous' => $teacher ? CourseOffering::with('semester')->where('course_id', $offering->course_id)->where('id', '!=', $offering->id)->get()->map(fn ($o) => ['id' => $o->id, 'label' => $o->label()]) : [],
             'announcements' => DB::table('announcements')->where('scope', 'offering')->where('scope_id', $offering->id)->where('publish_at', '<=', now())
                 ->orderByDesc('publish_at')->limit(5)->get(['id', 'title', 'body_html', 'publish_at', 'urgent']),
-            'feedback' => CourseFeedbackController::forCourse($offering, $user, $teacher),
-            'assessments' => $this->assessments($offering, $user, $teacher, $completed),
+            'feedback' => app(\App\Services\Modules\ModuleRegistry::class)->isEnabled(tenant(), 'course_feedback') ? CourseFeedbackController::forCourse($offering, $user, $teacher) : null,
+            'assessments' => $this->assessments($offering, $user, $teacher, $completed, $quizzes),
+            'quizzes' => $quizzes,
             'students' => $teacher ? DB::table('enrolments')->where('course_offering_id', $offering->id)->where('status', 'active')->count() : null,
             'schedule' => DB::table('class_schedules')->where('course_offering_id', $offering->id)->orderBy('weekday')->orderBy('starts_at')
                 ->get(['weekday', 'starts_at', 'ends_at', 'kind', 'venue', 'group_label'])->map(fn ($r) => ['weekday' => (int) $r->weekday, 'starts_at' => substr($r->starts_at, 0, 5),
@@ -109,9 +113,9 @@ class CourseController extends Controller
      * for a student where they stand (not started, submitted, marked with the score); for the
      * lecturer how many have submitted and how many wait for marking.
      */
-    private function assessments(CourseOffering $offering, \App\Models\User $user, bool $teacher, array $completed): array
+    private function assessments(CourseOffering $offering, \App\Models\User $user, bool $teacher, array $completed, bool $quizzes = true): array
     {
-        $items = CourseItem::with('section')->where('course_offering_id', $offering->id)->whereIn('type', ['assignment', 'quiz'])
+        $items = CourseItem::with('section')->where('course_offering_id', $offering->id)->whereIn('type', $quizzes ? ['assignment', 'quiz'] : ['assignment'])
             ->when(! $teacher, fn ($q) => $q->where('visible', true))->orderByRaw('due_at IS NULL')->orderBy('due_at')->orderBy('position')->get();
         $enrolled = $teacher ? DB::table('enrolments')->where('course_offering_id', $offering->id)->where('status', 'active')->count() : 0;
 
@@ -303,7 +307,8 @@ class CourseController extends Controller
     {
         return $request->validate([
             'course_section_id' => [$creating ? 'required' : 'sometimes', 'integer'],
-            'type' => [$creating ? 'required' : 'prohibited', Rule::in(['page', 'file', 'link', 'video', 'live', 'assignment', 'quiz', 'forum'])],
+            'type' => [$creating ? 'required' : 'prohibited', Rule::in(array_merge(['page', 'file', 'link', 'video', 'live', 'assignment', 'forum'],
+                app(\App\Services\Modules\ModuleRegistry::class)->isEnabled(tenant(), 'question_bank') ? ['quiz'] : []))],
             'title' => [$creating ? 'required' : 'sometimes', 'string', 'max:190'],
             'body_html' => ['nullable', 'string', 'max:500000'],
             'url' => ['nullable', 'url', 'max:2000'],

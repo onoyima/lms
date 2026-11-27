@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Check, Pencil, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
 import { formatDateTime, PageHeader, textareaClass } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
@@ -10,7 +10,7 @@ type Item = { question_id: number; position: number; n: number | null; type: str
 type Attempt = { id: number; name: string | null; identifier: string | null; raw: number; max: number; status: string; submitted_at: string | null; final: number | null; locked: boolean };
 
 /** One student's script: what they had, what they chose, the right answer and the mark; one answer can be corrected with a reason. */
-export default function Script({ exam, attempt, items, pending, needsApproval }: { exam: { id: number; title: string }; attempt: Attempt; items: Item[]; pending: { question_id: number; reason: string }[]; needsApproval: boolean }) {
+export default function Script({ exam, attempt, items, pending, needsApproval, nav }: { nav?: { prev: number | null; next: number | null; position: number | null; total: number }; exam: { id: number; title: string }; attempt: Attempt; items: Item[]; pending: { question_id: number; reason: string }[]; needsApproval: boolean }) {
     const { flash } = usePage<{ flash?: { success?: string } }>().props;
     const [editing, setEditing] = useState<number | null>(null);
 
@@ -22,7 +22,14 @@ export default function Script({ exam, attempt, items, pending, needsApproval }:
                     eyebrow={exam.title}
                     title={attempt.name ?? 'Script'}
                     lead={`${attempt.identifier ?? ''} · ${attempt.raw} / ${attempt.max}${attempt.final !== null ? ` · final ${attempt.final}` : ''} · ${attempt.status.replace('_', ' ')}${attempt.submitted_at ? ` · submitted ${formatDateTime(attempt.submitted_at)}` : ''}`}
-                    actions={<Button variant="outline" asChild><Link href={`/results/${exam.id}/questions`}>All questions</Link></Button>}
+                    actions={
+                        <div className="flex flex-wrap items-center gap-2">
+                            {nav?.prev && <Button variant="outline" asChild><Link href={`/results/${exam.id}/scripts/${nav.prev}`} preserveScroll={false}><ChevronLeft className="size-4" /> Previous student</Link></Button>}
+                            {nav?.position && <span className="text-sm text-muted-foreground tabular-nums">{nav.position} of {nav.total}</span>}
+                            {nav?.next && <Button variant="outline" asChild><Link href={`/results/${exam.id}/scripts/${nav.next}`}>Next student <ChevronRight className="size-4" /></Link></Button>}
+                            <Button variant="outline" asChild><Link href={`/results/${exam.id}/questions`}>All questions</Link></Button>
+                        </div>
+                    }
                 />
                 {flash?.success && <p className="text-sm text-status-good">{flash.success}</p>}
                 {items.map((it, i) => {
