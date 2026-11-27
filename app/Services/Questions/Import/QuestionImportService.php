@@ -30,11 +30,31 @@ class QuestionImportService
      * @param  list<UploadedFile>  $images  pictures named on IMAGE: lines or in CSV picture columns (or one .zip of them)
      * @param  array{section_id?: int, exam_id?: int, source?: string}  $options  where the questions go once saved
      */
+    /** Plain messages for a question file the server refuses. */
+    public static function uploadMessages(): array
+    {
+        $kb = (int) config('platform.question_import.max_upload_kb');
+
+        return [
+            'file.required' => 'Choose the question file first.',
+            'file.uploaded' => 'The server did not accept this file. It is probably larger than the server allows (upload_max_filesize and post_max_size in php.ini). Compress the pictures in Word (File › Compress Pictures) or split the paper into two files.',
+            'file.max' => 'This file is larger than '.round($kb / 1024).' MB. Compress the pictures in Word (File › Compress Pictures) or split the paper into two files.',
+            'file.extensions' => 'Upload a Word file (.docx or .doc), a PDF, an Excel sheet (.xlsx), a CSV or a text file.',
+            'images.*.max' => 'One of the pictures is larger than 50 MB.',
+            'images.*.extensions' => 'Pictures must be PNG, JPG, GIF or WebP, or a .zip of them.',
+        ];
+    }
+
     public function upload(UploadedFile $file, ?int $courseId, int $userId, string $reader = 'standard', ?\App\Models\QuestionBank $bank = null, array $images = [], array $options = [], ?string $name = null): QuestionImport
     {
         $ext = strtolower($file->getClientOriginalExtension());
         if ($ext === 'txt' && CsvQuestionReader::looksLikeCsv(DocumentConverter::toUtf8((string) file_get_contents($file->getRealPath(), false, null, 0, 4096)))) {
             $ext = 'csv'; // the old system's "CSV saved as .txt" samples
+        }
+        // a file called .doc is often a .docx or an RTF file renamed (Word "Save as" to an old name)
+        if (in_array($ext, ['doc', 'docx', 'rtf'], true)) {
+            $head = (string) file_get_contents($file->getRealPath(), false, null, 0, 8);
+            $ext = str_starts_with($head, 'PK') ? 'docx' : (str_starts_with($head, '{\\rtf') ? 'rtf' : ($head === "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" ? 'doc' : $ext));
         }
         $format = $reader === 'science' && in_array($ext, ['docx', 'txt', 'md', 'html', 'htm'], true) ? 'sci-'.$ext : $ext;
         $dir = 'question-imports/'.Str::uuid();
@@ -148,15 +168,15 @@ class QuestionImportService
 
         $absolute = Storage::disk('local')->path($import->stored_path);
         $mediaTmp = Storage::disk('local')->path(dirname($import->stored_path).'/media');
-        $converted = $import->format === 'csv'
-            ? ['html' => (new CsvQuestionReader)->toHtml(DocumentConverter::toUtf8(File::get($absolute))), 'media' => []]
+        $converted = in_array($import->format, ['csv', 'xlsx'], true)
+            ? ['html' => (new CsvQuestionReader)->toHtml($import->format === 'xlsx' ? (new SpreadsheetReader)->csv($absolute) : DocumentConverter::toUtf8(File::get($absolute))), 'media' => []]
             : $this->converter->toHtml($absolute, $import->format, $mediaTmp);
 
         // Images extracted from Word go to public storage so candidates' browsers can load them.
         $html = $this->publishMedia($converted['html'], $converted['media'], $mediaTmp, $import);
         // Text we built ourselves (text files, PDF text) keeps its line numbers and blank lines for the
         // parser; every piece is cleaned again below. Word and HTML are cleaned first.
-        if (! in_array($import->format, ['txt', 'pdf', 'csv', 'sci-txt'], true)) {
+        if (! in_array($import->format, ['txt', 'pdf', 'csv', 'xlsx', 'sci-txt', 'doc', 'rtf'], true)) {
             $html = $this->sanitizer->clean($html);
         }
 

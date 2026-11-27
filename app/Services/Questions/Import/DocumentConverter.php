@@ -13,6 +13,7 @@ use Symfony\Component\Process\Process;
  *
  * .docx  -> pandoc (Word's built-in equations become LaTeX; images are extracted)
  * .md    -> pandoc if available, else the plain-text rules
+ * .doc   -> the text of an old Word file (LegacyWordReader), then the plain-text rules
  * .txt   -> plain-text rules ($…$, $$…$$, \(…\), \[…\] and \ce{…} are kept as maths)
  * .html  -> as is (sanitised later)
  */
@@ -49,6 +50,9 @@ class DocumentConverter
             'docx' => $this->viaPandoc($path, 'docx', $mediaDir),
             'md' => $this->pandocAvailable() ? $this->viaPandoc($path, 'markdown', $mediaDir) : ['html' => $this->textToHtml(File::get($path)), 'media' => []],
             'txt' => ['html' => $this->textToHtml(self::toUtf8(File::get($path))), 'media' => []],
+            // old Word 97–2003 files: their text (pictures and equations need the .docx)
+            'rtf', 'sci-rtf' => ['html' => $this->textToHtml(LegacyWordReader::rtfText(File::get($path))), 'media' => []],
+            'doc', 'sci-doc' => ['html' => $this->textToHtml((new LegacyWordReader)->text($path)), 'media' => []],
             // a PDF's text (the browser usually sends it already as text; otherwise pdftotext, when installed)
             'pdf' => ['html' => $this->textToHtml(self::toUtf8($this->pdfText($path))), 'media' => []],
             'html', 'htm' => ['html' => File::get($path), 'media' => []],

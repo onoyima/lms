@@ -219,7 +219,7 @@ class FeatureCoverageSeeder extends Seeder
                 'user_id' => $row->user_id, 'reason' => 'two_answers', 'note' => 'Options B and C both look right to me.', 'status' => 'open']);
         }
         // a computer check of a lab before an exam: one computer ready, one without a camera
-        $check = $this->once('computer_checks', ['tenant_id' => $tid, 'code' => 'demolab1'], ['name' => 'CBT Lab 1, before the CBT exam',
+        $check = $this->once('computer_checks', ['tenant_id' => $tid, 'name' => 'CBT Lab 1, before the CBT exam'], ['code' => 'dl'.str_pad((string) $tid, 6, '0', STR_PAD_LEFT),
             'requirements' => json_encode(['camera']), 'opens_at' => now()->subHour()->format('Y-m-d H:i:s'), 'closes_at' => now()->addHours(11)->format('Y-m-d H:i:s'), 'created_by' => $this->admin->id]);
         $ok = fn (array $fail = []) => json_encode(array_map(fn ($k) => ['key' => $k, 'ok' => ! in_array($k, $fail, true), 'warn' => false, 'detail' => in_array($k, $fail, true) ? 'Not available (no device found)' : 'Fine'], ['browser', 'storage', 'server', 'speed', 'clock', 'screen', 'camera']));
         $this->once('computer_reports', ['computer_check_id' => $check, 'ip' => '10.10.1.21'], ['tenant_id' => $tid, 'kind' => 'check', 'label' => 'A-01', 'status' => 'pass', 'results' => $ok(),

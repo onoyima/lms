@@ -55,6 +55,20 @@ class WordScienceReader
     /** @var array<string, array{fmt: string, text: string, start: int}> "numId:ilvl" => format */
     private array $numbering = [];
 
+    /** @var array<string, array{num: ?string, lvl: ?int}> numbering set on a paragraph style ("List Number") */
+    private array $styleNums = [];
+
+    /** @var array<string, int> paragraph styles that are headings (Title, Heading 1 …) => level */
+    private array $styleHeadings = [];
+
+    /** The list the questions are numbered in, and the count of options since its last item. */
+    private ?string $questionList = null;
+
+    private int $optionCount = 0;
+
+    /** The paragraph before this one was a numbered question or option (no text in between). */
+    private bool $inRun = false;
+
     /** @var array<string, int> */
     private array $counters = [];
 
@@ -78,6 +92,7 @@ class WordScienceReader
         $this->counters = [];
         $this->rels = $this->readRels();
         $this->numbering = $this->readNumbering();
+        $this->styleNums = $this->readStyleNumbering();
 
         $doc = new DOMDocument;
         $doc->loadXML($xml, LIBXML_NONET | LIBXML_COMPACT | LIBXML_PARSEHUGE);
@@ -119,8 +134,11 @@ class WordScienceReader
             return "<hr>\n"; // an empty line: ends a question in the old layout (as in text files)
         }
         $prefix = $this->listPrefix($p);
+        $pr = $this->child($p, 'pPr');
+        $level = $pr ? ($this->styleHeadings[(string) $this->attr($this->child($pr, 'pStyle'), 'val')] ?? 0) : 0;
+        $tag = $level ? 'h'.$level : 'p';
 
-        return '<p>'.($prefix !== '' ? htmlspecialchars($prefix, ENT_QUOTES, 'UTF-8').' ' : '').$inner."</p>\n";
+        return "<$tag>".($prefix !== '' ? htmlspecialchars($prefix, ENT_QUOTES, 'UTF-8').' ' : '').$inner."</$tag>\n";
     }
 
     /** Text, runs and equations inside a paragraph (or hyperlink, field, inserted text). */
@@ -189,6 +207,12 @@ class WordScienceReader
         }
         if (($u = $this->child($pr, 'u')) && $this->attr($u, 'val') !== 'none') {
             $text = "<u>$text</u>";
+        }
+        // highlighted (Home › Text highlight colour) or shaded text: often how the right option is marked
+        $hl = $this->attr($this->child($pr, 'highlight'), 'val');
+        $shd = $this->attr($this->child($pr, 'shd'), 'fill');
+        if (($hl && $hl !== 'none') || ($shd && ! in_array(strtolower($shd), ['auto', 'ffffff', 'none'], true))) {
+            $text = "<mark>$text</mark>";
         }
         if ($this->on($pr, 'strike')) {
             $text = "<s>$text</s>";
@@ -355,11 +379,19 @@ class WordScienceReader
     {
         $pr = $this->child($p, 'pPr');
         $num = $pr ? $this->child($pr, 'numPr') : null;
-        if (! $num) {
+        // numbering can also come from the paragraph's style (Word's "List Number" styles)
+        $style = $pr ? (string) $this->attr($this->child($pr, 'pStyle'), 'val') : '';
+        $fromStyle = $style !== '' ? ($this->styleNums[$style] ?? null) : null;
+        if (! $num && ! $fromStyle) {
+            if (trim($p->textContent) !== '') {
+                $this->inRun = false;
+            }
+
             return '';
         }
-        $id = (string) $this->attr($this->child($num, 'numId'), 'val');
-        $lvl = (int) $this->attr($this->child($num, 'ilvl'), 'val');
+        $id = (string) ($num ? $this->attr($this->child($num, 'numId'), 'val') : null) ?: (string) ($fromStyle['num'] ?? '');
+        $lvlAttr = $num ? $this->attr($this->child($num, 'ilvl'), 'val') : null;
+        $lvl = (int) ($lvlAttr ?? $fromStyle['lvl'] ?? 0);
         $def = $this->numbering["$id:$lvl"] ?? null;
         if ($id === '' || $id === '0' || ! $def || $def['fmt'] === 'bullet' || $def['fmt'] === 'none') {
             return '';
@@ -372,8 +404,29 @@ class WordScienceReader
             if ($kid === $id && (int) $klvl > $lvl) {
                 unset($this->counters[$k]);
             }
+            // a question from another list restarts the lettered option list (A, B, C … again),
+            // even when the lecturer did not restart the lettering by hand
+            if ($kid !== $id && ! in_array($def['fmt'], ['upperLetter', 'lowerLetter'], true)
+                && in_array($this->numbering[$k]['fmt'] ?? '', ['upperLetter', 'lowerLetter'], true)) {
+                unset($this->counters[$k]);
+            }
         }
         $n = $this->counters[$key];
+        // options numbered 1, 2, 3 in a second list under each numbered question: written as A, B, C
+        if (in_array($def['fmt'], ['decimal', 'decimalZero'], true)) {
+            $this->questionList ??= $id;
+            if ($id !== $this->questionList && ! $this->inRun) {
+                $this->questionList = $id; // a new list after other text (e.g. "Section B"): more questions
+            }
+            if ($id === $this->questionList) {
+                $this->optionCount = 0;
+                $this->inRun = true;
+            } else {
+                $this->optionCount++;
+
+                return $this->letters($this->optionCount).'. ';
+            }
+        }
         $value = match ($def['fmt']) {
             'upperLetter' => $this->letters($n),
             'lowerLetter' => strtolower($this->letters($n)),
@@ -427,6 +480,49 @@ class WordScienceReader
         }
 
         return $rels;
+    }
+
+    /** Paragraph styles that carry numbering, following "based on" to the parent style. */
+    private function readStyleNumbering(): array
+    {
+        $xml = $this->zip->getFromName('word/styles.xml');
+        if ($xml === false) {
+            return [];
+        }
+        $doc = new DOMDocument;
+        $doc->loadXML($xml, LIBXML_NONET);
+        $x = new DOMXPath($doc);
+        $x->registerNamespace('w', self::W);
+        $raw = [];
+        foreach ($x->query('//w:style[@w:type="paragraph"]') as $st) {
+            $id = $st->getAttributeNS(self::W, 'styleId');
+            $name = strtolower((string) $this->attr($x->query('w:name', $st)->item(0), 'val'));
+            if ($name === 'title') {
+                $this->styleHeadings[$id] = 1;
+            } elseif (preg_match('/^heading\s*([1-6])$/', $name, $hm)) {
+                $this->styleHeadings[$id] = min(6, (int) $hm[1] + 1);
+            }
+            $num = $x->query('w:pPr/w:numPr', $st)->item(0);
+            $raw[$id] = [
+                'num' => $num ? $this->attr($x->query('w:numId', $num)->item(0), 'val') : null,
+                'lvl' => $num && ($l = $this->attr($x->query('w:ilvl', $num)->item(0), 'val')) !== null ? (int) $l : null,
+                'based' => $this->attr($x->query('w:basedOn', $st)->item(0), 'val'),
+            ];
+        }
+        $out = [];
+        foreach ($raw as $id => $r) {
+            $seen = [];
+            $cur = $r;
+            while (($cur['num'] === null) && $cur['based'] && isset($raw[$cur['based']]) && ! isset($seen[$cur['based']])) {
+                $seen[$cur['based']] = true;
+                $cur = $raw[$cur['based']] + ['lvl' => $r['lvl']];
+            }
+            if ($cur['num'] !== null && $cur['num'] !== '0') {
+                $out[$id] = ['num' => $cur['num'], 'lvl' => $r['lvl'] ?? $cur['lvl']];
+            }
+        }
+
+        return $out;
     }
 
     private function readNumbering(): array

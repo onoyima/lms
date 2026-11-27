@@ -149,7 +149,7 @@ class LmsTest extends TestCase
         $this->actingAs($s)->get("/learn/items/{$later->id}")->assertForbidden();
         $this->get("/learn/items/{$notes->id}/file")->assertForbidden();   // prerequisite not done
         $this->get("/learn/items/{$intro->id}")->assertOk();                // viewing a page completes it
-        $this->get("/learn/items/{$notes->id}/file")->assertOk();
+        $this->get("/learn/items/{$notes->id}/file?download=1")->assertOk(); // downloading a file completes it
         $this->assertSame(100, $this->get("/learn/courses/{$o->id}")->assertOk()->viewData('page')['props']['progress']['percent']); // unreleased items do not count
 
         // Editing keeps a revision

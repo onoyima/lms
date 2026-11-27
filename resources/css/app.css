@@ -640,3 +640,132 @@
     width: 18px;
     height: 18px;
 }
+
+/* Course materials: readable on a phone. Wide tables scroll sideways inside the page instead of
+   stretching it; pictures and diagrams shrink to the column; headings keep a clear hierarchy. */
+.lesson {
+    font-size: 1.02rem;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+.lesson h1,
+.lesson h2 {
+    font-size: 1.45rem;
+    font-weight: 650;
+    line-height: 1.25;
+    margin: 1.2em 0 0.4em;
+}
+.lesson h3 {
+    font-size: 1.2rem;
+    font-weight: 650;
+    margin: 1.1em 0 0.35em;
+}
+.lesson h4,
+.lesson h5,
+.lesson h6 {
+    font-size: 1.05rem;
+    font-weight: 650;
+    margin: 1em 0 0.3em;
+}
+.lesson > :first-child {
+    margin-top: 0;
+}
+.lesson ul,
+.lesson ol {
+    margin: 0.5em 0;
+    padding-left: 1.4em;
+}
+.lesson ul {
+    list-style: disc;
+}
+.lesson ol {
+    list-style: decimal;
+}
+.lesson li + li {
+    margin-top: 0.25em;
+}
+.lesson a {
+    color: var(--brand);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.lesson blockquote {
+    border-left: 3px solid var(--brand);
+    margin: 0.8em 0;
+    padding: 0.2em 0 0.2em 1em;
+    color: var(--muted-foreground);
+}
+.lesson pre {
+    overflow-x: auto;
+    border-radius: 10px;
+    background: var(--muted);
+    padding: 0.8em 1em;
+    font-size: 0.9em;
+}
+.lesson table {
+    /* words in cells stay whole; a wide table scrolls instead */
+    overflow-wrap: normal;
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin: 0.9em 0;
+    font-size: 0.95em;
+}
+.lesson thead tr,
+.lesson tr:first-child:has(th) {
+    background: var(--muted);
+}
+.lesson th {
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lesson img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0.8em auto;
+    border-radius: 8px;
+    cursor: zoom-in;
+}
+.lesson iframe,
+.lesson video {
+    width: 100%;
+    max-width: 100%;
+    border: 0;
+    border-radius: 10px;
+}
+.lesson iframe {
+    aspect-ratio: 16 / 9;
+    height: auto;
+}
+/* PowerPoint shown slide by slide */
+.lesson .slide {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--card);
+    padding: 1.1rem 1.25rem;
+    margin: 0 0 1rem;
+}
+.lesson .slide-no {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    margin-bottom: 0.25rem;
+}
+.lesson .slide h3 {
+    margin-top: 0;
+}
+.lesson .slide-pics {
+    display: grid;
+    gap: 0.75rem;
+}
+/* a sheet keeps its first row in view while it scrolls */
+.lesson.sheet table {
+    max-height: 70vh;
+}
+.lesson.sheet thead th {
+    position: sticky;
+    top: 0;
+    background: var(--muted);
+}

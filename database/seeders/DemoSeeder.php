@@ -130,6 +130,47 @@ class DemoSeeder extends Seeder
             $content->publishQuiz($quiz, $lecturer);
             $content->saveItem($o, ['course_section_id' => $w2->id, 'type' => 'page', 'title' => 'Lecture 3 notes (released next week)', 'release_at' => now()->addWeek(), 'body_html' => '<p>Limiting reagents.</p>'], null, $lecturer);
         }
+        $this->materials($o, $content, $lecturer, $student);
         app(\App\Services\Lms\GradebookService::class)->ensureDefaults($o);
+    }
+
+    /**
+     * A week of real materials of every kind (Word, PDF, slides, a diagram, a sheet, a video and
+     * audio), plus a review, a poll and a topic request, so every part of a course can be tried.
+     */
+    private function materials(\App\Models\CourseOffering $o, \App\Services\Lms\CourseContentService $content, \App\Models\User $lecturer, \App\Models\User $student): void
+    {
+        $w3 = \App\Models\CourseSection::firstOrCreate(['course_offering_id' => $o->id, 'title' => 'Week 3 · States of matter and gases'],
+            ['position' => 2, 'summary' => 'Solids, liquids and gases; the gas laws and the ideal gas equation.']);
+        if (\App\Models\CourseItem::where('course_section_id', $w3->id)->exists()) {
+            return;
+        }
+        $dir = database_path('seeders/samples/lms');
+        $file = fn (string $name) => is_file("$dir/$name") ? new \Illuminate\Http\UploadedFile("$dir/$name", $name, null, null, true) : null;
+        $add = fn (array $data, ?string $name = null) => $content->saveItem($o, $data + ['course_section_id' => $w3->id, 'requires_completion' => true], $name ? $file($name) : null, $lecturer);
+
+        $add(['type' => 'file', 'title' => 'Slides: States of matter', 'body_html' => '<p>Go through the slides before the lecture.</p>'], 'states-of-matter-slides.pptx');
+        $add(['type' => 'file', 'title' => 'Lecture 2 notes: The gas laws (Word)'], 'lecture-2-gas-laws.docx');
+        $pdf = $add(['type' => 'file', 'title' => 'Lecture 2 handout (PDF)'], 'lecture-2-handout.pdf');
+        \App\Models\CourseItemNote::firstOrCreate(['course_item_id' => $pdf->id, 'user_id' => $student->id], ['bookmarked' => true, 'body' => 'Revise the worked example on page 2 before the quiz.']);
+        $add(['type' => 'file', 'title' => 'Diagram: the carbon atom'], 'carbon-atom-diagram.png');
+        $add(['type' => 'video', 'title' => 'Video: titration demonstration', 'body_html' => '<p>Watch how the end point is found, then try the practice questions.</p>'], 'titration-demo.mp4');
+        $add(['type' => 'file', 'title' => 'Audio: lecture recap'], 'lecture-audio-sample.mp3');
+        $add(['type' => 'file', 'title' => 'Data sheet: molar masses (Excel)', 'requires_completion' => false], 'molar-masses.xlsx');
+        $add(['type' => 'page', 'title' => 'Summary: the ideal gas equation', 'body_html' => '<h3>The ideal gas equation</h3><p>For an ideal gas $$PV = nRT$$ with \\(R = 8.314\\ \\text{J mol}^{-1}\\text{K}^{-1}\\).</p>'
+            .'<table><thead><tr><th>Law</th><th>Kept constant</th><th>Relation</th></tr></thead><tbody><tr><td>Boyle</td><td>T, n</td><td>\\(P \\propto 1/V\\)</td></tr><tr><td>Charles</td><td>P, n</td><td>\\(V \\propto T\\)</td></tr><tr><td>Avogadro</td><td>P, T</td><td>\\(V \\propto n\\)</td></tr></tbody></table>']);
+
+        if (! \App\Models\CourseReview::where('course_offering_id', $o->id)->exists()) {
+            \App\Models\CourseReview::create(['course_offering_id' => $o->id, 'user_id' => $student->id, 'rating' => 4,
+                'comment' => 'The worked examples helped a lot. More practice questions on limiting reagents would be good.',
+                'reply' => 'Thank you. A practice set on limiting reagents is coming in Week 4.', 'replied_by' => $lecturer->id, 'replied_at' => now()]);
+            $poll = \App\Models\CoursePoll::create(['course_offering_id' => $o->id, 'question' => 'When should we hold the revision class?',
+                'options' => ['Friday 4 pm', 'Saturday 10 am', 'Monday 8 am'], 'show_results' => 'after_vote', 'closes_at' => now()->addDays(5), 'created_by' => $lecturer->id]);
+            \App\Models\CoursePollVote::create(['course_poll_id' => $poll->id, 'user_id' => $student->id, 'choices' => [1]]);
+            $req = \App\Models\TopicRequest::create(['course_offering_id' => $o->id, 'user_id' => $student->id, 'kind' => 'topic', 'title' => 'Limiting reagents with worked examples',
+                'details' => 'The lecture went fast over limiting reagents. Could we have more examples?', 'status' => 'planned', 'votes' => 1,
+                'reply' => 'Planned for Week 4 with a practice set.', 'replied_by' => $lecturer->id, 'replied_at' => now()]);
+            \App\Models\TopicRequestVote::create(['topic_request_id' => $req->id, 'user_id' => $student->id]);
+        }
     }
 }

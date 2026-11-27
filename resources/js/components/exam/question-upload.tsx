@@ -88,8 +88,8 @@ return;
                 <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed border-border bg-card p-4 text-center text-sm hover:border-brand/60">
                     <Upload className="size-5 text-brand" />
                     <span className="font-medium">{file ? file.name : 'Choose the question file'}</span>
-                    <span className="text-xs text-muted-foreground">.txt, .csv, Word (.docx) or PDF</span>
-                    <input type="file" className="sr-only" accept=".txt,.csv,.docx,.pdf,.md" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                    <span className="text-xs text-muted-foreground">Word (.docx, .doc), PDF, Excel, CSV or text</span>
+                    <input type="file" className="sr-only" accept=".txt,.csv,.xlsx,.docx,.doc,.rtf,.pdf,.md" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
                 </label>
                 <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed border-border bg-card p-4 text-center text-sm hover:border-brand/60">
                     <ImagePlus className="size-5 text-brand" />

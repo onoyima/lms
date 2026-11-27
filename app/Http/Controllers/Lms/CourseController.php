@@ -15,10 +15,10 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CourseController extends Controller
 {
@@ -57,19 +57,23 @@ class CourseController extends Controller
         $teacher = $this->access->teaches($user, $offering);
         $completed = $teacher ? [] : $this->access->completedIds($user, $offering);
         $offering->load('course.department', 'semester', 'staff');
+        $bookmarks = $teacher ? [] : \App\Models\CourseItemNote::where('user_id', $user->id)->where('bookmarked', true)
+            ->whereIn('course_item_id', CourseItem::where('course_offering_id', $offering->id)->pluck('id'))->pluck('course_item_id')->all();
 
         $sections = CourseSection::where('course_offering_id', $offering->id)->orderBy('position')
             ->with(['items' => fn ($q) => $q->orderBy('position')->with('prerequisite:id,title')])->get()
             ->filter(fn ($s) => $teacher || ($s->visible && (! $s->release_at || $s->release_at->isPast())))
             ->map(fn ($s) => [
                 'id' => $s->id, 'title' => $s->title, 'summary' => $s->summary, 'visible' => $s->visible, 'release_at' => $s->release_at,
-                'items' => $s->items->map(function (CourseItem $i) use ($teacher, $completed, $s) {
+                'items' => $s->items->map(function (CourseItem $i) use ($teacher, $completed, $s, $bookmarks) {
                     $i->setRelation('section', $s);
                     [$open, $why] = $teacher ? [true, null] : $this->access->availability($i, $completed);
 
                     return $teacher || $why !== 'hidden' ? [
                         'id' => $i->id, 'type' => $i->type, 'title' => $i->title, 'visible' => $i->visible, 'release_at' => $i->release_at, 'due_at' => $i->due_at,
                         'open' => $open, 'locked_reason' => $why, 'done' => in_array($i->id, $completed, true), 'file_name' => $i->file_name,
+                        'file_mime' => $i->file_mime, 'file_size' => $i->file_size, 'url' => in_array($i->type, ['video', 'link'], true) ? $i->url : null,
+                        'requires_completion' => $i->requires_completion, 'bookmarked' => in_array($i->id, $bookmarks, true),
                         'prerequisite' => $i->prerequisite?->title, 'version' => $i->version,
                     ] : null;
                 })->filter()->values(),
@@ -91,10 +95,51 @@ class CourseController extends Controller
             'previous' => $teacher ? CourseOffering::with('semester')->where('course_id', $offering->course_id)->where('id', '!=', $offering->id)->get()->map(fn ($o) => ['id' => $o->id, 'label' => $o->label()]) : [],
             'announcements' => DB::table('announcements')->where('scope', 'offering')->where('scope_id', $offering->id)->where('publish_at', '<=', now())
                 ->orderByDesc('publish_at')->limit(5)->get(['id', 'title', 'body_html', 'publish_at', 'urgent']),
+            'feedback' => CourseFeedbackController::forCourse($offering, $user, $teacher),
+            'assessments' => $this->assessments($offering, $user, $teacher, $completed),
+            'students' => $teacher ? DB::table('enrolments')->where('course_offering_id', $offering->id)->where('status', 'active')->count() : null,
             'schedule' => DB::table('class_schedules')->where('course_offering_id', $offering->id)->orderBy('weekday')->orderBy('starts_at')
                 ->get(['weekday', 'starts_at', 'ends_at', 'kind', 'venue', 'group_label'])->map(fn ($r) => ['weekday' => (int) $r->weekday, 'starts_at' => substr($r->starts_at, 0, 5),
                     'ends_at' => substr($r->ends_at, 0, 5), 'kind' => $r->kind, 'venue' => $r->venue, 'group_label' => $r->group_label]),
         ]);
+    }
+
+    /**
+     * Every assessment in the course in one list: assignments and quizzes, when they are due, and
+     * for a student where they stand (not started, submitted, marked with the score); for the
+     * lecturer how many have submitted and how many wait for marking.
+     */
+    private function assessments(CourseOffering $offering, \App\Models\User $user, bool $teacher, array $completed): array
+    {
+        $items = CourseItem::with('section')->where('course_offering_id', $offering->id)->whereIn('type', ['assignment', 'quiz'])
+            ->when(! $teacher, fn ($q) => $q->where('visible', true))->orderByRaw('due_at IS NULL')->orderBy('due_at')->orderBy('position')->get();
+        $enrolled = $teacher ? DB::table('enrolments')->where('course_offering_id', $offering->id)->where('status', 'active')->count() : 0;
+
+        return $items->map(function (CourseItem $i) use ($user, $teacher, $completed, $enrolled) {
+            [$open, $why] = $teacher ? [true, null] : $this->access->availability($i, $completed);
+            if (! $teacher && $why === 'hidden') {
+                return null;
+            }
+            $max = (float) ($i->settings['max_score'] ?? 0) ?: null;
+            $row = ['id' => $i->id, 'type' => $i->type, 'title' => $i->title, 'section' => $i->section?->title, 'due_at' => $i->due_at, 'open' => $open, 'locked_reason' => $why, 'max' => $max];
+            if ($teacher) {
+                $subs = $i->type === 'assignment'
+                    ? DB::table('assignment_submissions')->where('course_item_id', $i->id)->where('status', '!=', 'draft')->selectRaw('COUNT(DISTINCT user_id) as n, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as waiting', ['submitted'])->first()
+                    : ($i->exam_id ? DB::table('results')->where('exam_id', $i->exam_id)->selectRaw('COUNT(*) as n, 0 as waiting')->first() : null);
+
+                return $row + ['submitted' => (int) ($subs->n ?? 0), 'to_mark' => (int) ($subs->waiting ?? 0), 'enrolled' => $enrolled];
+            }
+            if ($i->type === 'assignment') {
+                $s = DB::table('assignment_submissions')->where('course_item_id', $i->id)->where('user_id', $user->id)->where('status', '!=', 'draft')->orderByDesc('attempt')->first();
+                $state = ! $s ? (($i->due_at && $i->due_at->isPast()) ? 'missed' : 'to_do') : ($s->released ? 'marked' : 'submitted');
+
+                return $row + ['state' => $state, 'score' => $s && $s->released ? (float) $s->score : null, 'late' => (bool) ($s->is_late ?? false)];
+            }
+            $r = $i->exam_id ? DB::table('results')->where('exam_id', $i->exam_id)->where('user_id', $user->id)->first(['final_score', 'max_score', 'status']) : null;
+            $state = $r ? ($r->status === 'published' ? 'marked' : 'submitted') : (($i->due_at && $i->due_at->isPast()) ? 'missed' : 'to_do');
+
+            return $row + ['state' => $state, 'score' => $r && $state === 'marked' ? (float) $r->final_score : null, 'max' => $r ? (float) $r->max_score : $max, 'late' => false];
+        })->filter()->values()->all();
     }
 
     public function updateOutline(Request $request, CourseOffering $offering, RichTextSanitizer $sanitizer): RedirectResponse
@@ -199,19 +244,50 @@ class CourseController extends Controller
     }
 
     /** Private file download, only for people who may open the item (LMS 29, 206). */
-    public function download(Request $request, CourseItem $item): StreamedResponse
+    public function download(Request $request, CourseItem $item): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $this->access->authorizeOpen($request->user(), $item);
         abort_unless($item->file_path && Storage::disk('local')->exists($item->file_path), 404);
-        if (! $this->access->teaches($request->user(), $item->offering)) {
+        // Shown in the page, a material counts as done when the student says so, reaches the end of
+        // a video or the last page of a PDF; a file that can only be downloaded counts once downloaded.
+        $range = (string) $request->header('Range');
+        if ($request->boolean('download') && ($range === '' || str_starts_with($range, 'bytes=0-')) && ! $this->access->teaches($request->user(), $item->offering)) {
             $this->content->complete($item, $request->user());
         }
-        $inline = in_array($item->file_mime, ['application/pdf', 'video/mp4', 'video/webm', 'audio/mpeg', 'audio/mp4', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'], true);
+        $inline = ! $request->boolean('download') && in_array($item->file_mime, self::INLINE, true);
+        $response = response()->file(Storage::disk('local')->path($item->file_path), [
+            'Content-Type' => $item->file_mime ?: 'application/octet-stream', 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, max-age=3600',
+        ]);
+        $response->setContentDisposition($inline ? 'inline' : 'attachment', $item->file_name, \Illuminate\Support\Str::ascii($item->file_name) ?: 'file');
 
-        return Storage::disk('local')->response($item->file_path, $item->file_name, [
-            'Content-Type' => $item->file_mime, 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, max-age=3600',
-        ], $inline ? 'inline' : 'attachment');
+        return $response;
     }
+
+    /** A picture or diagram put into a page or announcement; kept private to the course. */
+    public function uploadMedia(Request $request, CourseOffering $offering): \Illuminate\Http\JsonResponse
+    {
+        $this->access->authorizeTeach($request->user(), $offering);
+        $file = $request->validate(['file' => ['required', 'file', 'max:15360', 'extensions:png,jpg,jpeg,gif,webp', 'mimes:png,jpg,jpeg,gif,webp']],
+            ['file.max' => 'Pictures can be up to 15 MB.', 'file.extensions' => 'Use a PNG, JPG, GIF or WebP picture.', 'file.mimes' => 'Use a PNG, JPG, GIF or WebP picture.'])['file'];
+        $name = Str::uuid().'.'.strtolower($file->getClientOriginalExtension());
+        $file->storeAs("lms/{$offering->tenant_id}/media/{$offering->id}", $name, 'local');
+
+        return response()->json(['url' => "/learn/courses/{$offering->id}/media/$name"]);
+    }
+
+    public function media(Request $request, CourseOffering $offering, string $name): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $this->access->authorizeView($request->user(), $offering);
+        abort_unless(preg_match('/^[a-f0-9-]{36}\.(png|jpe?g|gif|webp)$/', $name, $m), 404);
+        $path = Storage::disk('local')->path("lms/{$offering->tenant_id}/media/{$offering->id}/$name");
+        abort_unless(is_file($path), 404);
+
+        return response()->file($path, ['Content-Type' => 'image/'.($m[1] === 'jpg' ? 'jpeg' : $m[1]), 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, max-age=86400']);
+    }
+
+    /** Files the browser shows itself (never HTML or SVG, which could run scripts). */
+    private const INLINE = ['application/pdf', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/aac',
+        'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'text/plain'];
 
     public function copy(Request $request, CourseOffering $offering): RedirectResponse
     {

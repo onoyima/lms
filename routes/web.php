@@ -655,6 +655,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('courses/{offering}/sections/{section}', [Lms\CourseController::class, 'updateSection']);
         Route::post('courses/{offering}/items', [Lms\CourseController::class, 'storeItem']);
         Route::post('courses/{offering}/copy', [Lms\CourseController::class, 'copy']);
+        Route::post('courses/{offering}/media', [Lms\CourseController::class, 'uploadMedia'])->middleware('throttle:60,1,lmsmedia');
+        Route::get('courses/{offering}/media/{name}', [Lms\CourseController::class, 'media'])->where('name', '[a-z0-9.-]+');
         Route::get('courses/{offering}/class-list', [Lms\RegistrationController::class, 'classList']);
         Route::get('courses/{offering}/gradebook', [Lms\GradebookController::class, 'show'])->name('gradebook');
         Route::put('courses/{offering}/gradebook/categories', [Lms\GradebookController::class, 'categories']);
@@ -696,6 +698,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('registration/override', [Lms\RegistrationController::class, 'override']);
         Route::post('registration/window', [Lms\RegistrationController::class, 'window']);
         Route::post('enrolments/{enrolment}/decide', [Lms\RegistrationController::class, 'decide']);
+
+        // reviews, polls, requests for topics, notes and bookmarks
+        $fb = Lms\CourseFeedbackController::class;
+        Route::post('courses/{offering}/reviews', [$fb, 'review'])->middleware('throttle:20,1,lmsrev');
+        Route::delete('reviews/{review}', [$fb, 'deleteReview']);
+        Route::post('reviews/{review}/reply', [$fb, 'replyReview']);
+        Route::post('courses/{offering}/polls', [$fb, 'storePoll'])->middleware('throttle:20,1,lmspoll');
+        Route::post('polls/{poll}/vote', [$fb, 'vote'])->middleware('throttle:30,1,lmsvote');
+        Route::post('polls/{poll}/close', [$fb, 'closePoll']);
+        Route::delete('polls/{poll}', [$fb, 'deletePoll']);
+        Route::post('courses/{offering}/requests', [$fb, 'storeRequest'])->middleware('throttle:10,1,lmsreq');
+        Route::post('topic-requests/{topic}/vote', [$fb, 'voteRequest'])->middleware('throttle:60,1,lmsreqv');
+        Route::post('topic-requests/{topic}/respond', [$fb, 'respondRequest']);
+        Route::delete('topic-requests/{topic}', [$fb, 'deleteRequest']);
+        Route::put('items/{item}/note', [$fb, 'note'])->middleware('throttle:60,1,lmsnote');
+        Route::delete('items/{item}/complete', [$fb, 'undo']);
+        Route::get('items/{item}/preview', [Lms\ItemController::class, 'preview'])->middleware('throttle:60,1,lmsprev')->name('item.preview');
+        Route::get('items/{item}/preview/media/{name}', [Lms\ItemController::class, 'previewMedia'])->where('name', '[A-Za-z0-9._-]+');
 
         Route::get('grades', [Lms\GradebookController::class, 'mine'])->name('grades');
         Route::get('announcements', [Lms\CommunityController::class, 'announcements'])->name('announcements');

@@ -96,7 +96,7 @@ return [
     'client_endpoints' => array_values(array_filter(array_map('trim', explode(',', (string) env('PLATFORM_CLIENT_ENDPOINTS', ''))))),
 
     'question_import' => [
-        'max_upload_kb' => 20480,
-        'allowed_extensions' => ['docx', 'txt', 'md', 'html', 'htm', 'csv', 'pdf'],
+        'max_upload_kb' => (int) env('QUESTION_UPLOAD_MAX_KB', 40960),
+        'allowed_extensions' => ['docx', 'doc', 'rtf', 'xlsx', 'txt', 'md', 'html', 'htm', 'csv', 'pdf'],
     ],
 ];

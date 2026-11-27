@@ -36,14 +36,14 @@ class QuestionParser
 
     private const OPTION_START = '/^\s*(\*)?\s*\(?([A-Ha-h])[.)]\s+/u';
 
-    private const META = '/^\s*(Answers?|Ans|Key|Correct(?:\s+answer)?|Mark|Marks|Score|Scoring|Image|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*[:=\-]\s*(.*)$/isu';
+    private const META = '/^\s*(Answers?|Ans|Key|Correct(?:\s+(?:answer|option))?|Mark|Marks|Score|Scoring|Image|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*(?:[:=\-]|\.(?=\s))\s*(.*)$/isu';
 
     // The same prefixes, for removing them from the HTML (they can sit behind opening tags)
     private const Q_PREFIX = '(?:Q(?:uestion)?\s*)?\d{1,4}\s*[.)]\s+';
 
     private const O_PREFIX = '\*?\s*\(?[A-Ha-h][.)]\s+';
 
-    private const M_PREFIX = '(?:Answers?|Ans|Key|Correct(?:\s+answer)?|Mark|Marks|Score|Scoring|Image|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*[:=\-]\s*';
+    private const M_PREFIX = '(?:Answers?|Ans|Key|Correct(?:\s+(?:answer|option))?|Mark|Marks|Score|Scoring|Image|Topic|Difficulty|Type|Explanation|Pair|Match|Accept|Also accept|Outcome|Tolerance)\s*(?:[:=\-]|\.(?=\s))\s*';
 
     /** @var list<ParsedQuestion> */
     private array $questions = [];
@@ -79,6 +79,9 @@ class QuestionParser
         $this->closed = $this->afterGap = false;
         $this->line = null;
 
+        // common layouts (options on one line, "A Lagos", "1 What…", an answer key at the end, a table of questions)
+        ['html' => $html, 'key' => $key] = (new LayoutNormaliser)->normalise($html);
+
         $doc = new DOMDocument;
         libxml_use_internal_errors(true);
         $doc->loadHTML('<?xml encoding="UTF-8"?><body>'.$html.'</body>', LIBXML_NOERROR | LIBXML_NOWARNING);
@@ -100,6 +103,9 @@ class QuestionParser
             $this->afterGap = false;
         }
         $this->finish();
+        if ($key) {
+            $this->applyKey($key);
+        }
         if ($this->pending) {
             $this->warnings[] = $this->at($this->pending['_line'] ?? null).'Lines such as TYPE: or MARK: at the end of the file have no question after them.';
         }
@@ -362,6 +368,14 @@ class QuestionParser
     {
         $q = $this->current;
         $q->hasMeta = true;
+        if (in_array($key, ['correct option'], true)) {
+            $key = 'answer';
+        }
+        if (in_array($key, ['answer', 'ans', 'correct', 'correct answer'], true)) {
+            // "(b)", "b)", "Option B", "B." → "B"
+            $value = preg_replace('/^(?:option\s+)?\(?([A-Ha-h])\)?\.?$/iu', '$1', trim($value));
+            $value = preg_replace_callback('/^\(?([A-Ha-h])\)\s*(?=[,&]|and\b)/iu', fn ($m) => $m[1], $value);
+        }
         if (in_array($key, ['answer', 'ans', 'correct', 'correct answer'], true) && $q->unnumbered) {
             $this->closed = true; // old layout: the ANSWER line ends the question
         }
@@ -451,6 +465,52 @@ class QuestionParser
                 $this->section = 'explanation';
                 $q->explanationHtml = $this->stripPrefix($html, self::M_PREFIX);
                 break;
+        }
+    }
+
+    private static function norm(string $s): string
+    {
+        return trim(preg_replace('/[\s\x{00A0}]+/u', ' ', mb_strtolower(html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8'))), " .\t");
+    }
+
+    /**
+     * Answers from an answer key at the end of the paper, by question number, for questions whose
+     * answer was not marked beside them.
+     *
+     * @param  array<int, string>  $key
+     */
+    private function applyKey(array $key): void
+    {
+        $used = 0;
+        foreach ($this->questions as $q) {
+            $answer = $key[$q->number] ?? null;
+            if ($answer === null || array_filter($q->options, fn ($o) => $o['correct'])) {
+                continue;
+            }
+            $answer = strtoupper(trim($answer));
+            if ($q->options) {
+                if (in_array($answer, ['T', 'TRUE', 'F', 'FALSE'], true) && $q->type === 'true_false') {
+                    $isTrue = $answer[0] === 'T';
+                    foreach ($q->options as &$o) {
+                        $o['correct'] = (strtolower(strip_tags($o['html'])) === 'true') === $isTrue;
+                    }
+                    unset($o);
+                } else {
+                    preg_match_all('/[A-H]/', $answer, $mm);
+                    foreach ($q->options as &$o) {
+                        $o['correct'] = in_array($o['label'], $mm[0], true);
+                    }
+                    unset($o);
+                    if (count($mm[0]) > 1 && $q->type === 'single_choice') {
+                        $q->type = 'multiple_choice';
+                    }
+                }
+                $q->warnings = array_values(array_filter($q->warnings, fn ($w) => ! str_starts_with($w, 'No correct option marked')));
+                $used++;
+            }
+        }
+        if ($used) {
+            $this->warnings[] = "Answers for $used question".($used === 1 ? "" : "s")." were taken from the answer key at the end of the file.";
         }
     }
 
@@ -576,6 +636,28 @@ class QuestionParser
             $q->type = 'matching';
             if (count($q->pairs) < 2) {
                 $q->warnings[] = 'A matching question needs at least two pairs.';
+            }
+        }
+
+        // "Answer: Abuja": the option with that text
+        if ($q->answerText !== null && $q->options && ! array_filter($q->options, fn ($o) => $o['correct'])) {
+            $want = self::norm($q->answerText);
+            foreach ($q->options as &$o) {
+                if ($want !== '' && self::norm(strip_tags($o['html'])) === $want) {
+                    $o['correct'] = true;
+                    $q->answerText = null;
+                }
+            }
+            unset($o);
+        }
+        // no answer written, but one option is in bold, underlined or highlighted (a common way to mark it)
+        if ($q->answerText === null && count($q->options) >= 2 && ! array_filter($q->options, fn ($o) => $o['correct'])) {
+            $marked = array_keys(array_filter($q->options, fn ($o) => (bool) preg_match('/^\s*<(strong|b|u|mark)\b[^>]*>.*<\/\1>\s*$/su', $o['html'])));
+            if (count($marked) >= 1 && count($marked) < count($q->options)) {
+                foreach ($marked as $i) {
+                    $q->options[$i]['correct'] = true;
+                }
+                $q->warnings[] = 'The correct answer was taken from the option in bold, underline or highlight. Check it.';
             }
         }
 

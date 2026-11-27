@@ -4,7 +4,7 @@ section: Students
 order: 200
 access: student
 ---
-- **My courses**: notes, assignments, quizzes, forums and recorded lectures. Submit work before the deadline; you get a receipt.
+- **My courses**: notes, slides, PDFs, videos, assignments, quizzes, forums and recorded lectures, all readable on your phone. Mark items done, save them, keep private notes, vote in polls, ask for topics that were not covered and review the course. Submit work before the deadline; you get a receipt.
 - **Course registration**: choose your courses while registration is open; clashes and unit limits are checked for you.
 - **My exams**: your timetable and exam slips. Open an exam a few minutes early to check your computer, camera and connection. The computer check also tells you if your browser is not supported.
 - **During an exam** your answers save on your computer as you write and are sent to the server automatically. If the internet goes off, a red notice appears: keep writing, nothing is lost, and do not close the page. If the power goes, open the exam again on the same computer: your answers are still there and the time the computer was off is given back.

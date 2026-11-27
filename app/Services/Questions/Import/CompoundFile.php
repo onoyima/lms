@@ -15,7 +15,7 @@ class CompoundFile
 
     private const END = 0xFFFFFFFE;
 
-    private const MAX_STREAM = 8 * 1024 * 1024;
+    private const MAX_STREAM = 32 * 1024 * 1024;
 
     private int $sectorSize;
 

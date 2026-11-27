@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, Sparkles } from 'lucide-react';
 import { useEffect } from 'react';
+import { TemplateLinks } from '@/components/exam/question-upload';
 import { QuestionView } from '@/components/question/question-view';
 import { Button } from '@/components/ui/button';
 import type { ParsedQuestion } from '@/types';
@@ -99,6 +100,20 @@ export default function ImportPreview({
                         {w}
                     </div>
                 ))}
+
+                {!reading && info.status !== 'committed' && questions.length === 0 && (
+                    <div className="surface grid gap-3 p-5 text-sm">
+                        <p className="font-semibold">No questions were found in this file.</p>
+                        <p className="text-muted-foreground">Number each question and letter its options. Any of these layouts works, in Word, PDF or text:</p>
+                        <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs leading-relaxed whitespace-pre">{`1. What is the capital of Nigeria?        Question 1: Which gas do plants absorb?
+A. Lagos                                  (a) Oxygen  (b) Carbon dioxide  (c) Neon
+B. Abuja                                  Ans: (b)
+C. Kano
+Answer: B                                 … or an answer key at the end: ANSWERS  1. B  2. C`}</pre>
+                        <p className="text-muted-foreground">The correct option can also be marked with a * or written in bold. Excel sheets need columns Question, A, B, C, D and Answer. A scanned paper (photos) needs “Read with AI”.</p>
+                        <TemplateLinks />
+                    </div>
+                )}
 
                 {reading && (
                     <div className="surface flex items-center gap-4 p-6" role="status">

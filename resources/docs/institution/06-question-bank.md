@@ -35,6 +35,19 @@ Mark: 1
 - Word equations, chemical formulas (`\ce{...}`), tables and pictures are kept.
 - You see every question before anything is saved, and can fix or drop each one.
 
+### Papers typed in other ways
+
+There is no need to retype a paper into the template. These are read as they are:
+
+- **Files:** Word (.docx, and old .doc or .rtf, whose text is read; save as .docx to keep pictures and equations), PDF with typed text, Excel (.xlsx with columns Question, A, B, C, D, Answer), CSV and text.
+- **Options on one line:** `A. Lagos   B. Abuja   C. Kano   D. Ibadan`, also straight after the question.
+- **Loose numbering:** `1 What…`, `1: What…`, `(1) What…`, `Question 1: What…`; options `A Lagos`, `A: Lagos`, `(a) Lagos`.
+- **Answers:** `Ans: (b)`, `Ans. B`, `Correct option: B`, `Answer: Abuja` (the option's text), the right option in **bold**, underlined or highlighted, or an **answer key at the end** of the paper (`ANSWERS` then `1. B  2. C …`, as lines, a numbered list or a table).
+- **Tables:** one question per row with headings such as No | Question | A | B | C | D | Answer.
+- Word's automatic numbering (including the *List Number* styles) is read, and the option lettering restarts at A for each question.
+
+If a file is refused, the message says why: too large for the server (compress the pictures in Word with File › Compress Pictures, or split the paper) or a file type that cannot be read.
+
 ## Exporting
 
 Question bank > Export (text) or Excel, for moderation meetings or archiving.

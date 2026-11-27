@@ -93,4 +93,68 @@ class QuestionParserTest extends TestCase
         $this->assertSame([true, false, true], array_column($qs[2]['options'], 'correct'));
         $this->assertSame([], $qs[0]['warnings']);
     }
+
+    /** The layouts lecturers actually type: each is read without retyping the paper. */
+    public function test_everyday_layouts_are_understood(): void
+    {
+        $correct = fn (array $q) => implode('', array_map(fn ($o) => $o['correct'] ? $o['label'] : '', $q['options']));
+
+        // options on one line, "(b)" answers
+        $qs = $this->parseText("1) Capital of Nigeria?\n(a) Lagos (b) Abuja (c) Kano (d) Ibadan\nAns: (b)");
+        $this->assertCount(4, $qs[0]['options']);
+        $this->assertSame('B', $correct($qs[0]));
+
+        // options after the question on the same line; "Ans." with a full stop
+        $qs = $this->parseText("(1) Vitamin A is found in carrots. Which organ needs it? A. Eye  B. Ear  C. Nose  D. Liver\nAns. A");
+        $this->assertStringContainsString('Vitamin A is found', $qs[0]['stem_html']);
+        $this->assertSame('A', $correct($qs[0]));
+
+        // "Question 1:" and "A: Lagos", answer written as the option's text
+        $qs = $this->parseText("Question 1: Capital of Nigeria?\nA: Lagos\nB: Abuja\nC: Kano\nAnswer: Abuja\nQuestion 2: Noble gas?\nA - Neon\nB - Oxygen\nCorrect option: A");
+        $this->assertCount(2, $qs);
+        $this->assertSame(['B', 'A'], [$correct($qs[0]), $correct($qs[1])]);
+
+        // numbers and letters without full stops, a trailing star
+        $qs = $this->parseText("1 Capital of Nigeria?\na Lagos\nb Abuja*\nc Kano\n2 Noble gas?\na Neon*\nb Oxygen");
+        $this->assertCount(2, $qs);
+        $this->assertSame(['B', 'A'], [$correct($qs[0]), $correct($qs[1])]);
+
+        // a stem line that starts with a number is not a new question
+        $qs = $this->parseText("1. Which is right?\n2 moles of water weigh 36 g\nA. True\nB. False\nAnswer: A");
+        $this->assertCount(1, $qs);
+    }
+
+    public function test_answer_key_at_the_end_of_the_paper(): void
+    {
+        $qs = $this->parseText("1. Prime?\nA. 4\nB. 7\n2. Metal?\nA. Sodium   B. Sulphur   C. Carbon\n\nAnswer Key\n1. B   2. A");
+        $this->assertSame([false, true], array_column($qs[0]['options'], 'correct'));
+        $this->assertSame([true, false, false], array_column($qs[1]['options'], 'correct'));
+
+        // a bare list of "1. B" lines closing the paper
+        $qs = $this->parseText("1. a?\nA. x\nB. y\n2. b?\nA. x\nB. y\n3. c?\nA. x\nB. y\n1. B\n2. A\n3. B");
+        $this->assertCount(3, $qs);
+        $this->assertSame([false, true], array_column($qs[2]['options'], 'correct'));
+    }
+
+    public function test_bold_option_marks_the_answer_when_none_is_written(): void
+    {
+        $r = (new QuestionParser)->parse('<p>1. Makes ATP?</p><p>A. Nucleus</p><p>B. <strong>Mitochondrion</strong></p><p>C. Ribosome</p>');
+        $q = $r['questions'][0]->toArray();
+        $this->assertSame([false, true, false], array_column($q['options'], 'correct'));
+        $this->assertNotEmpty($q['warnings']); // the lecturer is asked to check it
+    }
+
+    public function test_a_table_with_one_question_per_row(): void
+    {
+        $html = '<table><tr><td>No</td><td>Question</td><td>A</td><td>B</td><td>Ans</td></tr><tr><td>1</td><td>Unit of force</td><td>Joule</td><td>Newton</td><td>B</td></tr></table>';
+        $q = (new QuestionParser)->parse($html)['questions'][0]->toArray();
+        $this->assertSame('Unit of force', strip_tags($q['stem_html']));
+        $this->assertSame([false, true], array_column($q['options'], 'correct'));
+    }
+
+    public function test_old_word_and_rtf_text(): void
+    {
+        $this->assertSame("1. Hello\nA.\tx\n", \App\Services\Questions\Import\LegacyWordReader::clean("1. Hello\rA.\x07x\x07\x07"));
+        $this->assertSame("Caf\u{e9} 1.\nA. \u{2014}", \App\Services\Questions\Import\LegacyWordReader::rtfText("{\\rtf1\\ansi{\\fonttbl{\\f0 Arial;}}Caf\\'e9 1.\\par A. \\emdash}"));
+    }
 }

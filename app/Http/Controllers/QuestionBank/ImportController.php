@@ -43,7 +43,7 @@ class ImportController extends Controller
             'images' => ['nullable', 'array', 'max:300'],
             'images.*' => ['file', 'max:51200', 'extensions:zip,png,jpg,jpeg,gif,webp'],
             'name' => ['nullable', 'string', 'max:250'], // a PDF's name when the browser sends its text
-        ]);
+        ], \App\Services\Questions\Import\QuestionImportService::uploadMessages());
         $bank = isset($data['bank_id']) ? \App\Models\QuestionBank::find($data['bank_id']) : null;
         $section = isset($data['section_id']) ? \App\Models\ExamSection::with('exam')->find($data['section_id']) : null;
         abort_if($section && (! $section->exam || ($bank && $bank->exam_id && $bank->exam_id !== $section->exam_id)), 422, 'That section is not part of this exam.');

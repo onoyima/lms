@@ -1,11 +1,15 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     ArrowLeft,
+    Bookmark,
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     Clock,
     Download,
     ExternalLink,
-    FileText,
+    HelpCircle,
+    NotebookPen,
     Pin,
     Trash2,
     Upload,
@@ -13,10 +17,21 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
+    fileSize,
+    isMaterial,
+    KIND_ICON,
+    KIND_LABEL,
+    KIND_TONE,
+    materialKind,
+} from '@/components/lms/material';
+import {
+    MaterialViewer,
+    ZoomablePictures,
+} from '@/components/lms/material-viewer';
+import {
     Flash,
     formatDateTime,
     inputClass,
-    PageHeader,
     Status,
     Table,
     Td,
@@ -92,8 +107,19 @@ type TeacherSub = {
     penalty: number;
     group: number | null;
     similarity: number | null;
-    similarity_matches: { percent: number; submission_id: number; student: string; same_assignment: boolean }[];
-    external_check: { provider: string; status: string; score: number | null; report_url: string | null; error: string | null } | null;
+    similarity_matches: {
+        percent: number;
+        submission_id: number;
+        student: string;
+        same_assignment: boolean;
+    }[];
+    external_check: {
+        provider: string;
+        status: string;
+        score: number | null;
+        report_url: string | null;
+        error: string | null;
+    } | null;
 };
 type Paginated<T> = {
     data: T[];
@@ -107,6 +133,16 @@ type Props = {
     sections: { id: number; title: string }[];
     siblings: { id: number; title: string }[];
     revisions: { version: number; created_at: string }[];
+    preview?: string | null;
+    nav?: {
+        prev: { id: number; title: string; type: string } | null;
+        next: { id: number; title: string; type: string } | null;
+        position: number | null;
+        total: number;
+    };
+    done?: boolean;
+    note?: { body: string | null; bookmarked: boolean } | null;
+    section?: string | null;
     // assignment (student)
     due?: string | null;
     group?: { name: string; members: { id: number; name: string }[] } | null;
@@ -164,115 +200,172 @@ type Props = {
 export default function ItemPage(props: Props) {
     const { item, offering, teacher } = props;
     const [editing, setEditing] = useState(false);
+    const kind = materialKind(item);
+    const KindIcon = KIND_ICON[kind];
+    const material = isMaterial(kind);
+    const nav = props.nav;
 
     return (
         <>
             <Head title={item.title} />
-            <div className="flex flex-col gap-8 p-6 md:p-10">
-                <Link
-                    href={`/learn/courses/${offering.id}`}
-                    className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-brand"
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-4 sm:p-6 md:gap-6 md:p-10">
+                <nav
+                    className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground"
+                    aria-label="Breadcrumb"
                 >
-                    <ArrowLeft className="size-4" /> {offering.code} ·{' '}
-                    {offering.title}
-                </Link>
-                <PageHeader
-                    eyebrow={`${item.type}${item.due_at ? ` · due ${formatDateTime(props.due ?? item.due_at)}` : ''}`}
-                    title={item.title}
-                    actions={
-                        teacher ? (
-                            <>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setEditing(!editing)}
-                                >
-                                    {editing ? 'Close editor' : 'Edit'}
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    onClick={() =>
-                                        confirm(
-                                            'Remove this item? Submissions and marks are kept.',
-                                        ) &&
-                                        router.delete(`/learn/items/${item.id}`)
-                                    }
-                                    aria-label="Remove"
-                                >
-                                    <Trash2 className="size-4" />
-                                </Button>
-                            </>
-                        ) : undefined
-                    }
-                />
+                    <Link
+                        href={`/learn/courses/${offering.id}`}
+                        className="flex shrink-0 items-center gap-1 hover:text-brand"
+                    >
+                        <ArrowLeft className="size-4" /> {offering.code}
+                    </Link>
+                    {props.section && (
+                        <span className="truncate">· {props.section}</span>
+                    )}
+                </nav>
+
+                <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span
+                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium ${KIND_TONE[kind]}`}
+                            >
+                                <KindIcon className="size-3.5" />{' '}
+                                {KIND_LABEL[kind]}
+                            </span>
+                            {item.file_size ? (
+                                <span>{fileSize(item.file_size)}</span>
+                            ) : null}
+                            {item.due_at && (
+                                <span className="flex items-center gap-1">
+                                    <Clock className="size-3.5" /> Due{' '}
+                                    {formatDateTime(props.due ?? item.due_at)}
+                                </span>
+                            )}
+                            {nav?.position && nav.total > 1 && (
+                                <span>
+                                    Item {nav.position} of {nav.total}
+                                </span>
+                            )}
+                        </p>
+                        <h1 className="mt-2 text-2xl leading-tight font-semibold text-balance sm:text-[1.9rem]">
+                            {item.title}
+                        </h1>
+                    </div>
+                    {teacher && (
+                        <div className="flex shrink-0 gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setEditing(!editing)}
+                            >
+                                {editing ? 'Close editor' : 'Edit'}
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                onClick={() =>
+                                    confirm(
+                                        'Remove this item? Submissions and marks are kept.',
+                                    ) &&
+                                    router.delete(`/learn/items/${item.id}`)
+                                }
+                                aria-label="Remove"
+                            >
+                                <Trash2 className="size-4" />
+                            </Button>
+                        </div>
+                    )}
+                </header>
+
+                {!teacher && <StudentActions {...props} material={material} />}
                 <Flash />
                 {editing && (
                     <Editor {...props} onDone={() => setEditing(false)} />
                 )}
 
                 {item.body_html && (
-                    <div className="surface p-6">
-                        <RichContent
-                            html={item.body_html}
-                            className="leading-relaxed"
-                        />
-                    </div>
+                    <ZoomablePictures>
+                        <div className="surface p-5 sm:p-8">
+                            <RichContent
+                                html={item.body_html}
+                                className="lesson"
+                            />
+                        </div>
+                    </ZoomablePictures>
                 )}
 
-                {item.file_name && (
-                    <div className="surface flex flex-wrap items-center justify-between gap-3 p-5">
-                        <span className="flex items-center gap-2 text-sm">
-                            <FileText className="size-4" /> {item.file_name}{' '}
-                            {item.file_size
-                                ? `· ${(item.file_size / 1048576).toFixed(1)} MB`
-                                : ''}
-                        </span>
-                        <a
-                            href={`/learn/items/${item.id}/file`}
-                            className="flex items-center gap-1 rounded-xl bg-brand px-4 py-2 text-sm font-medium text-brand-foreground"
-                        >
-                            <Download className="size-4" /> Open
-                        </a>
-                    </div>
-                )}
-                {item.file_name && item.file_mime === 'application/pdf' && (
-                    <iframe
-                        src={`/learn/items/${item.id}/file`}
-                        className="h-[75vh] w-full rounded-lg border border-border"
-                        title={item.file_name}
-                    />
-                )}
-                {item.file_name && item.file_mime?.startsWith('video/') && (
-                    <video
-                        src={`/learn/items/${item.id}/file`}
-                        controls
-                        preload="metadata"
-                        className="w-full rounded-lg"
-                    />
-                )}
-                {item.file_name && item.file_mime?.startsWith('audio/') && (
-                    <audio
-                        src={`/learn/items/${item.id}/file`}
-                        controls
-                        preload="metadata"
-                        className="w-full"
-                    />
-                )}
+                <MaterialViewer
+                    item={item}
+                    preview={props.preview ?? null}
+                    onFinished={
+                        !teacher && !props.done
+                            ? () =>
+                                  router.post(
+                                      `/learn/items/${item.id}/complete`,
+                                      {},
+                                      {
+                                          preserveScroll: true,
+                                          preserveState: true,
+                                          only: ['done'],
+                                      },
+                                  )
+                            : undefined
+                    }
+                />
 
-                {item.url && (
+                {item.file_name &&
+                    [
+                        'pdf',
+                        'image',
+                        'video',
+                        'audio',
+                        'word',
+                        'slides',
+                        'sheet',
+                        'text',
+                    ].includes(kind) && (
+                        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            <span className="truncate">{item.file_name}</span>
+                            <a
+                                href={`/learn/items/${item.id}/file?download=1`}
+                                className="flex items-center gap-1 font-medium text-brand hover:underline"
+                            >
+                                <Download className="size-3.5" /> Download the
+                                original
+                            </a>
+                            {['pdf', 'image'].includes(kind) && (
+                                <a
+                                    href={`/learn/items/${item.id}/file`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-1 hover:text-brand"
+                                >
+                                    <ExternalLink className="size-3.5" /> Open
+                                    in a new tab
+                                </a>
+                            )}
+                        </p>
+                    )}
+
+                {item.url && !['youtube', 'vimeo', 'drive'].includes(kind) && (
                     <a
                         href={item.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="surface flex items-center justify-between gap-3 p-5 hover:border-brand/50"
                     >
-                        <span className="truncate text-sm">
-                            {item.type === 'live'
-                                ? 'Join the live class'
-                                : item.type === 'video'
-                                  ? 'Watch the recording'
-                                  : item.url}
+                        <span className="min-w-0">
+                            <span className="block font-medium">
+                                {item.type === 'live'
+                                    ? 'Join the live class'
+                                    : item.type === 'video'
+                                      ? 'Watch the recording'
+                                      : 'Open the link'}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                                {item.url}
+                            </span>
                         </span>
-                        <ExternalLink className="size-4" />
+                        <ExternalLink className="size-4 shrink-0" />
                     </a>
                 )}
 
@@ -285,23 +378,45 @@ export default function ItemPage(props: Props) {
                 {item.type === 'quiz' && <Quiz {...props} />}
                 {item.type === 'forum' && <Forum {...props} />}
 
-                {!teacher &&
-                    item.requires_completion &&
-                    ['file'].includes(item.type) && (
-                        <Button
-                            variant="outline"
-                            className="w-fit"
-                            onClick={() =>
-                                router.post(
-                                    `/learn/items/${item.id}/complete`,
-                                    {},
-                                    { preserveScroll: true },
-                                )
-                            }
-                        >
-                            <CheckCircle2 className="size-4" /> Mark as done
-                        </Button>
-                    )}
+                {nav && (nav.prev || nav.next) && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {nav.prev ? (
+                            <Link
+                                href={`/learn/items/${nav.prev.id}`}
+                                className="surface flex items-center gap-3 p-4 hover:border-brand/50"
+                            >
+                                <ChevronLeft className="size-5 shrink-0 text-muted-foreground" />
+                                <span className="min-w-0">
+                                    <span className="block text-xs text-muted-foreground">
+                                        Previous
+                                    </span>
+                                    <span className="block truncate font-medium">
+                                        {nav.prev.title}
+                                    </span>
+                                </span>
+                            </Link>
+                        ) : (
+                            <span className="hidden sm:block" />
+                        )}
+                        {nav.next && (
+                            <Link
+                                href={`/learn/items/${nav.next.id}`}
+                                className="surface flex items-center justify-end gap-3 p-4 text-right hover:border-brand/50"
+                            >
+                                <span className="min-w-0">
+                                    <span className="block text-xs text-muted-foreground">
+                                        Next
+                                    </span>
+                                    <span className="block truncate font-medium">
+                                        {nav.next.title}
+                                    </span>
+                                </span>
+                                <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+                            </Link>
+                        )}
+                    </div>
+                )}
+
                 {teacher && props.revisions.length > 0 && (
                     <details className="text-sm text-muted-foreground">
                         <summary className="cursor-pointer">
@@ -320,6 +435,152 @@ export default function ItemPage(props: Props) {
                 )}
             </div>
         </>
+    );
+}
+
+/**
+ * What a student can do with a material: mark it done (or take that back), save it to read
+ * again, keep private notes, download it, and ask the lecturer about it.
+ */
+function StudentActions({
+    item,
+    offering,
+    done,
+    note,
+    material,
+}: Props & { material: boolean }) {
+    const [notesOpen, setNotesOpen] = useState(!!note?.body);
+    const [body, setBody] = useState(note?.body ?? '');
+    const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
+    const bookmarked = !!note?.bookmarked;
+    const ask = `/learn/courses/${offering.id}?tab=requests&ask=${encodeURIComponent(item.title)}`;
+
+    // notes save themselves a moment after typing stops
+    useEffect(() => {
+        if (body === (note?.body ?? '')) {
+            return;
+        }
+
+        const t = window.setTimeout(() => {
+            setSaved('saving');
+            router.put(
+                `/learn/items/${item.id}/note`,
+                { body },
+                {
+                    preserveScroll: true,
+                    preserveState: true,
+                    only: ['note'],
+                    onSuccess: () => setSaved('saved'),
+                    onError: () => setSaved('idle'),
+                },
+            );
+        }, 900);
+
+        return () => window.clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [body]);
+
+    const chip =
+        'inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium transition hover:border-brand/50';
+
+    return (
+        <div className="grid gap-3">
+            <div className="flex flex-wrap gap-2">
+                {material &&
+                    (done ? (
+                        <button
+                            type="button"
+                            className={`${chip} !border-status-good/40 bg-status-good/10 text-status-good`}
+                            onClick={() =>
+                                router.delete(
+                                    `/learn/items/${item.id}/complete`,
+                                    {
+                                        preserveScroll: true,
+                                        only: ['done', 'nav'],
+                                    },
+                                )
+                            }
+                            title="Tap to mark as not done"
+                        >
+                            <CheckCircle2 className="size-4" /> Done
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            className={`${chip} !border-brand bg-brand text-brand-foreground hover:bg-brand/90`}
+                            onClick={() =>
+                                router.post(
+                                    `/learn/items/${item.id}/complete`,
+                                    {},
+                                    {
+                                        preserveScroll: true,
+                                        only: ['done', 'nav'],
+                                    },
+                                )
+                            }
+                        >
+                            <CheckCircle2 className="size-4" /> Mark as done
+                        </button>
+                    ))}
+                <button
+                    type="button"
+                    className={`${chip} ${bookmarked ? 'text-brand' : ''}`}
+                    aria-pressed={bookmarked}
+                    onClick={() =>
+                        router.put(
+                            `/learn/items/${item.id}/note`,
+                            { bookmarked: !bookmarked },
+                            { preserveScroll: true, only: ['note'] },
+                        )
+                    }
+                >
+                    <Bookmark
+                        className={`size-4 ${bookmarked ? 'fill-current' : ''}`}
+                    />{' '}
+                    {bookmarked ? 'Saved' : 'Save'}
+                </button>
+                <button
+                    type="button"
+                    className={chip}
+                    aria-expanded={notesOpen}
+                    onClick={() => setNotesOpen(!notesOpen)}
+                >
+                    <NotebookPen className="size-4" /> My notes
+                </button>
+                {item.file_name && (
+                    <a
+                        href={`/learn/items/${item.id}/file?download=1`}
+                        className={chip}
+                    >
+                        <Download className="size-4" /> Download
+                    </a>
+                )}
+                <Link href={ask} className={chip}>
+                    <HelpCircle className="size-4" /> Ask about this
+                </Link>
+            </div>
+            {notesOpen && (
+                <label className="grid gap-1.5">
+                    <span className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Only you see these notes.</span>
+                        <span aria-live="polite">
+                            {saved === 'saving'
+                                ? 'Saving…'
+                                : saved === 'saved'
+                                  ? 'Saved'
+                                  : ''}
+                        </span>
+                    </span>
+                    <textarea
+                        className={`${textareaClass} min-h-28`}
+                        value={body}
+                        onChange={(e) => setBody(e.target.value)}
+                        placeholder="Key points, questions to ask, page numbers to revise…"
+                        maxLength={20000}
+                    />
+                </label>
+            )}
+        </div>
     );
 }
 
@@ -669,15 +930,28 @@ function AssignmentStudent({ item, submissions, due, group, peer }: Props) {
                                 setBigProgress(0);
 
                                 try {
-                                    const id = await resumableUpload(f, `assignment:${item.id}`, setBigProgress);
-                                    router.post(`/learn/items/${item.id}/submit`, { text: form.data.text, upload_id: id }, {
-                                        preserveScroll: true,
-                                        onSuccess: () => form.reset(),
-                                        onFinish: () => setBigProgress(null),
-                                    });
+                                    const id = await resumableUpload(
+                                        f,
+                                        `assignment:${item.id}`,
+                                        setBigProgress,
+                                    );
+                                    router.post(
+                                        `/learn/items/${item.id}/submit`,
+                                        { text: form.data.text, upload_id: id },
+                                        {
+                                            preserveScroll: true,
+                                            onSuccess: () => form.reset(),
+                                            onFinish: () =>
+                                                setBigProgress(null),
+                                        },
+                                    );
                                 } catch (err) {
                                     setBigProgress(null);
-                                    setBigError(err instanceof Error ? err.message : 'Upload failed.');
+                                    setBigError(
+                                        err instanceof Error
+                                            ? err.message
+                                            : 'Upload failed.',
+                                    );
                                 }
 
                                 return;
@@ -732,11 +1006,20 @@ function AssignmentStudent({ item, submissions, due, group, peer }: Props) {
                         )}
                         {bigProgress !== null && (
                             <p className="grid gap-1 text-xs text-muted-foreground">
-                                Uploading in pieces — you can lose the connection and it will carry on. {bigProgress}%
-                                <progress value={bigProgress} max={100} className="w-full" />
+                                Uploading in pieces — you can lose the
+                                connection and it will carry on. {bigProgress}%
+                                <progress
+                                    value={bigProgress}
+                                    max={100}
+                                    className="w-full"
+                                />
                             </p>
                         )}
-                        {bigError && <p className="text-sm text-status-critical">{bigError}</p>}
+                        {bigError && (
+                            <p className="text-sm text-status-critical">
+                                {bigError}
+                            </p>
+                        )}
                         {Object.values(form.errors).length > 0 && (
                             <p className="text-sm text-status-critical">
                                 {Object.values(form.errors).join(' ')}
@@ -969,21 +1252,60 @@ function AssignmentTeacher({
                             {s.similarity !== null && s.similarity >= 15 && (
                                 <span
                                     className={`ml-1 rounded px-1.5 py-0.5 text-[11px] ${s.similarity >= 40 ? 'bg-status-critical/15 text-status-critical' : 'bg-status-warning/15 text-status-warning'}`}
-                                    title={s.similarity_matches.map((m) => `${m.percent}% like ${m.student}${m.same_assignment ? '' : ' (earlier class)'}`).join('\n')}
+                                    title={s.similarity_matches
+                                        .map(
+                                            (m) =>
+                                                `${m.percent}% like ${m.student}${m.same_assignment ? '' : ' (earlier class)'}`,
+                                        )
+                                        .join('\n')}
                                 >
                                     {s.similarity}% similar
                                 </span>
                             )}
-                            {s.external_check?.status === 'complete' && s.external_check.score !== null && (
-                                <span className="ml-1 text-[11px]">
-                                    {s.external_check.provider}: {s.external_check.report_url ? <a href={s.external_check.report_url} target="_blank" rel="noreferrer noopener" className="text-brand underline">{s.external_check.score}%</a> : `${s.external_check.score}%`}
-                                </span>
-                            )}
-                            {s.external_check && s.external_check.status !== 'complete' && (
-                                <span className="ml-1 text-[11px] text-muted-foreground" title={s.external_check.error ?? undefined}>{s.external_check.provider}: {s.external_check.status}</span>
-                            )}
+                            {s.external_check?.status === 'complete' &&
+                                s.external_check.score !== null && (
+                                    <span className="ml-1 text-[11px]">
+                                        {s.external_check.provider}:{' '}
+                                        {s.external_check.report_url ? (
+                                            <a
+                                                href={
+                                                    s.external_check.report_url
+                                                }
+                                                target="_blank"
+                                                rel="noreferrer noopener"
+                                                className="text-brand underline"
+                                            >
+                                                {s.external_check.score}%
+                                            </a>
+                                        ) : (
+                                            `${s.external_check.score}%`
+                                        )}
+                                    </span>
+                                )}
+                            {s.external_check &&
+                                s.external_check.status !== 'complete' && (
+                                    <span
+                                        className="ml-1 text-[11px] text-muted-foreground"
+                                        title={
+                                            s.external_check.error ?? undefined
+                                        }
+                                    >
+                                        {s.external_check.provider}:{' '}
+                                        {s.external_check.status}
+                                    </span>
+                                )}
                             {plagiarismService && !s.external_check && (
-                                <button type="button" className="ml-1 text-[11px] text-brand underline" onClick={() => router.post(`/learn/submissions/${s.id}/plagiarism`, {}, { preserveScroll: true })}>
+                                <button
+                                    type="button"
+                                    className="ml-1 text-[11px] text-brand underline"
+                                    onClick={() =>
+                                        router.post(
+                                            `/learn/submissions/${s.id}/plagiarism`,
+                                            {},
+                                            { preserveScroll: true },
+                                        )
+                                    }
+                                >
                                     Check with {plagiarismService}
                                 </button>
                             )}

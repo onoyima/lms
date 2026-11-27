@@ -56,6 +56,11 @@ class ItemController extends Controller
             'sections' => $teacher ? DB::table('course_sections')->where('course_offering_id', $offering->id)->orderBy('position')->get(['id', 'title']) : [],
             'siblings' => $teacher ? CourseItem::where('course_offering_id', $offering->id)->where('id', '!=', $item->id)->orderBy('title')->get(['id', 'title']) : [],
             'revisions' => $teacher ? CourseItemRevision::where('course_item_id', $item->id)->orderByDesc('version')->limit(20)->get(['version', 'edited_by', 'created_at']) : [],
+            'preview' => \App\Services\Lms\MaterialPreview::kind($item->file_name),
+            'nav' => $this->neighbours($item, $user, $teacher),
+            'done' => ! $teacher && DB::table('item_completions')->where('course_item_id', $item->id)->where('user_id', $user->id)->exists(),
+            'note' => $teacher ? null : \App\Models\CourseItemNote::where('course_item_id', $item->id)->where('user_id', $user->id)->first(['body', 'bookmarked']),
+            'section' => DB::table('course_sections')->where('id', $item->course_section_id)->value('title'),
         ];
 
         if ($item->type === 'assignment') {
@@ -71,6 +76,46 @@ class ItemController extends Controller
         }
 
         return Inertia::render('learn/item', $data);
+    }
+
+    /**
+     * The items before and after this one in the course order (sections, then items), skipping
+     * those the student cannot open yet, so materials can be read one after another.
+     */
+    private function neighbours(CourseItem $item, User $user, bool $teacher): array
+    {
+        $offering = $item->offering;
+        $completed = $teacher ? [] : $this->access->completedIds($user, $offering);
+        $list = CourseItem::query()->join('course_sections', 'course_sections.id', '=', 'course_items.course_section_id')
+            ->where('course_items.course_offering_id', $offering->id)->whereNull('course_items.deleted_at')
+            ->orderBy('course_sections.position')->orderBy('course_items.position')->orderBy('course_items.id')
+            ->select('course_items.*')->with(['section', 'prerequisite:id,title'])->get()
+            ->filter(fn ($i) => $i->id === $item->id || $teacher || $this->access->availability($i, $completed)[0])->values();
+        $at = $list->search(fn ($i) => $i->id === $item->id);
+        $pick = fn ($i) => $i ? ['id' => $i->id, 'title' => $i->title, 'type' => $i->type] : null;
+
+        return ['prev' => $at > 0 ? $pick($list[$at - 1]) : null, 'next' => $at !== false ? $pick($list[$at + 1] ?? null) : null,
+            'position' => $at === false ? null : $at + 1, 'total' => $list->count()];
+    }
+
+    /** A Word, PowerPoint, Excel or text material as HTML, shown in the page (any phone, nothing to install). */
+    public function preview(Request $request, CourseItem $item, \App\Services\Lms\MaterialPreview $preview): \Illuminate\Http\JsonResponse
+    {
+        $this->access->authorizeOpen($request->user(), $item);
+
+        return response()->json($preview->render($item))->header('Cache-Control', 'private, max-age=600');
+    }
+
+    /** A picture from a material's preview (a figure in a Word file, a picture on a slide). */
+    public function previewMedia(Request $request, CourseItem $item, string $name): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $this->access->authorizeOpen($request->user(), $item);
+        abort_unless(preg_match('/^[A-Za-z0-9._-]{1,80}\.(png|jpe?g|gif|webp|bmp)$/i', $name, $m), 404);
+        $path = Storage::disk('local')->path(\App\Services\Lms\MaterialPreview::dir($item).'/media/'.$name);
+        abort_unless(is_file($path), 404);
+        $type = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'bmp' => 'image/bmp'][strtolower($m[1])];
+
+        return response()->file($path, ['Content-Type' => $type, 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, max-age=86400']);
     }
 
     // ── Assignments ────────────────────────────────────────────────────────

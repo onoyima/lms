@@ -217,7 +217,7 @@ class ExamBoardController extends Controller
             'images.*' => ['file', 'max:51200', 'extensions:zip,png,jpg,jpeg,gif,webp'],
             'name' => ['nullable', 'string', 'max:250'],
             'bank_id' => ['nullable', 'integer'],
-        ]);
+        ], \App\Services\Questions\Import\QuestionImportService::uploadMessages());
         $bank = isset($data['bank_id']) ? \App\Models\QuestionBank::forExam($exam)->findOrFail($data['bank_id']) : null;
         $import = $imports->upload($data['file'], $exam->course_id, $request->user()->id, $data['reader'] ?? 'science', $bank, $data['images'] ?? [], ['exam_id' => $exam->id], $data['name'] ?? null);
 
