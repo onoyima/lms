@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { CalendarClock, Laptop, MapPin, MonitorSmartphone, Shield } from 'lucide-react';
 import { useState } from 'react';
+import { Arrangeable } from '@/components/arrangeable';
 import { formatDateTime, PageHeader, Status } from '@/components/platform/ui';
 
 type Row = { candidate_id: number; exam: string; type: string; category: string; starts_at: string; ends_at: string; duration: number; venue: string | null; mode: string; channels: string[]; eligible: boolean; eligibility_reason: string | null; practice: boolean; status: string | null; attempts_used: number; max_attempts: number; has_open_attempt: boolean; can_reattempt: boolean };
@@ -13,18 +14,23 @@ const channelLabel: Record<string, { label: string; icon: typeof Laptop }> = {
 
 export default function MyExams({ exams }: { exams: Row[] }) {
     const [now] = useState(() => Date.now());
+    const isOpen = (e: Row) => now >= new Date(e.starts_at).getTime() - 15 * 60000 && now <= new Date(e.ends_at).getTime();
+    const finished = (e: Row) => ['submitted', 'auto_submitted', 'terminated'].includes(e.status ?? '') && !e.can_reattempt && !e.has_open_attempt;
+    // exams open now come first, then the rest by date
+    const sorted = [...exams].sort((a, b) => Number(isOpen(b) && !finished(b)) - Number(isOpen(a) && !finished(a)) || a.starts_at.localeCompare(b.starts_at));
 
     return (
         <>
             <Head title="My exams" />
             <div className="flex flex-col gap-8 p-6 md:p-10">
-                <PageHeader title="My exams" lead="Open an exam a few minutes early to check your camera and connection." />
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {exams.map((e) => {
-                        const open = now >= new Date(e.starts_at).getTime() - 15 * 60000 && now <= new Date(e.ends_at).getTime();
+                <PageHeader title="My exams" lead="Exams open now are at the top. Open one a few minutes early if it has checks to pass." />
+                {exams.length === 0 && <p className="text-muted-foreground">No exams scheduled for you yet.</p>}
+                <Arrangeable page="my-exams" label="exams" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" cards={sorted.map((e) => {
+                        const open = isOpen(e);
 
-                        return (
-                            <article key={e.candidate_id} className="surface flex flex-col gap-4 p-6">
+                        return { key: String(e.candidate_id), title: e.exam, node: (
+                            <article className={`surface flex h-full flex-col gap-4 p-6 ${open && !finished(e) ? 'ring-2 ring-brand/60' : ''}`}>
+                                {open && !finished(e) && <span className="-mb-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-brand px-2.5 py-0.5 text-xs font-semibold text-brand-foreground"><span className="size-1.5 animate-pulse rounded-full bg-current" /> Open now</span>}
                                 <div className="flex items-start justify-between gap-3">
                                     <h3 className="font-medium">{e.exam}</h3>
                                     {e.status ? <Status value={e.status} /> : e.practice ? <Status value="practice" /> : null}
@@ -68,10 +74,8 @@ export default function MyExams({ exams }: { exams: Row[] }) {
                                     </a>
                                 )}
                             </article>
-                        );
-                    })}
-                    {exams.length === 0 && <p className="text-muted-foreground">No exams scheduled for you yet.</p>}
-                </div>
+                        ) };
+                    })} />
             </div>
         </>
     );

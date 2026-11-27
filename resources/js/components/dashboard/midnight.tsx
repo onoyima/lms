@@ -1,12 +1,14 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowRight, BarChart3, Bell, BookOpen, CalendarDays, CalendarRange, Check, CheckCheck, ClipboardCheck, Clock, Eye, FileUp, GraduationCap, Keyboard,
-    LifeBuoy, MessagesSquare, Radio, Scale, ScrollText, Search, Send, ShieldAlert, SlidersHorizontal, Timer, Trophy, TrendingUp, UsersRound, Video,
+    LifeBuoy, MessagesSquare, Radio, Scale, ScrollText, Search, Send, ShieldAlert, Timer, Trophy, TrendingUp, UsersRound, Video,
     Volume2, VolumeX, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Arrangeable } from '@/components/arrangeable';
+import type { ArrangeCard } from '@/components/arrangeable';
 import { ExamDayBoard } from '@/components/dashboard/exam-day';
 import type { Decision, ExamWithPapers, Layout, ModuleCard, Panels } from '@/components/dashboard/types';
 import { formatDateTime, Status } from '@/components/platform/ui';
@@ -100,7 +102,7 @@ function Ring({ value, size = 88, label }: { value: number | null; size?: number
 
     return (
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={label} className="shrink-0 -rotate-90">
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(255 255 255 / .08)" strokeWidth="7" />
+            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeOpacity=".1" strokeWidth="7" />
             <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--brand)" strokeWidth="7" strokeLinecap="round"
                 strokeDasharray={c} strokeDashoffset={c * (1 - Math.min(100, Math.max(0, shown)) / 100)}
                 style={{ transition: 'stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1)', filter: 'drop-shadow(0 0 6px rgb(255 106 19 / .5))' }} />
@@ -198,7 +200,7 @@ function Decisions({ items }: { items: Decision[] }) {
                 <div className="flex flex-wrap gap-1.5" role="tablist">
                     {tabs.map(([k, label]) => (
                         <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-                            className={cn('rounded-full px-3 py-1 text-[13px] font-semibold transition-colors', tab === k ? 'bg-brand text-brand-foreground' : 'bg-white/[.05] text-muted-foreground hover:text-foreground')}>
+                            className={cn('rounded-full px-3 py-1 text-[13px] font-semibold transition-colors', tab === k ? 'bg-brand text-brand-foreground' : 'bg-foreground/[.05] text-muted-foreground hover:text-foreground')}>
                             {label}
                         </button>
                     ))}
@@ -213,8 +215,8 @@ function Decisions({ items }: { items: Decision[] }) {
 
                         return (
                             <li key={n}>
-                                <Link href={d.href} className="group grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-white/[.04]">
-                                    <span className="relative grid size-10 place-items-center rounded-xl bg-white/[.05]">
+                                <Link href={d.href} className="group grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-foreground/[.04]">
+                                    <span className="relative grid size-10 place-items-center rounded-xl bg-foreground/[.05]">
                                         <Icon className="size-[18px]" />
                                         <i className={cn('absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-[var(--card)]', toneDot[d.tone])} />
                                     </span>
@@ -222,7 +224,7 @@ function Decisions({ items }: { items: Decision[] }) {
                                         <b className="block truncate font-semibold">{d.title}</b>
                                         <small className="block truncate text-[13px] text-muted-foreground">{d.detail}</small>
                                     </span>
-                                    <span className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/10 px-3 text-[13px] font-semibold transition-colors group-hover:border-brand group-hover:bg-brand group-hover:text-brand-foreground">
+                                    <span className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-3 text-[13px] font-semibold transition-colors group-hover:border-brand group-hover:bg-brand group-hover:text-brand-foreground">
                                         {d.action}<ArrowRight className="size-3.5" />
                                     </span>
                                 </Link>
@@ -257,12 +259,12 @@ function Exams({ exams }: { exams: ExamWithPapers[] }) {
 
                             return (
                                 <li key={p.id}>
-                                    <Link href={`/exams/${p.id}`} className="-mx-2 grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-xl p-2 hover:bg-white/[.04]">
-                                        <span className={cn('grid size-9 place-items-center rounded-[11px]', live ? 'mn-pulse bg-brand text-brand-foreground' : 'bg-white/[.06] text-brand-ink')}><L.icon className="size-[17px]" /></span>
+                                    <Link href={`/exams/${p.id}`} className="-mx-2 grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-xl p-2 hover:bg-foreground/[.04]">
+                                        <span className={cn('grid size-9 place-items-center rounded-[11px]', live ? 'mn-pulse bg-brand text-brand-foreground' : 'bg-foreground/[.06] text-brand-ink')}><L.icon className="size-[17px]" /></span>
                                         <span className="min-w-0">
                                             <b className="block truncate font-semibold">{p.label}</b>
                                             <small className="block text-[12.5px] text-muted-foreground">{live ? `${p.writing} writing now` : p.starts_at ? formatDateTime(p.starts_at) : 'No date yet'}</small>
-                                            <span className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-white/[.07]">
+                                            <span className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-foreground/[.07]">
                                                 <i className="bg-status-info transition-[width] duration-700" style={{ width: `${(p.submitted / total) * 100}%` }} />
                                                 <i className="bg-brand transition-[width] duration-700" style={{ width: `${(p.writing / total) * 100}%` }} />
                                             </span>
@@ -308,7 +310,7 @@ function NextExam({ exam }: { exam: { id: number; title: string; starts_at: stri
                         {d === 0 && <>{String(s).padStart(2, '0')}<span className="text-base text-muted-foreground">s</span></>}
                     </p>
                 )}
-                <Link href={`/my/exams/${exam.id}`} className={cn('inline-flex h-12 items-center gap-2 rounded-2xl px-6 font-semibold transition-transform hover:-translate-y-px active:scale-95', open ? 'mn-pulse bg-brand text-brand-foreground' : 'bg-white/[.08] hover:bg-white/[.12]')}>
+                <Link href={`/my/exams/${exam.id}`} className={cn('inline-flex h-12 items-center gap-2 rounded-2xl px-6 font-semibold transition-transform hover:-translate-y-px active:scale-95', open ? 'mn-pulse bg-brand text-brand-foreground' : 'bg-foreground/[.08] hover:bg-foreground/[.12]')}>
                     {open ? 'Go to the exam' : 'See details'} <ArrowRight className="size-4" />
                 </Link>
             </div>
@@ -321,7 +323,7 @@ function Pulse({ label, icon: Icon, href, children, note, noteTone }: { label: s
         <Link href={href} prefetch className="mn-tile group block p-5">
             <span className="flex items-center justify-between text-sm text-muted-foreground">
                 {label}
-                <span className="grid size-8 place-items-center rounded-xl bg-white/[.05] transition-colors group-hover:bg-brand group-hover:text-brand-foreground"><Icon className="size-4" /></span>
+                <span className="grid size-8 place-items-center rounded-xl bg-foreground/[.05] transition-colors group-hover:bg-brand group-hover:text-brand-foreground"><Icon className="size-4" /></span>
             </span>
             {children}
             {note && <span className={cn('mt-1 block text-[13px] font-semibold', noteTone ?? 'text-muted-foreground')}>{note}</span>}
@@ -333,18 +335,12 @@ const Big = ({ children }: { children: ReactNode }) => <span className="mt-2 blo
 
 type Agenda = { key: string; when: string; title: string; detail: string; href: string; kind: string };
 
-const SECTIONS: Record<string, string> = {
-    day: 'Exam day', glance: 'Pulse', decisions: 'Needs your decision', exams: 'Exams', upcoming: 'Agenda', oversight: 'Faculty or department',
-    teaching: 'Your teaching', casework: 'Cases waiting', student_exams: 'Agenda', student_due: 'Agenda', kpis: 'More figures', modules: 'Your subscription',
-};
 
-export default function MidnightDashboard({ moduleCards, panels, semester, layout: saved }: { moduleCards: ModuleCard[]; panels: Panels; semester: string | null; layout: Layout }) {
+export default function MidnightDashboard({ moduleCards, panels, semester }: { moduleCards: ModuleCard[]; panels: Panels; semester: string | null; layout?: Layout }) {
     const { tenant, auth } = usePage().props;
     const { hasModule } = usePlatform();
     const now = useNow();
     const [sound, setSoundState] = useState(soundOn);
-    const [hidden, setHidden] = useState<string[]>(saved.hidden);
-    const [editing, setEditing] = useState(false);
     const [keys, setKeys] = useState(false);
     const actions = useActions(panels);
     const actionsRef = useRef(actions);
@@ -354,7 +350,6 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
     }, [actions]);
     const g = panels.glance;
     const i = panels.institution;
-    const show = (k: string) => !hidden.includes(k);
     const hour = now.getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const nextExam = panels.student?.exams?.[0];
@@ -393,11 +388,6 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
             window.setTimeout(() => play('success'), 10);
         }
     };
-    const toggle = (k: string) => {
-        const next = show(k) ? [...hidden, k] : hidden.filter((x) => x !== k);
-        setHidden(next);
-        router.put('/dashboard/layout', { ...saved, hidden: next }, { preserveScroll: true, preserveState: true, only: [] });
-    };
 
     const agenda = useMemo<Agenda[]>(() => {
         const list: Agenda[] = [];
@@ -408,11 +398,10 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
         return list.sort((a, b) => a.when.localeCompare(b.when)).slice(0, 8);
     }, [panels]);
     const hasAgenda = agenda.length > 0 || (panels.upcoming !== undefined && !panels.day) || panels.student?.exams != null || panels.student?.due != null;
-    const sections = Object.entries(SECTIONS).filter(([k]) => (k === 'modules' ? true : k === 'kpis' ? !!i : k.startsWith('student_') ? false : k === 'upcoming' ? hasAgenda : !!panels[k as keyof Panels]));
 
-    const pulse: ReactNode[] = [];
+    const pulse: React.ReactElement<{ label: string }>[] = [];
 
-    if (g && show('glance')) {
+    if (g) {
         pulse.push(
             <Pulse key="students" label="Active students" icon={GraduationCap} href="/admin/people" note={g.students_week > 0 ? `+${g.students_week} this week` : 'No change this week'} noteTone={g.students_week > 0 ? 'text-status-good' : undefined}>
                 <Big><Count value={g.students} /></Big>
@@ -448,7 +437,7 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
         }
     }
 
-    if (panels.teaching && show('teaching')) {
+    if (panels.teaching) {
         const t = panels.teaching;
         pulse.push(
             <Pulse key="t-students" label="Your students" icon={UsersRound} href="/learn/courses" note={`${t.courses} ${t.courses === 1 ? 'course' : 'courses'}`}><Big><Count value={t.students} /></Big></Pulse>,
@@ -475,31 +464,30 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
         pulse.push(<Pulse key="s-unread" label="Unread notifications" icon={Bell} href="/notifications" note={st.unread ? 'Tap to read' : 'All caught up'} noteTone={st.unread ? 'text-brand-ink' : 'text-status-good'}><Big><Count value={st.unread} /></Big></Pulse>);
     }
 
-    const left: ReactNode[] = [];
-    const right: ReactNode[] = [];
+    const main: ArrangeCard[] = [];
 
-    if (panels.decisions && show('decisions')) {
-        left.push(<Decisions key="decisions" items={panels.decisions} />);
+    if (panels.decisions) {
+        main.push({ key: 'decisions', title: 'Needs your decision', node: <Decisions items={panels.decisions} /> });
     }
 
-    if (panels.exams && show('exams')) {
-        left.push(<Exams key="exams" exams={panels.exams} />);
+    if (panels.exams) {
+        main.push({ key: 'exams', title: 'Exams', node: <div className="grid gap-5"><Exams exams={panels.exams} /></div> });
     }
 
-    if (hasAgenda && show('upcoming')) {
-        right.push(
-            <Section key="agenda" title="Agenda" href={panels.student ? '/learn/calendar' : '/exam-calendar'} linkText="Calendar">
+    if (hasAgenda) {
+        main.push({ key: 'agenda', title: 'Agenda', node: (
+            <Section title="Agenda" href={panels.student ? '/learn/calendar' : '/exam-calendar'} linkText="Calendar">
                 {agenda.length === 0 ? <p className="text-sm text-muted-foreground">Nothing scheduled.</p> : (
-                    <ol className="relative grid gap-1 before:absolute before:top-2 before:bottom-2 before:left-[19px] before:w-px before:bg-white/10">
+                    <ol className="relative grid gap-1 before:absolute before:top-2 before:bottom-2 before:left-[19px] before:w-px before:bg-foreground/10">
                         {agenda.map((a) => {
                             const at = new Date(a.when);
                             const soon = at.getTime() - now.getTime() < 86400000;
 
                             return (
                                 <li key={a.key}>
-                                    <Link href={a.href} className="relative grid grid-cols-[40px_1fr] items-start gap-3 rounded-xl py-2 pr-2 hover:bg-white/[.04]">
+                                    <Link href={a.href} className="relative grid grid-cols-[40px_1fr] items-start gap-3 rounded-xl py-2 pr-2 hover:bg-foreground/[.04]">
                                         <span className="grid justify-items-center pt-0.5">
-                                            <i className={cn('z-10 size-2.5 rounded-full ring-4 ring-[var(--card)]', soon ? 'mn-pulse bg-brand' : 'bg-white/30')} />
+                                            <i className={cn('z-10 size-2.5 rounded-full ring-4 ring-[var(--card)]', soon ? 'mn-pulse bg-brand' : 'bg-foreground/25')} />
                                         </span>
                                         <span className="min-w-0">
                                             <span className="text-xs font-semibold text-brand-ink">{a.kind}, {at.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} {at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -512,48 +500,48 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
                         })}
                     </ol>
                 )}
-            </Section>,
-        );
+            </Section>
+        ) });
     }
 
-    if (panels.oversight && show('oversight')) {
+    if (panels.oversight) {
         const o = panels.oversight;
-        right.push(
-            <Section key="oversight" title={`Your ${o.scope}`} href="/admin/reports" linkText="Reports">
+        main.push({ key: 'oversight', title: `Your ${o.scope}`, node: (
+            <Section title={`Your ${o.scope}`} href="/admin/reports" linkText="Reports">
                 <dl className="grid grid-cols-2 gap-3">
                     {([['Courses', o.courses], ['Pass rate', o.pass_rate === null ? '—' : `${o.pass_rate}%`], ['Reviews waiting', o.reviews_waiting], ['Results to approve', o.results_to_approve], ['Marking backlog', o.marking_backlog]] as const).map(([l, v]) => (
-                        <div key={l} className="rounded-xl bg-white/[.03] p-3"><dt className="text-[12.5px] text-muted-foreground">{l}</dt><dd className="font-display text-2xl font-semibold tabular-nums">{v}</dd></div>
+                        <div key={l} className="rounded-xl bg-foreground/[.03] p-3"><dt className="text-[12.5px] text-muted-foreground">{l}</dt><dd className="font-display text-2xl font-semibold tabular-nums">{v}</dd></div>
                     ))}
                 </dl>
                 {o.courses_needing_attention.length > 0 && (
                     <div className="text-sm"><p className="text-[12.5px] text-muted-foreground">Courses with little or no material</p>
                         {o.courses_needing_attention.map((c) => <Link key={c.id} href={`/learn/courses/${c.id}`} className="block py-0.5 hover:text-brand-ink">{c.code}, {c.title}</Link>)}</div>
                 )}
-            </Section>,
-        );
+            </Section>
+        ) });
     }
 
-    if (panels.casework && show('casework')) {
+    if (panels.casework) {
         const c = panels.casework;
-        right.push(
-            <Section key="casework" title="Cases waiting" href="/admin/exceptions">
+        main.push({ key: 'casework', title: 'Cases waiting', node: (
+            <Section title="Cases waiting" href="/admin/exceptions">
                 <div className="grid grid-cols-3 gap-2">
                     {([['Requests', c.requests, '/admin/exceptions'], ['Hardware', c.hardware, '/exams'], ['Unusual attempts', c.anomalies, '/exams']] as const).filter(([, v]) => v !== undefined).map(([l, v, href]) => (
-                        <Link key={l} href={href} className="rounded-xl bg-white/[.03] p-3 transition-colors hover:bg-white/[.06]"><span className="block text-[12.5px] text-muted-foreground">{l}</span><span className="font-display text-2xl font-semibold tabular-nums">{v}</span></Link>
+                        <Link key={l} href={href} className="rounded-xl bg-foreground/[.03] p-3 transition-colors hover:bg-foreground/[.06]"><span className="block text-[12.5px] text-muted-foreground">{l}</span><span className="font-display text-2xl font-semibold tabular-nums">{v}</span></Link>
                     ))}
                 </div>
-            </Section>,
-        );
+            </Section>
+        ) });
     }
 
-    if (i && show('kpis')) {
+    if (i) {
         const rows = ([['courses', 'Courses this semester'], ['staff', 'Active staff'], ['pending_registrations', 'Registrations to approve'], ['failed_logins_24h', 'Failed sign-ins (24 h)'], ['last_backup', 'Last backup']] as const)
             .filter(([k]) => k in i && i[k] !== null);
-        right.push(
-            <Section key="kpis" title="More figures">
+        main.push({ key: 'kpis', title: 'More figures', node: (
+            <Section title="More figures">
                 <dl className="grid gap-1">
                     {rows.map(([k, l]) => (
-                        <div key={k} className="flex items-baseline justify-between gap-3 border-b border-white/[.05] py-1.5 last:border-0">
+                        <div key={k} className="flex items-baseline justify-between gap-3 border-b border-foreground/[.05] py-1.5 last:border-0">
                             <dt className="text-sm text-muted-foreground">{l}</dt>
                             <dd className={cn('font-semibold tabular-nums', k === 'failed_logins_24h' && Number(i[k]) > 20 && 'text-status-critical', k === 'last_backup' && !i[k] && 'text-status-critical')}>
                                 {k === 'last_backup' ? (i[k] ? formatDateTime(String(i[k])) : 'never') : String(i[k])}
@@ -561,20 +549,20 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
                         </div>
                     ))}
                 </dl>
-            </Section>,
-        );
+            </Section>
+        ) });
     }
 
-    if (show('modules')) {
-        right.push(
-            <Section key="modules" title="Your subscription">
+    {
+        main.push({ key: 'modules', title: 'Your subscription', node: (
+            <Section title="Your subscription">
                 <ul className="flex flex-wrap gap-1.5">
                     {moduleCards.filter((m) => m.enabled).map((m) => (
-                        <li key={m.key} title={m.description} className="rounded-full border border-white/10 px-2.5 py-1 text-[12.5px] font-medium">{m.name}</li>
+                        <li key={m.key} title={m.description} className="rounded-full border border-border px-2.5 py-1 text-[12.5px] font-medium">{m.name}</li>
                     ))}
                 </ul>
-            </Section>,
-        );
+            </Section>
+        ) });
     }
 
     return (
@@ -597,18 +585,15 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
                         </p>
                         <div className="flex flex-wrap gap-2">
                             <button type="button" onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
-                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 text-sm text-muted-foreground transition-colors hover:border-brand hover:text-foreground">
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-foreground/[.04] px-3 text-sm text-muted-foreground transition-colors hover:border-brand hover:text-foreground">
                                 <Search className="size-4" /> Search <kbd className="mn-key">/</kbd>
                             </button>
                             <button type="button" onClick={flipSound} aria-pressed={sound} aria-label={sound ? 'Turn click sounds off' : 'Turn click sounds on'} title={sound ? 'Sounds on' : 'Sounds off'}
-                                className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[.04] transition-colors hover:border-brand">
+                                className="grid size-10 place-items-center rounded-xl border border-border bg-foreground/[.04] transition-colors hover:border-brand">
                                 {sound ? <Volume2 className="size-4 text-brand" /> : <VolumeX className="size-4 text-muted-foreground" />}
                             </button>
-                            <button type="button" onClick={() => setKeys(!keys)} aria-pressed={keys} aria-label="Keyboard shortcuts" className="hidden size-10 place-items-center rounded-xl border border-white/10 bg-white/[.04] transition-colors hover:border-brand md:grid">
+                            <button type="button" onClick={() => setKeys(!keys)} aria-pressed={keys} aria-label="Keyboard shortcuts" className="hidden size-10 place-items-center rounded-xl border border-border bg-foreground/[.04] transition-colors hover:border-brand md:grid">
                                 <Keyboard className="size-4" />
-                            </button>
-                            <button type="button" onClick={() => setEditing(!editing)} aria-pressed={editing} className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 text-sm transition-colors hover:border-brand">
-                                <SlidersHorizontal className="size-4" /> {editing ? 'Done' : 'Customise'}
                             </button>
                         </div>
                     </div>
@@ -619,38 +604,22 @@ export default function MidnightDashboard({ moduleCards, panels, semester, layou
                         <span className="flex items-center gap-2"><kbd className="mn-key">1</kbd>–<kbd className="mn-key">8</kbd> open a quick action</span>
                         <span className="flex items-center gap-2"><kbd className="mn-key">/</kbd> search</span>
                         <span className="flex items-center gap-2"><kbd className="mn-key">?</kbd> show or hide this</span>
-                        <button type="button" onClick={() => setKeys(false)} aria-label="Close" className="ml-auto rounded-lg p-1 hover:bg-white/10"><X className="size-4" /></button>
+                        <button type="button" onClick={() => setKeys(false)} aria-label="Close" className="ml-auto rounded-lg p-1 hover:bg-foreground/10"><X className="size-4" /></button>
                     </section>
                 )}
 
-                {editing && (
-                    <section className="mn-tile grid gap-3 p-5 text-sm [animation:mn-rise_.2s_ease-out]" aria-label="Customise dashboard">
-                        <p className="text-muted-foreground">Choose what you see. Saved to your account.</p>
-                        <div className="flex flex-wrap gap-2">
-                            {sections.filter(([, name], n, all) => all.findIndex(([, x]) => x === name) === n).map(([k, name]) => (
-                                <button key={k} type="button" role="switch" aria-checked={show(k)} onClick={() => toggle(k)}
-                                    className={cn('rounded-full border px-3 py-1.5 font-medium transition-colors', show(k) ? 'border-brand bg-brand-soft text-brand-ink' : 'border-white/10 text-muted-foreground line-through')}>
-                                    {name}
-                                </button>
-                            ))}
-                        </div>
-                    </section>
-                )}
-
-                {nextExam && <NextExam exam={nextExam} />}
-
-                {actions.length > 0 && <Dock actions={actions} />}
-
-                {pulse.length > 0 && <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">{pulse}</div>}
-
-                {panels.day && show('day') && <ExamDayBoard day={panels.day} />}
-
-                {(left.length > 0 || right.length > 0) && (
-                    <div className={cn('grid gap-5', left.length > 0 && right.length > 0 && 'lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]')}>
-                        {left.length > 0 && <div className="grid content-start gap-5">{left}</div>}
-                        {right.length > 0 && <div className="grid content-start gap-5">{right}</div>}
-                    </div>
-                )}
+                <Arrangeable page="dashboard-midnight" label="dashboard" className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
+                    cards={[
+                        ...(nextExam ? [{ key: 'next', title: 'Your next exam', wide: true, node: <NextExam exam={nextExam} /> }] : []),
+                        ...(actions.length > 0 ? [{ key: 'dock', title: 'Quick actions', wide: true, node: <Dock actions={actions} /> }] : []),
+                        ...(pulse.length > 0 ? [{
+                            key: 'figures', title: 'Figures', wide: true,
+                            node: <Arrangeable page="dashboard-midnight-figures" label="figures" className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
+                                cards={pulse.map((el) => ({ key: String(el.key), title: el.props.label, node: el }))} />,
+                        }] : []),
+                        ...(panels.day ? [{ key: 'day', title: 'Exam day', wide: true, node: <ExamDayBoard day={panels.day} /> }] : []),
+                        ...main,
+                    ]} />
             </div>
         </div>
     );

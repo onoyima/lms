@@ -72,6 +72,8 @@ class HandleInertiaRequests extends Middleware
             'notificationsUnread' => fn () => \App\Http\Controllers\NotificationController::unreadCount($request->user()),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             // candidates writing right now (the "Exam day · 186 live" badge in the menu), counted at most every 20 s
+            // how this person has arranged the cards on each page (order, hidden, minimised, full width)
+            'layouts' => fn () => $request->user() ? (array) data_get($request->user()->preferences, 'layouts', []) + ['dashboard' => (array) data_get($request->user()->preferences, 'dashboard', [])] : [],
             'liveWriting' => fn () => $request->user() && tenant() && ! $request->user()->isPlatformAdmin() && $request->user()->user_type !== 'student'
                 && $request->user()->canAny(['exams.proctor', 'exams.invigilate', 'exams.manage'])
                 ? \Illuminate\Support\Facades\Cache::remember('live-writing:'.tenant_id(), 20, fn () => \App\Models\Attempt::where('status', 'in_progress')->count())

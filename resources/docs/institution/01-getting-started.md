@@ -11,7 +11,7 @@ The platform runs your institution's question banks, examinations (online, in CB
 1. **Turn on two-factor sign-in** for yourself: your name (bottom left) > Settings > Security.
 2. **Branding & theme**: Settings > Branding & theme — choose one of the four designs (Sapphire, Forest & gold, Plum or Midnight) and the picture behind the glass (the theme's campus, your own campus photo, or none), then your logo, colours and the name candidates see. You can switch design or picture at any time; everyone sees the change on their next page, including the sign-in page.
 
-   **Midnight** is dark by design with a bold orange accent, and gives everyone's dashboard its own layout: a live clock, a row of each person's most-used actions (keys 1 to 8 open them, / searches, ? lists the keys), animated figures and one agenda. Buttons answer with a quiet click; anyone can turn the sounds off with the speaker button on the dashboard, and the choice is kept in their browser.
+   **Midnight** is dark with a bold orange accent (anyone who prefers light can switch with the sun/moon button in the top bar), and gives everyone's dashboard its own layout: a live clock, a row of each person's most-used actions (keys 1 to 8 open them, / searches, ? lists the keys), animated figures and one agenda. Buttons answer with a quiet click; anyone can turn the sounds off with the speaker button on the dashboard, and the choice is kept in their browser.
 3. **Policy**: grading scale, password rules, who must use two-factor sign-in, exam-day contacts and the notice shown to candidates before every exam. Every save is kept as a version you can roll back.
 4. **Academic structure**: faculties, departments, programmes, courses (import them from CSV), the academic calendar and this semester's course offerings with their lecturers.
 5. **People**: import staff and students from CSV, or connect your student information system (Integrations). Give each member of staff the roles they need — nothing more.
@@ -23,3 +23,12 @@ The platform runs your institution's question banks, examinations (online, in CB
 - This documentation (Help > Documentation) covers every screen you can open.
 - **Templates** (Help > Templates) has a filled-in sample for every import.
 - The **help centre** (Help) has short articles for students and staff, including the procedure for exam flags, appeals and accessibility exceptions.
+
+
+## Arranging cards
+
+On the dashboard, the courses page, the exam categories and My exams, anyone can arrange the cards for themselves: press **Arrange**, then drag a card by its handle (or use the arrow keys on it), minimise it to its title, make it full width, or hide it. Hidden cards are listed by name above the cards; press one to bring it back. **Show all**, **Hide all**, **Minimise all**, **Open all** and **Reset** work on the whole page. Each person's arrangement is saved to their account.
+
+## Students on exam day
+
+A student who signs in while one of their exams is open goes straight to **My exams**, where exams open now are at the top.

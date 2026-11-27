@@ -40,6 +40,14 @@ On the **Rules & proctoring** tab choose which checks apply: tab and focus check
 
 **Connection and power cuts.** *Time given back for a computer that went off* (30 minutes by default, for the whole exam) and *Wait for a disconnected computer after time is up* (120 minutes). See *Running exam day*.
 
+## Checks before the exam
+
+Under **Before the exam starts**, choose all, some or none of the checks. With none, candidates start straight away; only what the exam itself uses (the camera, if it is on; full screen, if required) can stop it starting.
+
+## Emergency exams
+
+Switch on **Emergency exam** on the exam's page for an exam that must run at once. While it is open, its students see only that exam when they sign in, press **Start exam**, and the questions appear. There are no checks, no monitoring notice, no invigilator check-in, and no camera, microphone, screen or approved-computer rules. Time it in the room; the on-screen timer still runs and the exam still closes at the end of its time. A sitting PIN, if you set one, is still asked for. When they finish, students have their usual pages again.
+
 ## Safe Exam Browser
 
 **Exam day > Safe Exam Browser.** Upload the Windows and macOS installers so candidates download SEB from your own server (it works on a campus network without internet); without them, candidates are sent to the official download page. Set the **school SEB password**: every exam's SEB settings file is encrypted with it, SEB asks for it before the exam opens, and it also locks SEB's own settings on that computer. Candidates then sign in with their own account. An exam can have its own SEB password (Rules & proctoring > Safe Exam Browser).

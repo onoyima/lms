@@ -84,7 +84,7 @@ export default function BrandingPage({ branding }: { branding: Branding }) {
                                 <button key={t.key} type="button" aria-pressed={form.data.theme === t.key} onClick={() => {
                                     form.setData('theme', t.key);
                                     document.documentElement.dataset.theme = t.key; // preview straight away
-                                    { const a = localStorage.getItem('appearance'); document.documentElement.classList.toggle('dark', t.key === 'midnight' || a === 'dark' || (a !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)); }
+                                    { const a = localStorage.getItem('appearance'); document.documentElement.classList.toggle('dark', (t.key === 'midnight' && a !== 'light') || a === 'dark' || (a !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)); }
                                 }}
                                 className={`group overflow-hidden rounded-2xl border text-left transition-[transform,box-shadow] hover:-translate-y-0.5 ${form.data.theme === t.key ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border'}`}>
                                     <span className="flex h-20" style={{ background: t.deep }}>

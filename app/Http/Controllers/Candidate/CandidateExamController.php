@@ -20,8 +20,13 @@ use Inertia\Response;
 
 class CandidateExamController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request): Response|\Illuminate\Http\RedirectResponse
     {
+        // while an emergency exam is open, it is the only thing the student sees
+        if (\App\Support\Exams\OpenExams::emergency($request->user())->isNotEmpty()) {
+            return redirect('/my/exams/now');
+        }
+
         $rows = ExamCandidate::with(['session.exam:id,title,type,duration_minutes,category,channels,max_attempts', 'session.venue:id,name'])
             ->where('user_id', $request->user()->id)
             ->latest('id')->limit(100)->get()
@@ -45,6 +50,18 @@ class CandidateExamController extends Controller
             ])->values();
 
         return Inertia::render('candidate/exams', ['exams' => $rows]);
+    }
+
+    /** Emergency exams open now: shown on their own, each one click from the first question. */
+    public function now(Request $request): Response|\Illuminate\Http\RedirectResponse
+    {
+        $open = \App\Support\Exams\OpenExams::emergency($request->user());
+
+        if ($open->isEmpty()) {
+            return redirect('/my/exams');
+        }
+
+        return Inertia::render('candidate/exam-now', ['exams' => $open]);
     }
 
     public function room(Request $request, ExamCandidate $candidate): Response
@@ -73,6 +90,7 @@ class CandidateExamController extends Controller
                 // most specific first, so "Edg" and "Android" are recognised before "Chrome"
                 'compat' => collect(config('compatibility.browsers'))->sortBy(fn ($b) => array_search($b['match'], ['MSIE|Trident|Opera Mini|UCBrowser', 'iPhone|iPad', 'Android', 'Edg', 'Firefox', 'Chrome', 'Version/'], true))->values()->all(),
                 'practice' => $candidate->session->is_practice,
+                'emergency' => (bool) data_get($exam->settings, 'emergency', false),
             ],
         ]);
     }

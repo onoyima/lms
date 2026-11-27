@@ -84,7 +84,8 @@
 /*
  * Platform design tokens.
  * Four themes an institution can choose (Branding > Theme): sapphire (default), forest, plum, and
- * midnight (always dark, bold orange; also gives the dashboard its own command-deck layout).
+ * midnight (bold orange, dark by default with a light version for people who choose light mode; it also
+ * gives the dashboard its own command-deck layout).
  * Each theme has a deep colour for the menu and the exam-day board, a bright primary for actions,
  * a glow for highlights, and three wash colours behind the glass at the top of each page.
  * Status colours are the same in every theme and are kept for meaning: green = live / good,
@@ -216,8 +217,55 @@
     --shadow-soft: 0 12px 32px -20px rgb(0 0 0 / 0.8);
 }
 
-/* Midnight: dark by design with a bold orange accent. `html[...]` outranks `.dark` and `:root`. */
+/* Midnight, light (for people who switch to light mode): the same orange, on a clean light page, menu kept dark. */
 html[data-theme='midnight'] {
+    color-scheme: light;
+    --wash-image: url('/images/backgrounds/midnight.webp');
+    --deep: #0b0e14;
+    --deep-2: #151a24;
+    --brand: #f2600c;
+    --brand-foreground: #1a0a00;
+    --brand-ink: #c2410c;
+    --brand-soft: color-mix(in oklab, #f2600c 12%, transparent);
+    --glow: #ffb27a;
+    --side: #9aa1b1;
+    --mesh-1: #ff6a13;
+    --mesh-2: #ffb347;
+    --mesh-3: #fb923c;
+    --background: #f3f4f6;
+    --foreground: #12151c;
+    --card: #ffffff;
+    --card-foreground: #12151c;
+    --popover: #ffffff;
+    --popover-foreground: #12151c;
+    --secondary: #e9ebef;
+    --secondary-foreground: #12151c;
+    --muted: #eceef2;
+    --muted-foreground: #5b6271;
+    --accent: color-mix(in oklab, #f2600c 10%, transparent);
+    --accent-foreground: #12151c;
+    --border: rgb(18 21 28 / 0.09);
+    --input: rgb(18 21 28 / 0.16);
+    --ring: #f2600c;
+    --chart-1: #f2600c;
+    --live: #0f9f7a;
+    --sidebar: #0b0e14;
+    --sidebar-foreground: #9aa1b1;
+    --sidebar-accent: rgb(255 106 19 / 0.1);
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: rgb(255 255 255 / 0.06);
+    --sidebar-primary: #ff6a13;
+    --sidebar-primary-foreground: #1a0a00;
+    --glass: rgb(255 255 255 / 0.75);
+    --glass-border: rgb(18 21 28 / 0.07);
+    --shadow-soft: 0 1px 2px rgb(18 21 28 / 0.04), 0 16px 32px -24px rgb(18 21 28 / 0.35);
+    --mn-tile: var(--card);
+    --mn-hero: radial-gradient(600px 320px at 100% 0%, rgb(255 106 19 / 0.2), transparent 65%), radial-gradient(420px 260px at 0% 100%, rgb(255 179 71 / 0.18), transparent 70%), #ffffff;
+    --mn-dots: rgb(18 21 28 / 0.07);
+}
+
+/* Midnight, dark (its default): bold orange on near-black. `html[...].dark` outranks `.dark` and `:root`. */
+html[data-theme='midnight'].dark {
     color-scheme: dark;
     --wash-image: url('/images/backgrounds/midnight.webp');
     --deep: #04060a;
@@ -268,6 +316,9 @@ html[data-theme='midnight'] {
     --glass: rgb(14 18 25 / 0.72);
     --glass-border: rgb(255 255 255 / 0.07);
     --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 18px 40px -24px rgb(0 0 0 / 0.9);
+    --mn-tile: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.01)), var(--card);
+    --mn-hero: radial-gradient(600px 320px at 100% 0%, rgb(255 106 19 / 0.28), transparent 65%), radial-gradient(420px 260px at 0% 100%, rgb(194 65 12 / 0.22), transparent 70%), linear-gradient(160deg, #10141d, #07090e);
+    --mn-dots: rgb(255 255 255 / 0.07);
 }
 
 @font-face {
@@ -837,8 +888,8 @@ a[data-module-off] {
         position: relative;
         isolation: isolate;
         border-radius: 1.25rem;
-        border: 1px solid rgb(255 255 255 / 0.07);
-        background: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.01)), var(--card);
+        border: 1px solid var(--border);
+        background: var(--mn-tile, var(--card));
         transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.18s, box-shadow 0.18s;
     }
     a.mn-tile:hover,
@@ -872,18 +923,16 @@ a[data-module-off] {
         position: relative;
         overflow: hidden;
         border-radius: 1.5rem;
-        border: 1px solid rgb(255 255 255 / 0.07);
-        background:
-            radial-gradient(600px 320px at 100% 0%, rgb(255 106 19 / 0.28), transparent 65%),
-            radial-gradient(420px 260px at 0% 100%, rgb(194 65 12 / 0.22), transparent 70%),
-            linear-gradient(160deg, #10141d, #07090e);
+        border: 1px solid var(--border);
+        background: var(--mn-hero);
+        box-shadow: var(--shadow-soft);
     }
     .mn-hero::after {
         content: '';
         position: absolute;
         inset: 0;
         pointer-events: none;
-        background-image: radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px);
+        background-image: radial-gradient(var(--mn-dots) 1px, transparent 1px);
         background-size: 22px 22px;
         -webkit-mask-image: linear-gradient(90deg, transparent 30%, #000);
         mask-image: linear-gradient(90deg, transparent 30%, #000);
@@ -895,7 +944,7 @@ a[data-module-off] {
         height: 1.35rem;
         padding: 0 0.3rem;
         border-radius: 0.4rem;
-        border: 1px solid rgb(255 255 255 / 0.12);
+        border: 1px solid var(--input);
         border-bottom-width: 2px;
         font-size: 0.7rem;
         font-weight: 600;

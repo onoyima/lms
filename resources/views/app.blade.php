@@ -4,7 +4,7 @@
 @php($look = $brand ?? $platformBrand)
 @php($theme = in_array($look['theme'] ?? null, ['sapphire', 'forest', 'plum', 'midnight'], true) ? $look['theme'] : 'sapphire')
 @php($wash = ($look['background_mode'] ?? 'theme') === 'none' ? 'none' : (! empty($look['background_url']) ? 'url('.str_replace(['(', ')', ' ', '"', "'"], '', $look['background_url']).')' : null))
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="{{ $theme }}" @if ($wash) style="--wash-image: {{ $wash }}" @endif @class(['dark' => ($appearance ?? 'system') == 'dark' || $theme === 'midnight'])>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="{{ $theme }}" @if ($wash) style="--wash-image: {{ $wash }}" @endif @class(['dark' => ($appearance ?? 'system') == 'dark' || ($theme === 'midnight' && ($appearance ?? 'system') !== 'light')])>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,7 +15,8 @@
                 const appearance = '{{ $appearance ?? "system" }}';
 
                 if (document.documentElement.dataset.theme === 'midnight') {
-                    document.documentElement.classList.add('dark');
+                    // Midnight is dark unless the person chose light
+                    document.documentElement.classList.toggle('dark', appearance !== 'light');
                 } else if (appearance === 'system') {
                     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
@@ -29,7 +30,7 @@
         {{-- Inline style to set the HTML background color based on our theme in app.css --}}
         <style>
             html {
-                background-color: {{ ['sapphire' => '#f2f5fb', 'forest' => '#f1f5f2', 'plum' => '#f4f2fb', 'midnight' => '#07090e'][$theme] }};
+                background-color: {{ ['sapphire' => '#f2f5fb', 'forest' => '#f1f5f2', 'plum' => '#f4f2fb', 'midnight' => '#f3f4f6'][$theme] }};
             }
 
             html.dark {

@@ -93,7 +93,7 @@ class AttemptService
                     ? 'Starting closed '.$rule['late_start_minutes'].' minutes after the exam began. Speak to the invigilator.'
                     : 'Late entry for this exam has closed. Speak to the invigilator.', 'late', 403);
             }
-            if ($session->mode === 'hall' && ! $session->is_practice && ! $candidate->checked_in_at && data_get($exam->settings, 'require_check_in', true)) {
+            if ($session->mode === 'hall' && ! $session->is_practice && ! $candidate->checked_in_at && data_get($exam->settings, 'require_check_in', true) && ! data_get($exam->settings, 'emergency', false)) {
                 throw new ExamException('Please check in with the invigilator first.', 'not_checked_in', 403);
             }
             if ($session->access_pin_hash && ! ($pin && Hash::check($pin, $session->access_pin_hash))) {

@@ -1,6 +1,7 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { ArrowRight, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { Arrangeable } from '@/components/arrangeable';
 import { Field, inputClass, PageHeader, Status, Table, Td } from '@/components/platform/ui';
 import { Button } from '@/components/ui/button';
 import type { Paginated } from '@/types';
@@ -87,8 +88,7 @@ export default function Exams({ exams, filters, groups = [] }: { exams: Paginate
                 )}
 
                 {groups.length > 0 && (
-                    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {groups.map((g) => (
+                    <Arrangeable page="exam-categories" label="exam categories" className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" cards={groups.map((g) => ({ key: String(g.id), title: g.title, node: (
                             <Link key={g.id} href={`/exam-groups/${g.id}`} className="surface group grid gap-3 p-5 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-24px_var(--brand)]">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
@@ -105,8 +105,7 @@ export default function Exams({ exams, filters, groups = [] }: { exams: Paginate
                                     ))}
                                 </div>
                             </Link>
-                        ))}
-                    </section>
+                        ) }))} />
                 )}
 
                 <h2 className="pt-2 text-lg font-semibold">All exams</h2>

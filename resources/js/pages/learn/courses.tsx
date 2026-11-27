@@ -6,6 +6,7 @@ import {
     KeyRound,
     Users,
 } from 'lucide-react';
+import { Arrangeable } from '@/components/arrangeable';
 import {
     Flash,
     formatDateTime,
@@ -89,8 +90,7 @@ export default function Courses({
                 {teaching.length > 0 && (
                     <section className="grid gap-4">
                         <p className="eyebrow">Teaching</p>
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            {teaching.map((c) => (
+                        <Arrangeable page="courses-teaching" label="courses" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" cards={teaching.map((c) => ({ key: String(c.id), title: `${c.code} ${c.title}`, node: (
                                 <Link
                                     key={c.id}
                                     href={`/learn/courses/${c.id}`}
@@ -121,8 +121,7 @@ export default function Courses({
                                         )}
                                     </div>
                                 </Link>
-                            ))}
-                        </div>
+                            ) }))} />
                     </section>
                 )}
 
@@ -142,8 +141,7 @@ export default function Courses({
                                     .
                                 </div>
                             )}
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {active.map((c) => (
+                            {active.length > 0 && <Arrangeable page="courses" label="courses" className="grid gap-4 md:grid-cols-2" cards={active.map((c) => ({ key: String(c.id), title: `${c.code} ${c.title}`, node: (
                                     <Link
                                         key={c.id}
                                         href={`/learn/courses/${c.id}`}
@@ -181,8 +179,7 @@ export default function Courses({
                                             </p>
                                         </div>
                                     </Link>
-                                ))}
-                            </div>
+                                ) }))} />}
                             {past.length > 0 && (
                                 <details className="mt-4">
                                     <summary className="cursor-pointer text-sm text-muted-foreground">

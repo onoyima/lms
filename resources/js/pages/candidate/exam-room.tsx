@@ -30,7 +30,7 @@ type Message = { id: number; kind: string; body: string };
 type Policy = Record<string, boolean | number | string>;
 type Props = {
     candidate: { id: number; seat: string | null; extra_time: number; accommodations: Record<string, unknown>; consent_given: boolean; attempts_used: number; max_attempts: number; has_open_attempt: boolean; can_reattempt: boolean };
-    exam: { title: string; type: string; instructions: string | null; duration: number; channels: string[]; needs_pin: boolean; proctoring: Policy; starts_at: string; venue: string | null; practice: boolean; notice?: string; compat?: { name: string; minimum: number | null; match: string; status: string; note: string }[] };
+    exam: { title: string; type: string; instructions: string | null; duration: number; channels: string[]; needs_pin: boolean; proctoring: Policy; starts_at: string; venue: string | null; practice: boolean; emergency?: boolean; notice?: string; compat?: { name: string; minimum: number | null; match: string; status: string; note: string }[] };
 };
 
 const CLOSED = ['submitted', 'auto_submitted', 'terminated'];
@@ -99,7 +99,7 @@ const desktop = typeof window !== 'undefined' ? (window as unknown as { examDesk
 /* ─── Pre-exam checks, consent, PIN (Target 80, 127-129, 175, 202-203) ───────── */
 function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stored: Snapshot | null; off: OffReport | null; onStarted: (token: string, offline: boolean) => void }) {
     const p = exam.proctoring;
-    const [checks, setChecks] = useState<{ label: string; ok: boolean | null; note?: string }[]>([]);
+    const [checks, setChecks] = useState<{ label: string; ok: boolean | null; note?: string; blocks?: boolean }[]>([]);
     const [consent, setConsent] = useState(candidate.consent_given);
     const [pin, setPin] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -132,8 +132,15 @@ function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stor
         }
 
         (async () => {
-            const list: { label: string; ok: boolean | null; note?: string }[] = [];
-            list.push({ label: 'Secure connection (needed for camera)', ok: window.isSecureContext, note: window.isSecureContext ? undefined : 'Use the https address or the desktop app.' });
+            // only what this exam needs can stop it starting (the camera if it uses one, full screen if required);
+            // the rest is shown for information. The exam's own chosen pre-exam checks are separate (PreChecks).
+            const list: { label: string; ok: boolean | null; note?: string; blocks?: boolean }[] = [];
+            const media = !!(p.webcam || p.face_detection || p.live_video || p.record_video || p.microphone || (p.identity_check && p.identity_check !== 'none') || p.gaze_tracking || p.screen_share);
+
+            if (media) {
+                list.push({ label: 'Secure connection (needed for camera)', ok: window.isSecureContext, note: window.isSecureContext ? undefined : 'Use the https address or the desktop app.', blocks: true });
+            }
+
             list.push({ label: 'Modern browser', ok: 'fetch' in window && 'IntersectionObserver' in window });
             const t = performance.now();
             // browser against the institution's compatibility list (Target 169)
@@ -153,7 +160,7 @@ function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stor
                 note: !up && kept ? 'Not connected. You can carry on with the exam saved on this computer.' : undefined });
 
             if (p.require_fullscreen) {
-                list.push({ label: 'Full screen available', ok: !!document.documentElement.requestFullscreen });
+                list.push({ label: 'Full screen available', ok: !!document.documentElement.requestFullscreen, blocks: true });
             }
 
             if (p.detect_multiple_displays) {
@@ -166,7 +173,7 @@ function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stor
                     streamRef.current = await navigator.mediaDevices.getUserMedia({ video: !!(p.webcam || p.face_detection || p.live_video || p.record_video || (p.identity_check && p.identity_check !== 'none') || p.gaze_tracking), audio: !!p.microphone });
                     list.push({ label: 'Camera / microphone allowed', ok: true });
                 } catch {
-                    list.push({ label: 'Camera / microphone allowed', ok: false, note: 'Allow camera access in your browser, then reload.' });
+                    list.push({ label: 'Camera / microphone allowed', ok: false, note: 'Allow camera access in your browser, then reload.', blocks: true });
                 }
             }
 
@@ -176,7 +183,7 @@ function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stor
         return () => streamRef.current?.getTracks().forEach((t) => t.stop());
     }, [p, exam.compat, showPre, kept]);
 
-    const blocking = !showPre && checks.some((c) => c.ok === false && !c.label.startsWith('Single display'));
+    const blocking = !showPre && checks.some((c) => c.ok === false && c.blocks);
 
     const carryOnOffline = () => {
         if (kept) {
@@ -221,6 +228,46 @@ function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stor
             setError(res.status === 0 ? 'Cannot reach the exam server. Check the connection, then try again.' : res.data.message ?? 'Could not start the exam.');
         }
     };
+
+    // emergency exam: no checks and no notice; it starts as soon as the page opens (a PIN, if the sitting has one, is asked for first)
+    const emergency = !!exam.emergency;
+    const pinFirst = exam.needs_pin && !resuming;
+    const autoStarted = useRef(false);
+
+    useEffect(() => {
+        if (emergency && !pinFirst && !autoStarted.current) {
+            autoStarted.current = true;
+            void start();
+        }
+        // start() reads the latest state; this runs once when the page opens
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [emergency, pinFirst]);
+
+    if (emergency) {
+        return (
+            <div className="grid min-h-screen place-items-center bg-background px-5">
+                <div className="surface grid w-full max-w-md gap-4 p-6 text-center md:p-8">
+                    <h1 className="font-sans text-2xl font-semibold tracking-tight md:text-3xl">{exam.title}</h1>
+                    <p className="text-muted-foreground">{exam.duration + candidate.extra_time} minutes{exam.venue ? `, ${exam.venue}` : ''}</p>
+                    {pinFirst && (
+                        <label className="grid gap-1 text-left text-sm">
+                            <span className="font-medium">Exam PIN</span>
+                            <input autoFocus className="h-12 rounded-xl border border-input bg-background px-3 text-center font-mono text-xl tracking-widest" inputMode="numeric" autoComplete="off" value={pin}
+                                onChange={(e) => setPin(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && pin && start()} />
+                        </label>
+                    )}
+                    {error && <p className="rounded-xl bg-status-critical/10 p-3 text-sm text-status-critical">{error}</p>}
+                    {(pinFirst || error) ? (
+                        <button onClick={start} disabled={busy || (pinFirst && !pin)} className="h-14 rounded-2xl bg-brand text-lg font-semibold text-brand-foreground transition hover:brightness-110 disabled:opacity-40">
+                            {busy ? 'Starting…' : resuming ? 'Continue exam' : 'Start exam'}
+                        </button>
+                    ) : (
+                        <p className="flex items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-5 animate-spin" /> Opening your questions…</p>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-background">

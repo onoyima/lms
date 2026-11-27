@@ -25,7 +25,7 @@ createInertiaApp({
     title: (title) => (title && brand ? `${title} - ${brand}` : title || brand),
     layout: (name) => {
         switch (true) {
-            case name === 'welcome' || name === 'suspended' || name === 'maintenance' || name === 'candidate/exam-room' || name === 'candidate/phone' || name === 'verify' || name === 'meetings/room' || name === 'meetings/guest' || name === 'exam-link' || name === 'shop/index' || name === 'shop/checkout' || name === 'check/run' || name === 'demo' || name.startsWith('landing/'):
+            case name === 'welcome' || name === 'suspended' || name === 'maintenance' || name === 'candidate/exam-room' || name === 'candidate/exam-now' || name === 'candidate/phone' || name === 'verify' || name === 'meetings/room' || name === 'meetings/guest' || name === 'exam-link' || name === 'shop/index' || name === 'shop/checkout' || name === 'check/run' || name === 'demo' || name.startsWith('landing/'):
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;

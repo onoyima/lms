@@ -751,6 +751,19 @@ function RulesEditor({ exam }: { exam: ExamData }) {
                     </Field>
                 </div>
             </section>
+            <section className={`surface p-6 lg:col-span-2 ${settings.emergency ? 'ring-2 ring-status-warning/60' : ''}`}>
+                <label className="flex cursor-pointer items-start gap-3">
+                    <input type="checkbox" role="switch" className="mt-1 size-4" checked={!!settings.emergency} onChange={(e) => setSettings({ ...settings, emergency: e.target.checked })} />
+                    <span>
+                        <b className="block font-medium">Emergency exam</b>
+                        <span className="text-sm text-muted-foreground">
+                            While this exam is open, its students see only this exam when they sign in and start it with one press. No checks, monitoring notice, invigilator check-in,
+                            camera, microphone or approved-computer rules. Time it in the room; the on-screen timer still runs. A sitting PIN, if set, is still asked for.
+                        </span>
+                    </span>
+                </label>
+                {!!settings.emergency && <p className="mt-3 rounded-xl bg-status-warning/12 p-3 text-sm text-status-warning">On: the checks and monitoring settings on this page are ignored for this exam.</p>}
+            </section>
             <PreCheckPicker options={exam.pre_check_options ?? []} value={Array.isArray(proctoring.pre_checks) ? (proctoring.pre_checks as string[]) : []} onChange={(v) => setProctoring({ ...proctoring, pre_checks: v })} />
             <section className="surface p-6 lg:col-span-2">
                 <p className="eyebrow mb-1">Connection and power cuts</p>

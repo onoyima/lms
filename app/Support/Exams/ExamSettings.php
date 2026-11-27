@@ -27,6 +27,10 @@ class ExamSettings
         'mtf_scoring' => 'per_statement',
         'grading_scale' => '',            // '' = the institution's main scale, else the name of one of its other scales // multiple true/false: per_statement (each statement its share) or all_or_nothing
         'require_check_in' => true,    // hall sittings: invigilator checks the candidate in first (Target 96)
+        // Emergency exam: candidates see only this exam after signing in and start with one click. No
+        // pre-exam checks, monitoring notice, check-in, camera, microphone, screen or approved-computer
+        // requirements; the exam is timed by the invigilator in the room, with the on-screen timer still running.
+        'emergency' => false,
         // Starting late: "sitting" = the sitting's own late-entry minutes; "any_time" = may start until the
         // sitting closes (even 30+ minutes in); "cutoff" = no new starts once late_start_minutes have passed.
         'late_start' => 'sitting',
@@ -146,6 +150,7 @@ class ExamSettings
         $out['mtf_scoring'] = in_array($out['mtf_scoring'], ['per_statement', 'all_or_nothing'], true) ? $out['mtf_scoring'] : 'per_statement';
         $out['power_cut_minutes'] = max(0, min(240, (int) $out['power_cut_minutes']));
         $out['offline_sync_minutes'] = max(10, min(4320, (int) $out['offline_sync_minutes']));
+        $out['emergency'] = (bool) $out['emergency'];
 
         return $out;
     }
@@ -201,6 +206,11 @@ class ExamSettings
     public static function forCandidate(?array $stored, int $userId, int $examId): array
     {
         $p = self::proctoring($stored);
+
+        if (self::isEmergency($examId)) {
+            return self::emergencyPolicy($p);
+        }
+
         $relaxed = [];
         foreach (\App\Models\HardwareException::activeFor($userId, $examId) as $ex) {
             foreach (array_intersect((array) $ex->relax, self::RELAXABLE) as $key) {
@@ -215,6 +225,29 @@ class ExamSettings
         $p['recording_mode'] = self::recordingMode($p);
         // live watching needs the live-streaming mode; the other modes send no live video at all
         $p['live_video'] = $p['live_video'] && $p['recording_mode'] === 'stream';
+
+        return $p;
+    }
+
+    /** Is this an emergency exam (one click to start, nothing to check)? Read once per request. */
+    public static function isEmergency(int $examId): bool
+    {
+        return once(fn () => (bool) data_get(\App\Models\Exam::whereKey($examId)->value('settings'), 'emergency', false));
+    }
+
+    /** An emergency exam's rules: nothing to pass before starting and nothing watching; answers still protected. */
+    public static function emergencyPolicy(array $p): array
+    {
+        foreach (['webcam', 'face_detection', 'microphone', 'screen_share', 'second_camera', 'live_video', 'record_video', 'record_screen', 'gaze_tracking',
+            'require_consent', 'require_fullscreen', 'detect_tab_switch', 'detect_focus_loss', 'detect_multiple_displays', 'device_whitelist', 'ip_approval', 'single_session'] as $k) {
+            if (array_key_exists($k, $p)) {
+                $p[$k] = false;
+            }
+        }
+        $p['identity_check'] = 'none';
+        $p['pre_checks'] = [];
+        $p['recording_mode'] = self::recordingMode($p); // nothing is recorded: camera, microphone and screen are off
+        $p['emergency'] = true;
 
         return $p;
     }

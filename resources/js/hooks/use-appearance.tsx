@@ -38,6 +38,11 @@ const getStoredAppearance = (): Appearance => {
 };
 
 const isDarkMode = (appearance: Appearance): boolean => {
+    // The Midnight theme is dark unless the person chose light.
+    if (typeof document !== 'undefined' && document.documentElement.dataset.theme === 'midnight') {
+        return appearance !== 'light';
+    }
+
     return appearance === 'dark' || (appearance === 'system' && prefersDark());
 };
 
@@ -46,8 +51,7 @@ const applyTheme = (appearance: Appearance): void => {
         return;
     }
 
-    // The Midnight theme is dark by design, whatever the person's light/dark setting.
-    const isDark = document.documentElement.dataset.theme === 'midnight' || isDarkMode(appearance);
+    const isDark = isDarkMode(appearance);
 
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';

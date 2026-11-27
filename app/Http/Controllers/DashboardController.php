@@ -20,9 +20,15 @@ class DashboardController extends Controller
     /** @var \Closure(string): bool whether a module is on for this institution */
     private \Closure $on;
 
-    public function __invoke(Request $request, ModuleRegistry $modules, ReportCatalog $catalog): Response
+    public function __invoke(Request $request, ModuleRegistry $modules, ReportCatalog $catalog): Response|\Illuminate\Http\RedirectResponse
     {
         $user = $request->user();
+
+        // while an emergency exam is open, it is the only thing the student sees
+        if ($user->user_type === 'student' && \App\Support\Exams\OpenExams::emergency($user)->isNotEmpty()) {
+            return redirect('/my/exams/now');
+        }
+
         $tid = tenant_id();
         $enabled = $modules->enabledFor(tenant());
         // every panel and figure belongs to a module: one switched off leaves the rest working
@@ -36,7 +42,7 @@ class DashboardController extends Controller
             $panels['institution'] = [
                 'students' => DB::table('users')->where('tenant_id', $tid)->where('user_type', 'student')->where('status', 'active')->count(),
                 'staff' => DB::table('users')->where('tenant_id', $tid)->where('user_type', 'staff')->where('status', 'active')->count(),
-                'courses' => $semester ? DB::table('course_offerings')->where('semester_id', $semester->id)->count() : 0,
+                'courses' => ! $on('lms') ? null : ($semester ? DB::table('course_offerings')->where('semester_id', $semester->id)->count() : 0),
                 'live_attempts' => ! $exams ? null : DB::table('attempts')->where('tenant_id', $tid)->whereIn('status', ['in_progress', 'paused', 'locked'])->count(),
                 'open_incidents' => ! $on('browser_proctoring') ? null : DB::table('incidents')->where('tenant_id', $tid)->whereIn('status', ['open', 'investigating', 'escalated'])->count(),
                 'results_waiting' => ! $on('question_bank') ? null : DB::table('results')->where('tenant_id', $tid)->whereIn('status', ['draft', 'moderated', 'approved'])->count(),
@@ -94,7 +100,7 @@ class DashboardController extends Controller
                     ->whereBetween('i.due_at', [now(), now()->addDays(14)])->orderBy('i.due_at')->limit(8)->get(['i.id', 'i.title', 'i.type', 'i.due_at', 'c.code']),
                 'exams' => ! $exams ? null : DB::table('exam_candidates as ec')->join('exam_sessions as s', 's.id', '=', 'ec.exam_session_id')->join('exams as e', 'e.id', '=', 's.exam_id')
                     ->where('ec.user_id', $user->id)->where('s.ends_at', '>', now())->whereNotIn('e.category', ['quiz'])->orderBy('s.starts_at')->limit(5)
-                    ->get(['ec.id', 'e.title', 's.starts_at']),
+                    ->get(['ec.id', 'e.title', 's.starts_at', 's.ends_at']),
                 'unread' => $user->unreadNotifications()->count(),
             ];
         }
@@ -270,6 +276,30 @@ class DashboardController extends Controller
         $u = $request->user();
         $prefs = (array) $u->preferences;
         $prefs['dashboard'] = ['hidden' => array_values(array_unique($data['hidden'] ?? [])), 'order' => array_values(array_unique($data['order'] ?? []))];
+        $u->forceFill(['preferences' => $prefs])->save();
+
+        return back();
+    }
+
+    /**
+     * How a person arranges the cards on a page (dashboard, courses, exams...): order, hidden, minimised and
+     * full-width cards. Saved to their account, one entry per page.
+     */
+    public function saveArrangement(Request $request, string $page): \Illuminate\Http\RedirectResponse
+    {
+        abort_unless(preg_match('/^[a-z][a-z0-9-]{1,39}$/', $page), 404);
+        $key = ['array', 'max:200'];
+        $item = ['string', 'regex:/^[A-Za-z0-9_:.-]{1,60}$/'];
+        $data = $request->validate(['order' => $key, 'order.*' => $item, 'hidden' => $key, 'hidden.*' => $item, 'collapsed' => $key, 'collapsed.*' => $item, 'wide' => $key, 'wide.*' => $item, 'narrow' => $key, 'narrow.*' => $item]);
+        $u = $request->user();
+        $prefs = (array) $u->preferences;
+        $layouts = (array) ($prefs['layouts'] ?? []);
+        $layouts[$page] = collect(['order', 'hidden', 'collapsed', 'wide', 'narrow'])->mapWithKeys(fn ($k) => [$k => array_values(array_unique($data[$k] ?? []))])->all();
+        // at most 30 pages are remembered, the most recently arranged kept
+        $prefs['layouts'] = array_slice([$page => $layouts[$page]] + $layouts, 0, 30, true);
+        if ($page === 'dashboard') {
+            $prefs['dashboard'] = ['hidden' => $layouts[$page]['hidden'], 'order' => $layouts[$page]['order']];
+        }
         $u->forceFill(['preferences' => $prefs])->save();
 
         return back();

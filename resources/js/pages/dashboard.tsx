@@ -1,8 +1,9 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, Clock, Eye, EyeOff, GraduationCap, Plus, Radio, Scale, Send, ShieldAlert, SlidersHorizontal, Timer, TrendingUp } from 'lucide-react';
+import { Head, Link, usePage } from '@inertiajs/react';
+import { AlertTriangle, ArrowRight, Check, CheckCheck, Clock, Eye, GraduationCap, Plus, Radio, Scale, Send, ShieldAlert, Timer, TrendingUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Arrangeable, useArrangement } from '@/components/arrangeable';
 import { ExamDayBoard } from '@/components/dashboard/exam-day';
 import MidnightDashboard from '@/components/dashboard/midnight';
 import type { Decision, ExamWithPapers, Layout, ModuleCard, Panels } from '@/components/dashboard/types';
@@ -227,23 +228,12 @@ function StandardDashboard({ moduleCards, panels, semester, layout: saved = { hi
     const { tenant, auth, platform } = usePage().props;
     const { can, hasModule } = usePlatform();
     const i = panels.institution;
-    const [layout, setLayout] = useState<Layout>(saved);
-    const [editing, setEditing] = useState(false);
+    // which of the "More figures" are shown is kept with the dashboard's own arrangement
+    const kpiPrefs = useArrangement('dashboard-figures', KPIS.map((x) => x.key));
+    const shownKpi = (k: string) => !kpiPrefs.state.hidden.includes(k) && !saved.hidden.includes(`kpi:${k}`);
+    const toggleKpi = (k: string) => kpiPrefs.save({ ...kpiPrefs.state, hidden: shownKpi(k) ? [...kpiPrefs.state.hidden, k] : kpiPrefs.state.hidden.filter((x) => x !== k) });
     const hasPanel = (k: string) => (k === 'modules' ? true : k === 'kpis' ? !!i : k === 'student_due' ? panels.student?.due != null : k === 'student_exams' ? panels.student?.exams != null : k === 'upcoming' ? !!panels.upcoming && !panels.day : !!panels[k as keyof Panels]);
     const available = ['day', 'glance', 'decisions', 'exams', 'student_exams', 'student_due', 'teaching', 'oversight', 'casework', 'upcoming', 'kpis', 'modules'].filter(hasPanel);
-    const order = [...layout.order.filter((k) => available.includes(k)), ...available.filter((k) => !layout.order.includes(k))];
-    const shown = (k: string) => !layout.hidden.includes(k);
-    const persist = (next: Layout) => {
-        setLayout(next);
-        router.put('/dashboard/layout', next, { preserveScroll: true, preserveState: true, only: [] });
-    };
-    const toggle = (k: string) => persist({ ...layout, hidden: shown(k) ? [...layout.hidden, k] : layout.hidden.filter((x) => x !== k) });
-    const move = (k: string, d: -1 | 1) => {
-        const o = [...order];
-        const n = o.indexOf(k);
-        [o[n], o[n + d]] = [o[n + d], o[n]];
-        persist({ ...layout, order: o });
-    };
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -260,7 +250,7 @@ function StandardDashboard({ moduleCards, panels, semester, layout: saved = { hi
                         <GlanceCard label="Active students" icon={GraduationCap} value={g.students.toLocaleString()} note={g.students_week > 0 ? `+${g.students_week} this week` : 'No change this week'} noteTone={g.students_week > 0 ? undefined : 'text-muted-foreground'} href="/admin/people">
                             <Spark id="students" values={g.students_trend} color="var(--brand)" />
                         </GlanceCard>
-                        {g.results_to_approve !== null && <GlanceCard label="Pass rate, last 5 exams" icon={TrendingUp} value={g.pass_rate === null ? '—' : `${g.pass_rate}%`} note={g.pass_trend.length > 1 ? `${g.pass_trend.at(-1)! - g.pass_trend[0] >= 0 ? '+' : ''}${g.pass_trend.at(-1)! - g.pass_trend[0]} points` : 'Published results only'} noteTone={g.pass_trend.length > 1 && g.pass_trend.at(-1)! < g.pass_trend[0] ? 'text-status-critical' : g.pass_trend.length > 1 ? undefined : 'text-muted-foreground'} href="/admin/reports">
+                        {(g.pass_rate !== null || g.pass_trend.length > 0) && <GlanceCard label="Pass rate, last 5 exams" icon={TrendingUp} value={g.pass_rate === null ? '—' : `${g.pass_rate}%`} note={g.pass_trend.length > 1 ? `${g.pass_trend.at(-1)! - g.pass_trend[0] >= 0 ? '+' : ''}${g.pass_trend.at(-1)! - g.pass_trend[0]} points` : 'Published results only'} noteTone={g.pass_trend.length > 1 && g.pass_trend.at(-1)! < g.pass_trend[0] ? 'text-status-critical' : g.pass_trend.length > 1 ? undefined : 'text-muted-foreground'} href="/admin/reports">
                             <Spark id="pass" values={g.pass_trend} color="var(--live)" />
                         </GlanceCard>}
                         {g.results_to_approve !== null && <GlanceCard label="Results to approve" icon={CheckCheck} value={g.results_to_approve} note={g.results_ready ? `${g.results_ready} approved, ready to publish` : 'None ready to publish'} noteTone={g.results_ready ? 'text-status-warning' : 'text-muted-foreground'} href="/marking" />}
@@ -275,7 +265,7 @@ function StandardDashboard({ moduleCards, panels, semester, layout: saved = { hi
                 return i && (
                     <Panel title="More figures">
                         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
-                            {KPIS.filter((x) => x.key in i && i[x.key] !== null && shown(`kpi:${x.key}`)).map((x) => (
+                            {KPIS.filter((x) => x.key in i && i[x.key] !== null && shownKpi(x.key)).map((x) => (
                                 <div key={x.key}>
                                     <dt className="text-[13px] text-muted-foreground">{x.label}</dt>
                                     <dd className={cn('font-display text-xl font-semibold tabular-nums', x.tone?.(i[x.key]))}>{x.render ? x.render(i[x.key]) : String(i[x.key])}</dd>
@@ -392,43 +382,23 @@ function StandardDashboard({ moduleCards, panels, semester, layout: saved = { hi
                         {tenant?.welcome_message && <p className="mt-3 max-w-2xl whitespace-pre-line text-muted-foreground">{tenant.welcome_message}</p>}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" onClick={() => setEditing(!editing)} aria-pressed={editing}><SlidersHorizontal className="size-4" /> {editing ? 'Done' : 'Customise'}</Button>
                         {panels.day && <Button variant="outline" asChild><Link href="/proctor"><Radio className="size-4" /> Live monitoring</Link></Button>}
                         {can('exams.manage') && hasModule('question_bank') && <Button asChild><Link href="/exams/new"><Plus className="size-4" /> New exam</Link></Button>}
                     </div>
                 </section>
 
-                {editing && (
-                    <section className="surface grid gap-3 p-5 text-sm [animation:rise-in_.16s_ease-out]" aria-label="Customise dashboard">
-                        <p className="text-muted-foreground">Choose what you see and the order. Saved to your account.</p>
-                        <ul className="grid gap-1.5 sm:grid-cols-2">
-                            {order.map((k, n) => (
-                                <li key={k} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-1.5">
-                                    <span className={shown(k) ? 'font-medium' : 'text-muted-foreground line-through'}>{PANEL_NAMES[k]}</span>
-                                    <span className="flex gap-1">
-                                        <Button size="icon" variant="ghost" aria-label={`Move ${PANEL_NAMES[k]} up`} disabled={n === 0} onClick={() => move(k, -1)}><ArrowUp className="size-4" /></Button>
-                                        <Button size="icon" variant="ghost" aria-label={`Move ${PANEL_NAMES[k]} down`} disabled={n === order.length - 1} onClick={() => move(k, 1)}><ArrowDown className="size-4" /></Button>
-                                        <Button size="icon" variant="ghost" aria-label={shown(k) ? `Hide ${PANEL_NAMES[k]}` : `Show ${PANEL_NAMES[k]}`} onClick={() => toggle(k)}>{shown(k) ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</Button>
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                        {i && (
-                            <div className="flex flex-wrap gap-1.5">
-                                <span className="w-full text-xs text-muted-foreground">More figures</span>
-                                {KPIS.filter((x) => x.key in i && i[x.key] !== null).map((x) => (
-                                    <button key={x.key} type="button" aria-pressed={shown(`kpi:${x.key}`)} onClick={() => toggle(`kpi:${x.key}`)} className={cn('rounded-full border px-2.5 py-1 text-xs', shown(`kpi:${x.key}`) ? 'border-brand bg-brand-soft text-brand-ink' : 'text-muted-foreground')}>{x.label}</button>
-                                ))}
-                            </div>
-                        )}
-                    </section>
-                )}
-
                 {nextExam && <NextExam exam={nextExam} />}
 
-                <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-                    {order.filter(shown).map((k) => <div key={k} className={WIDE.includes(k) ? 'lg:col-span-2' : ''}>{renderPanel(k)}</div>)}
-                </div>
+                <Arrangeable page="dashboard" label="dashboard" className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
+                    cards={available.map((k) => ({ key: k, title: PANEL_NAMES[k], wide: WIDE.includes(k), node: renderPanel(k) }))}
+                    toolbar={i && (
+                        <span className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">More figures:</span>
+                            {KPIS.filter((x) => x.key in i && i[x.key] !== null).map((x) => (
+                                <button key={x.key} type="button" aria-pressed={shownKpi(x.key)} onClick={() => toggleKpi(x.key)} className={cn('rounded-full border px-2.5 py-1 text-xs', shownKpi(x.key) ? 'border-brand bg-brand-soft text-brand-ink' : 'text-muted-foreground')}>{x.label}</button>
+                            ))}
+                        </span>
+                    )} />
             </div>
         </>
     );

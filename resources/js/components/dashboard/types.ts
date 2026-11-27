@@ -10,7 +10,7 @@ export type Panels = {
     upcoming?: { id: number; title: string; starts_at: string; ends_at: string; status: string; venue: string | null; candidates: number }[];
     oversight?: { scope: string; courses: number; reviews_waiting: number; results_to_approve: number; pass_rate: number | null; marking_backlog: number; courses_needing_attention: { id: number; code: string; title: string }[] };
     teaching?: { courses: number; to_mark: number; unanswered_threads: number; students: number };
-    student?: { courses: number; unread: number; due: { id: number; title: string; type: string; due_at: string; code: string }[] | null; exams: { id: number; title: string; starts_at: string }[] | null };
+    student?: { courses: number; unread: number; due: { id: number; title: string; type: string; due_at: string; code: string }[] | null; exams: { id: number; title: string; starts_at: string; ends_at?: string }[] | null };
     casework?: { requests?: number; hardware?: number; anomalies?: number } | null;
     day?: Day;
     decisions?: Decision[];
