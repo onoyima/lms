@@ -19,6 +19,8 @@ import { useEffect, useState } from 'react';
 import { PracticalEditor } from '@/components/exam/practical-editor';
 import type { PracticalCriterion, PracticalSetup } from '@/components/exam/practical-editor';
 import { acceptFor, describeTypes } from '@/components/lms/file-types';
+import { CheckBadges, CheckReport } from '@/components/lms/integrity-checks';
+import type { Checks } from '@/components/lms/integrity-checks';
 import {
     fileSize,
     isMaterial,
@@ -93,6 +95,7 @@ type MySub = {
     raw_score: number | null;
     feedback_html: string | null;
     rubric_scores: number[] | null;
+    checks?: Checks;
 };
 type TeacherSub = {
     id: number;
@@ -112,6 +115,7 @@ type TeacherSub = {
     penalty: number;
     group: number | null;
     similarity: number | null;
+    checks?: Checks;
     similarity_matches: {
         percent: number;
         submission_id: number;
@@ -1119,6 +1123,7 @@ function AssignmentStudent({ item, submissions, due, group, peer }: Props) {
                                         receipt {x.file_hash.slice(0, 16)}
                                     </span>
                                 )}
+                                <CheckReport checks={x.checks} submissionId={x.id} />
                             </div>
                         ))}
                     </div>
@@ -1279,19 +1284,7 @@ function AssignmentTeacher({
                                     className="text-status-warning"
                                 />
                             )}
-                            {s.similarity !== null && s.similarity >= 15 && (
-                                <span
-                                    className={`ml-1 rounded px-1.5 py-0.5 text-[11px] ${s.similarity >= 40 ? 'bg-status-critical/15 text-status-critical' : 'bg-status-warning/15 text-status-warning'}`}
-                                    title={s.similarity_matches
-                                        .map(
-                                            (m) =>
-                                                `${m.percent}% like ${m.student}${m.same_assignment ? '' : ' (earlier class)'}`,
-                                        )
-                                        .join('\n')}
-                                >
-                                    {s.similarity}% similar
-                                </span>
-                            )}
+                            <CheckBadges checks={s.checks} matches={s.similarity_matches} />
                             {s.external_check?.status === 'complete' &&
                                 s.external_check.score !== null && (
                                     <span className="ml-1 text-[11px]">
@@ -1528,6 +1521,9 @@ function MarkDialog({
                     </a>
                 )}
                 {sub.file_name && <SubmissionPreview id={sub.id} name={sub.file_name} />}
+                <div className="mt-4">
+                    <CheckReport checks={sub.checks} matches={sub.similarity_matches} teacher submissionId={sub.id} />
+                </div>
                 {rubric.length ? (
                     <div className="mt-6 grid gap-4">
                         {rubric.map((c, i) => (

@@ -3,6 +3,7 @@
 namespace App\Services\Lms;
 
 use App\Models\AssignmentSubmission;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -17,22 +18,39 @@ class Similarity
     private const K = 5;      // words per sequence
     private const WINDOW = 4; // winnowing window
 
-    /** Plain text from the typed answer and the attached file (docx, txt, md, pdf when pdftotext exists). */
-    public function text(AssignmentSubmission $s): string
+    /**
+     * Plain text from the typed answer and the attached file (see DocumentText). The text of a file
+     * is kept in the cache by its hash, so a hand-in is read once and not again for every comparison.
+     * Peers' photos are not sent to the AI again: only their cached text is used.
+     */
+    public function text(AssignmentSubmission $s, bool $peer = false): string
     {
-        $text = strip_tags((string) $s->text);
+        $text = html_entity_decode(strip_tags(str_replace(['</p>', '<br>', '<br/>', '<br />'], "\n", (string) $s->text)), ENT_QUOTES);
         if ($s->file_path && Storage::disk('local')->exists($s->file_path)) {
-            $path = Storage::disk('local')->path($s->file_path);
-            $ext = strtolower(pathinfo((string) $s->file_name, PATHINFO_EXTENSION));
-            $text .= ' '.match ($ext) {
-                'docx' => $this->docx($path),
-                'txt', 'md' => (string) file_get_contents($path, false, null, 0, 5_000_000),
-                'pdf' => $this->pdf($path),
-                default => '',
-            };
+            $key = 'subtext:'.($s->file_hash ?: md5($s->file_path));
+            $file = Cache::get($key);
+            if ($file === null && ! ($peer && preg_match('/\.(jpe?g|png|webp|gif|bmp|tiff?|heic)$/i', (string) $s->file_name))) {
+                $file = app(DocumentText::class)->read(Storage::disk('local')->path($s->file_path), (string) $s->file_name);
+                Cache::put($key, $file, now()->addDays(60));
+            }
+            $text .= "\n".(string) $file;
         }
 
-        return $text;
+        return trim($text);
+    }
+
+    /**
+     * Every check for one submission: reads its text, scores it for AI writing, and compares it
+     * with other students' work. Runs after the student's upload has been answered.
+     */
+    public function run(AssignmentSubmission $s): void
+    {
+        $text = $this->text($s);
+        $words = DocumentText::words($text);
+        $status = $words === 0 ? ($s->file_path ? 'unreadable' : 'short') : ($words < WritingCheck::MIN_WORDS ? 'short' : 'read');
+        $s->forceFill(['text_status' => $status, 'word_count' => $words])->save();
+        app(WritingCheck::class)->check($s, $text);
+        $this->check($s, $text);
     }
 
     /** @return array<int, true> fingerprint hashes */
@@ -60,9 +78,9 @@ class Similarity
         return $a ? round(count(array_intersect_key($a, $b)) / count($a) * 100, 2) : 0.0;
     }
 
-    public function check(AssignmentSubmission $s): ?float
+    public function check(AssignmentSubmission $s, ?string $text = null): ?float
     {
-        $mine = $this->fingerprints($this->text($s));
+        $mine = $this->fingerprints($text ?? $this->text($s));
         if (count($mine) < 10) { // too short to judge
             $s->forceFill(['similarity' => null, 'similarity_matches' => null, 'similarity_checked_at' => now()])->save();
 
@@ -79,7 +97,7 @@ class Similarity
             ->when($s->course_group_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('course_group_id')->orWhere('course_group_id', '!=', $s->course_group_id)))
             ->orderBy('id')->chunk(200, function ($others) use ($mine, &$matches) {
                 foreach ($others as $o) {
-                    $pct = self::overlap($mine, $this->fingerprints($this->text($o)));
+                    $pct = self::overlap($mine, $this->fingerprints($this->text($o, true)));
                     if ($pct >= 15) {
                         $matches[] = ['submission_id' => $o->id, 'user_id' => $o->user_id, 'item_id' => $o->course_item_id, 'percent' => $pct];
                     }
@@ -90,30 +108,5 @@ class Similarity
         $s->forceFill(['similarity' => $top, 'similarity_matches' => array_slice($matches, 0, 10), 'similarity_checked_at' => now()])->save();
 
         return $top;
-    }
-
-    private function docx(string $path): string
-    {
-        $zip = new \ZipArchive;
-        if ($zip->open($path) !== true) {
-            return '';
-        }
-        $xml = (string) $zip->getFromName('word/document.xml');
-        $zip->close();
-        if (strlen($xml) > 20_000_000) {
-            return '';
-        }
-
-        return html_entity_decode(strip_tags(str_replace(['</w:p>', '<w:tab/>'], ["\n", ' '], $xml)), ENT_QUOTES | ENT_XML1);
-    }
-
-    private function pdf(string $path): string
-    {
-        $bin = trim((string) @shell_exec('command -v pdftotext 2>/dev/null'));
-        if ($bin === '') {
-            return '';
-        }
-
-        return (string) @shell_exec(escapeshellarg($bin).' -q -l 200 '.escapeshellarg($path).' - 2>/dev/null');
     }
 }

@@ -22,7 +22,7 @@ class AiSettings
     public const DEFAULT_URL = ['anthropic' => 'https://api.anthropic.com', 'openai' => 'https://api.openai.com/v1'];
 
     /** What AI is used for, each can be switched off by the institution. */
-    public const FEATURES = ['read_papers' => 'Read uploaded papers into questions', 'write_questions' => 'Suggest new questions', 'suggest_marks' => 'Suggest marks for written answers'];
+    public const FEATURES = ['read_papers' => 'Read uploaded papers into questions', 'write_questions' => 'Suggest new questions', 'suggest_marks' => 'Suggest marks for written answers', 'check_writing' => 'Check hand-ins for AI writing (and read photos of handwritten work)'];
 
     /** @return array{provider: string, base_url: string, model: string, key: string, source: string}|null */
     public static function resolve(?Tenant $tenant = null): ?array

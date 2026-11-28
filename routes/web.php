@@ -203,6 +203,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('docs/{slug?}', [\App\Http\Controllers\DocsController::class, 'institution'])->where('slug', '[a-z0-9-]+')->name('docs');
     Route::get('templates', [\App\Http\Controllers\TemplateController::class, 'index'])->name('templates');
     Route::get('templates/{key}', [\App\Http\Controllers\TemplateController::class, 'download'])->where('key', '[a-z_]+')->middleware('throttle:60,1,tpl')->name('templates.download');
+    Route::post('learn/submissions/{submission}/recheck', [\App\Http\Controllers\Lms\ItemController::class, 'recheck'])->whereNumber('submission')->middleware(['module:lms', 'throttle:30,1,subcheck']);
     Route::post('learn/submissions/{submission}/plagiarism', [\App\Http\Controllers\Admin\IntegrationController::class, 'checkSubmission'])->whereNumber('submission')->middleware(['module:lms', 'throttle:30,1,plagck']);
     Route::put('dashboard/layout', [DashboardController::class, 'saveLayout'])->middleware('throttle:30,1,dashlay')->name('dashboard.layout');
     Route::put('arrangement/{page}', [DashboardController::class, 'saveArrangement'])->middleware('throttle:60,1,arrange')->name('arrangement.save');

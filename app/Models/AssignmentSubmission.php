@@ -13,7 +13,7 @@ class AssignmentSubmission extends Model
 
     protected function casts(): array
     {
-        return ['submitted_at' => 'datetime', 'marked_at' => 'datetime', 'is_late' => 'boolean', 'released' => 'boolean', 'rubric_scores' => 'array', 'similarity_matches' => 'array', 'similarity_checked_at' => 'datetime'];
+        return ['submitted_at' => 'datetime', 'marked_at' => 'datetime', 'is_late' => 'boolean', 'released' => 'boolean', 'rubric_scores' => 'array', 'similarity_matches' => 'array', 'similarity_checked_at' => 'datetime', 'ai_signals' => 'array', 'ai_checked_at' => 'datetime'];
     }
 
     public function item(): \Illuminate\Database\Eloquent\Relations\BelongsTo

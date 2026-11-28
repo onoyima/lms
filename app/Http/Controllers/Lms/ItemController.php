@@ -142,6 +142,7 @@ class ItemController extends Controller
                 'file_name' => $s->file_name, 'file_hash' => $s->file_hash, 'text' => $s->text,
                 'score' => $s->released ? $s->score : null, 'raw_score' => $s->released ? $s->raw_score : null,
                 'feedback_html' => $s->released ? $s->feedback_html : null, 'rubric_scores' => $s->released ? $s->rubric_scores : null,
+                'checks' => self::checks($s, false),
             ]),
             'peer' => AssignmentService::settings($item)['peer_review'] ? $this->peerTasks($item, $user) : [],
         ];
@@ -159,6 +160,7 @@ class ItemController extends Controller
                 'raw_score' => $s->raw_score, 'score' => $s->score, 'feedback_html' => $s->feedback_html, 'rubric_scores' => $s->rubric_scores,
                 'released' => $s->released, 'penalty' => $this->assignments->penalty($item, $s), 'group' => $s->course_group_id,
                 'similarity' => $s->similarity !== null ? (float) $s->similarity : null,
+                'checks' => self::checks($s, true),
                 'external_check' => ($pc = \App\Models\PlagiarismCheck::where('assignment_submission_id', $s->id)->latest('id')->first()) ? $pc->only(['provider', 'status', 'score', 'report_url', 'error']) : null,
                 'similarity_matches' => collect($s->similarity_matches ?? [])->map(fn ($m) => ['percent' => $m['percent'], 'submission_id' => $m['submission_id'],
                     'student' => $anonymous ? 'another submission' : (\App\Models\User::find($m['user_id'])?->name ?? 'unknown'), 'same_assignment' => $m['item_id'] === $item->id])->all(),
@@ -176,6 +178,38 @@ class ItemController extends Controller
         ];
     }
 
+    /**
+     * The similarity and AI-writing scores of a submission, for the student (scores and what they
+     * mean) or the lecturer (also the reasons). Null fields mean "not checked yet".
+     */
+    public static function checks(AssignmentSubmission $s, bool $teacher): array
+    {
+        $external = \App\Models\PlagiarismCheck::where('assignment_submission_id', $s->id)->where('status', 'complete')->latest('id')->first();
+
+        return [
+            'checked' => $s->similarity_checked_at !== null || $s->ai_checked_at !== null,
+            'checked_at' => $s->ai_checked_at ?? $s->similarity_checked_at,
+            'pending' => $s->ai_checked_at === null && $s->similarity_checked_at === null && $s->submitted_at?->gt(now()->subMinutes(10)),
+            'text_status' => $s->text_status, 'words' => $s->word_count,
+            'similarity' => $s->similarity !== null ? (float) $s->similarity : ($s->similarity_checked_at && $s->text_status === 'read' ? 0.0 : null),
+            'external' => $external ? ['provider' => $external->provider, 'score' => $external->score, 'report_url' => $teacher ? $external->report_url : null] : null,
+            'ai' => $s->ai_score !== null ? (float) $s->ai_score : null,
+            'ai_band' => \App\Services\Lms\WritingCheck::band($s->ai_score !== null ? (float) $s->ai_score : null),
+            'ai_signals' => $teacher ? array_values((array) data_get($s->ai_signals, 'signals', [])) : [],
+            'ai_model' => $teacher ? data_get($s->ai_signals, 'model') : null,
+        ];
+    }
+
+    /** A lecturer runs the similarity and AI-writing checks again (after more students hand in, say). */
+    public function recheck(Request $request, AssignmentSubmission $submission): RedirectResponse
+    {
+        $item = CourseItem::findOrFail($submission->course_item_id);
+        abort_unless($this->access->teaches($request->user(), $item->offering), 403);
+        app(\App\Services\Lms\Similarity::class)->run($submission);
+
+        return back()->with('success', 'Checked again.');
+    }
+
     public function submit(Request $request, CourseItem $item): RedirectResponse
     {
         $this->access->authorizeOpen($request->user(), $item);
@@ -185,8 +219,8 @@ class ItemController extends Controller
         $file = $request->file('file') ?? (! empty($data['upload_id']) ? app(\App\Services\Lms\Uploads::class)->take($data['upload_id'], $request->user(), 'assignment:'.$item->id) : null);
         $sub = $this->assignments->submit($item, $request->user(), $data['text'] ?? null, $file);
         $this->content->complete($item, $request->user());
-        // similarity runs after the reply so the student is not kept waiting
-        dispatch(fn () => app(\App\Services\Lms\Similarity::class)->check($sub->fresh()))->afterResponse();
+        // the similarity and AI-writing checks run after the reply so the student is not kept waiting
+        dispatch(fn () => app(\App\Services\Lms\Similarity::class)->run($sub->fresh()))->afterResponse();
         // and to the institution's plagiarism service, when it is set to check every submission
         $plag = app(\App\Services\Integrations\PlagiarismConnector::class);
         if ($plag->enabled() && app(\App\Services\Integrations\Connectors::class)->get('plagiarism')['auto']) {
