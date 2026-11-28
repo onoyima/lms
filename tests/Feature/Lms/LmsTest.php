@@ -107,6 +107,22 @@ class LmsTest extends TestCase
         $this->actingAs($other)->post('/learn/registration', ['courses' => [$adv->id, $mth->id]])->assertSessionHasErrors('courses');
     }
 
+    public function test_with_the_portal_connected_students_see_their_portal_registrations_and_cannot_register_here(): void
+    {
+        $t = $this->tenant;
+        $t->forceFill(['settings' => array_replace_recursive((array) $t->settings, ['integrations' => ['directory' => ['enabled' => true]]])])->save();
+        $o = $this->offering();
+        $st = $this->student();
+        // what the directory sync writes for a portal course registration
+        Enrolment::create(['course_offering_id' => $o->id, 'user_id' => $st->id, 'status' => 'active', 'source' => 'directory']);
+        $this->window();
+
+        $this->actingAs($st)->get('/learn/registration')->assertInertia(fn ($p) => $p->where('portal', true)->where('registered.0.code', 'CHM 101'));
+        $this->post('/learn/registration', ['courses' => [$o->id]])->assertStatus(422);
+        // and the course with its materials opens for them
+        $this->get("/learn/courses/{$o->id}")->assertOk();
+    }
+
     public function test_suspended_students_cannot_register_and_core_courses_are_required(): void
     {
         $this->window();
@@ -204,6 +220,34 @@ class LmsTest extends TestCase
         $this->actingAs($wrongType)->post("/learn/items/{$item->id}/submit", ['text' => 'too late'])->assertSessionHasErrors('submission');
     }
 
+    public function test_a_lecturer_sends_work_back_for_corrections_and_the_student_resubmits(): void
+    {
+        $o = $this->offering();
+        $section = CourseSection::create(['course_offering_id' => $o->id, 'title' => 'Week 1']);
+        $item = CourseItem::create(['course_offering_id' => $o->id, 'course_section_id' => $section->id, 'type' => 'assignment', 'title' => 'Circuit design',
+            'due_at' => now()->addDay(), 'cutoff_at' => now()->addDays(2), 'settings' => ['max_score' => 20, 'max_attempts' => 1, 'file_types' => ['pdf', 'png', 'sch']]]);
+        $st = $this->student();
+        $this->enrol($o, $st);
+
+        $this->actingAs($st)->post("/learn/items/{$item->id}/submit", ['file' => UploadedFile::fake()->create('amp.sch', 20)])->assertSessionHasNoErrors();
+        $first = AssignmentSubmission::where('user_id', $st->id)->first();
+        // the lecturer reads a picture or PDF on screen instead of downloading it
+        $this->actingAs($this->lecturer)->get("/learn/submissions/{$first->id}/file?inline=1")->assertOk();
+
+        $this->post("/learn/submissions/{$first->id}/corrections", ['feedback_html' => '<p>Add the bias resistor</p>', 'until' => now()->addDays(5)->toDateTimeString()])->assertSessionHasNoErrors();
+        $this->assertSame('corrections', $first->fresh()->status);
+        $this->assertDatabaseHas('notifications', ['notifiable_id' => $st->id]);
+        $props = $this->actingAs($st)->get("/learn/items/{$item->id}")->viewData('page')['props'];
+        $this->assertSame('corrections', $props['submissions'][0]['status']);
+        $this->assertStringContainsString('bias resistor', $props['submissions'][0]['feedback_html']);
+
+        // after the cut-off, inside the corrections date, the corrected work is a new attempt beyond the limit
+        $this->travel(3)->days();
+        $this->actingAs($st)->post("/learn/items/{$item->id}/submit", ['file' => UploadedFile::fake()->image('amp-v2.png')])->assertSessionHasNoErrors();
+        $this->assertSame(2, AssignmentSubmission::where('user_id', $st->id)->max('attempt'));
+        $this->actingAs($st)->post("/learn/items/{$item->id}/submit", ['file' => UploadedFile::fake()->create('notes.docx', 5)])->assertSessionHasErrors('file');
+    }
+
     public function test_group_assignment_mark_goes_to_every_member(): void
     {
         $o = $this->offering();
@@ -271,6 +315,37 @@ class LmsTest extends TestCase
     }
 
     // ── Quizzes on the exam engine ───────────────────────────────────────
+
+    public function test_a_practical_ca_is_set_up_marked_by_the_lecturer_and_feeds_the_gradebook(): void
+    {
+        $o = $this->offering();
+        [$s1, $s2] = [$this->student(), $this->student()];
+        $this->enrol($o, $s1);
+        $this->enrol($o, $s2);
+        $section = CourseSection::create(['course_offering_id' => $o->id, 'title' => 'W4']);
+        $this->actingAs($this->lecturer)->post("/learn/courses/{$o->id}/items", ['course_section_id' => $section->id, 'type' => 'quiz', 'title' => 'Circuits practical (CA)',
+            'settings' => ['kind' => 'practical', 'max_score' => 10]])->assertRedirect();
+        $item = CourseItem::where('title', 'Circuits practical (CA)')->first();
+        $exam = Exam::find($item->exam_id);
+        $this->assertSame('practical', $exam->type);
+
+        // publishing needs the marking set up first
+        $this->post("/learn/items/{$item->id}/quiz/publish")->assertSessionHasErrors('quiz');
+        $this->put("/learn/items/{$item->id}/practical", ['criteria' => [
+            ['station' => 'Build', 'text' => 'Power off before handling', 'kind' => 'check', 'max_score' => 1, 'critical' => true],
+            ['station' => 'Build', 'text' => 'Output voltage', 'kind' => 'measure', 'max_score' => 4, 'expected' => 5, 'tolerance' => 0.1, 'unit' => 'V'],
+        ], 'stations' => [['name' => 'Build', 'minutes' => 30]]])->assertSessionHasNoErrors();
+        $this->get("/learn/items/{$item->id}")->assertInertia(fn ($p) => $p->where('practical.status', 'draft')->has('practical.setup.criteria', 2));
+        $this->post("/learn/items/{$item->id}/quiz/publish")->assertSessionHasNoErrors();
+
+        // every registered student is a candidate; the lecturer is an examiner and marks on the score sheet
+        $c = $exam->fresh()->criteria->keyBy('text');
+        $this->get("/marking/{$exam->id}/panel")->assertOk()->assertInertia(fn ($p) => $p->has('candidates', 2));
+        $this->post("/marking/{$exam->id}/panel", ['user_id' => $s1->id, 'scores' => [$c['Power off before handling']->id => ['score' => 1], $c['Output voltage']->id => ['reading' => 4.95]]])->assertSessionHasNoErrors();
+        $this->assertEquals(5.0, (float) DB::table('results')->where('exam_id', $exam->id)->where('user_id', $s1->id)->value('raw_score'));
+
+        $this->actingAs($s1)->get("/learn/items/{$item->id}")->assertInertia(fn ($p) => $p->where('practical.stations', 1)->where('practical.setup', null));
+    }
 
     public function test_quiz_uses_the_exam_engine_and_feeds_the_gradebook(): void
     {

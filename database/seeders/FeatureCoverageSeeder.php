@@ -63,6 +63,7 @@ class FeatureCoverageSeeder extends Seeder
             $this->shop();
             $this->trustedDevice();
             $this->banksAndReports();
+            $this->disciplinePracticals();
 
             auth()->forgetUser();
         });
@@ -227,6 +228,47 @@ class FeatureCoverageSeeder extends Seeder
         $this->once('computer_reports', ['computer_check_id' => $check, 'ip' => '10.10.1.22'], ['tenant_id' => $tid, 'kind' => 'check', 'label' => 'A-02', 'status' => 'fail', 'results' => $ok(['camera']),
             'errors' => json_encode(['Camera works: Not available (no device found)']), 'user_agent' => 'Mozilla/5.0 (Windows NT 10.0) Chrome/131.0', 'error_count' => 1,
             'first_seen_at' => now()->format('Y-m-d H:i:s'), 'last_seen_at' => now()->format('Y-m-d H:i:s')]);
+    }
+
+    /**
+     * Practicals beyond nursing: an electronics practical built from the hardware template (stations,
+     * readings against expected values, a critical safety step), marked for the sample student, who also
+     * handed in a photo of the circuit.
+     */
+    private function disciplinePracticals(): void
+    {
+        $exam = Exam::where('title', 'EEE 201 · Electronics practical')->first();
+        if (! $exam) {
+            $exam = Exam::create(['title' => 'EEE 201 · Electronics practical', 'type' => 'practical', 'status' => 'draft', 'created_by' => $this->admin->id, 'max_attempts' => 1,
+                'duration_minutes' => 120, 'total_mark' => 40, 'marking_policy' => 'average', 'settings' => ['require_check_in' => false]]);
+            $t = \App\Support\Exams\PracticalTemplates::all()['hardware'];
+            app(\App\Services\Exams\PracticalSetup::class)->save($exam, [
+                'criteria' => collect($t['stations'])->flatMap(fn ($st) => collect($st['criteria'])->map(fn ($c) => $c + ['station' => $st['name'], 'allowed_scores' => isset($c['allowed_scores']) ? implode(',', (array) $c['allowed_scores']) : null]))->values()->all(),
+                'stations' => collect($t['stations'])->map(fn ($st) => ['name' => $st['name'], 'minutes' => $st['minutes']])->all(),
+                'evidence' => true, 'evidence_types' => $t['evidence_types'], 'discipline' => 'hardware',
+            ]);
+            $exam->update(['status' => 'scheduled']);
+            $session = $exam->sessions()->create(['mode' => 'hall', 'starts_at' => now()->subHour(), 'ends_at' => now()->addHours(3), 'late_entry_minutes' => 0, 'status' => 'open']);
+            ExamCandidate::firstOrCreate(['exam_session_id' => $session->id, 'user_id' => $this->student->id]);
+            $exam->examiners()->syncWithoutDetaching([$this->lecturer->id => ['role' => 'examiner'], $this->admin->id => ['role' => 'examiner']]);
+        }
+        $c = $exam->criteria()->get()->keyBy('text');
+        if (! \App\Models\CriterionMark::where('exam_id', $exam->id)->exists() && isset($c['Output voltage'])) {
+            app(\App\Services\Exams\Marker::class)->recordCriterionMarks($exam, $this->student->id, $this->lecturer->id, [
+                $c['Power off before handling the circuit']->id => ['score' => 1],
+                $c['Components placed as in the schematic']->id => ['score' => 2],
+                $c['Soldering quality (shiny, no bridges)']->id => ['score' => 2],
+                $c['Output voltage']->id => ['reading' => 4.96, 'comment' => 'Measured at TP1'],
+                $c['Current drawn']->id => ['reading' => 23.5],
+            ]);
+        }
+        if (! \App\Models\PracticalEvidence::where('exam_id', $exam->id)->exists()) {
+            $path = "practicals/{$exam->tenant_id}/{$exam->id}/{$this->student->id}/demo-circuit.png";
+            // a 1×1 picture stands in for the photo of the circuit
+            \Illuminate\Support\Facades\Storage::disk('local')->put($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+            \App\Models\PracticalEvidence::create(['exam_id' => $exam->id, 'user_id' => $this->student->id, 'uploaded_by' => $this->student->id, 'kind' => 'candidate',
+                'file_path' => $path, 'file_name' => 'amplifier-circuit.png', 'file_mime' => 'image/png', 'file_size' => 68, 'note' => 'Finished board']);
+        }
     }
 
     private function once(string $table, array $unique, array $values = []): int

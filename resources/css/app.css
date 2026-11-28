@@ -724,6 +724,34 @@ html[data-theme='midnight'].dark {
     max-width: 100%;
 }
 
+/* Exam paper: everything visible without zooming. Diagrams and pictures shrink to fit the screen
+   height, wide tables scroll inside themselves, and long words wrap. */
+.exam-paper .rich-content img,
+.exam-paper .rich-content svg:not(mjx-container svg) {
+    max-height: min(42vh, 420px);
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+.exam-paper .rich-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+}
+.exam-paper .rich-content {
+    overflow-wrap: anywhere;
+}
+@keyframes exam-blink {
+    0%, 55% { opacity: 1; }
+    56%, 100% { opacity: 0.35; }
+}
+.exam-blink {
+    animation: exam-blink 1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .exam-blink { animation-duration: 2s; }
+}
+
 /* Exam paper: always light, print-like, regardless of theme, so equations and diagrams read identically for everyone */
 @layer components {
     .exam-surface {

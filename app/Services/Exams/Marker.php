@@ -271,15 +271,27 @@ class Marker
             foreach ($scores as $criterionId => $row) {
                 /** @var MarkingCriterion|null $criterion */
                 $criterion = $criteria[(int) $criterionId] ?? null;
-                $score = is_array($row) ? ($row['score'] ?? null) : $row;
-                if (! $criterion || $score === null || $score === '') {
+                if (! $criterion) {
                     continue;
                 }
-                $score = (float) $score;
-                abort_unless($criterion->accepts($score), 422, "\"{$criterion->text}\" does not accept a score of $score.");
+                // a measured line is scored from the reading the examiner recorded
+                $reading = is_array($row) && isset($row['reading']) && $row['reading'] !== '' ? (float) $row['reading'] : null;
+                if ($criterion->kind === 'measure') {
+                    if ($reading === null) {
+                        continue;
+                    }
+                    $score = $criterion->scoreForReading($reading);
+                } else {
+                    $score = is_array($row) ? ($row['score'] ?? null) : $row;
+                    if ($score === null || $score === '') {
+                        continue;
+                    }
+                    $score = (float) $score;
+                    abort_unless($criterion->accepts($score), 422, "\"{$criterion->text}\" does not accept a score of $score.");
+                }
                 CriterionMark::updateOrCreate(
                     ['marking_criterion_id' => $criterion->id, 'user_id' => $candidateId, 'examiner_id' => $examinerId],
-                    ['exam_id' => $exam->id, 'score' => $score, 'comment' => is_array($row) ? ($row['comment'] ?? null) : null]
+                    ['exam_id' => $exam->id, 'score' => $score, 'reading' => $reading, 'comment' => is_array($row) && isset($row['comment']) ? mb_substr((string) $row['comment'], 0, 500) : null]
                 );
             }
         });
@@ -293,6 +305,8 @@ class Marker
         $marks = CriterionMark::where('exam_id', $exam->id)->where('user_id', $candidateId)->orderBy('id')->get()->groupBy('marking_criterion_id');
         $total = 0.0;
         $marked = 0;
+        $byStation = [];
+        $failedStations = [];
         foreach ($criteria as $c) {
             $scores = $marks->get($c->id, collect())->pluck('score')->map(fn ($s) => (float) $s)->all();
             if (! $scores) {
@@ -300,15 +314,25 @@ class Marker
             }
             $marked++;
             sort($scores);
-            $total += match ($exam->marking_policy) {
+            $score = match ($exam->marking_policy) {
                 'highest' => max($scores),
-                'first' => $marks->get($c->id)->first()->score,
+                'first' => (float) $marks->get($c->id)->first()->score,
                 'median' => count($scores) % 2 ? $scores[intdiv(count($scores), 2)] : ($scores[count($scores) / 2 - 1] + $scores[count($scores) / 2]) / 2,
                 default => array_sum($scores) / count($scores),
             };
+            $station = (string) ($c->station ?? '');
+            $byStation[$station] = ($byStation[$station] ?? 0) + $score;
+            // a critical step failed (safety, aseptic technique, patient identity...) scores its whole station 0
+            if ($c->critical && $score < 1e-9) {
+                $failedStations[$station] = true;
+            }
+        }
+        foreach ($byStation as $station => $sum) {
+            $total += isset($failedStations[$station]) ? 0 : $sum;
         }
 
-        return ['raw' => round($total, 2), 'max' => (float) $criteria->sum('max_score'), 'complete' => $marked === $criteria->count() && $marked > 0, 'marked' => $marked];
+        return ['raw' => round($total, 2), 'max' => (float) $criteria->sum('max_score'), 'complete' => $marked === $criteria->count() && $marked > 0, 'marked' => $marked,
+            'failed_stations' => array_keys($failedStations)];
     }
 
     /** Recompute one candidate's result from their attempts (or panel marks). Locked results are never overwritten. */

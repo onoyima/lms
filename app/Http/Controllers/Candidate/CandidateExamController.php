@@ -49,7 +49,27 @@ class CandidateExamController extends Controller
                 ...self::attemptsSummary($c),
             ])->values();
 
-        return Inertia::render('candidate/exams', ['exams' => $rows]);
+        // practicals, vivas and defences: when and where, and (for practicals that ask for it) handing in work
+        $panel = ExamCandidate::with(['session.exam:id,title,type,settings,status', 'session.venue:id,name'])
+            ->where('user_id', $request->user()->id)->latest('id')->limit(50)->get()
+            ->filter(fn ($c) => $c->session && $c->session->exam && $c->session->exam->isPanelMarked() && in_array($c->session->exam->status, ['scheduled', 'live', 'closed', 'results_published'], true));
+        $evidence = \App\Models\PracticalEvidence::where('user_id', $request->user()->id)->where('kind', 'candidate')
+            ->whereIn('exam_id', $panel->map(fn ($c) => $c->session->exam_id))->orderBy('id')->get(['id', 'exam_id', 'file_name', 'file_size', 'created_at'])->groupBy('exam_id');
+        $practicals = $panel->map(function (ExamCandidate $c) use ($evidence) {
+            $s = $c->session;
+            $p = (array) data_get($s->exam->settings, 'practical', []);
+
+            return [
+                'candidate_id' => $c->id, 'exam' => $s->exam->title, 'type' => $s->exam->type,
+                'starts_at' => $s->starts_at->toIso8601String(), 'ends_at' => $s->ends_at->toIso8601String(), 'venue' => $s->venue?->name,
+                'stations' => count($p['stations'] ?? []),
+                'evidence' => ! empty($p['evidence']), 'evidence_types' => $p['evidence_types'] ?? [],
+                'can_hand_in' => ! empty($p['evidence']) && now()->gte($s->starts_at->copy()->subMinutes(15)) && now()->lte($s->ends_at->copy()->addHours(2)),
+                'handed_in' => ($evidence[$s->exam_id] ?? collect())->values(),
+            ];
+        })->sortBy('starts_at')->values();
+
+        return Inertia::render('candidate/exams', ['exams' => $rows, 'practicals' => $practicals]);
     }
 
     /** Emergency exams open now: shown on their own, each one click from the first question. */

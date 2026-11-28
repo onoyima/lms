@@ -1,20 +1,21 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArrowLeft, Plus, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { BankChips, BankPicker, BanksPanel, PaperProblems  } from '@/components/exam/banks';
 import type {Bank} from '@/components/exam/banks';
+import type { PracticalCriterion, PracticalSetup } from '@/components/exam/practical-editor';
+import { PracticalEditor } from '@/components/exam/practical-editor';
 import { QuestionReportsPanel  } from '@/components/exam/question-reports';
 import type {ReportGroup} from '@/components/exam/question-reports';
 import { QuestionUpload } from '@/components/exam/question-upload';
 import { Field, formatDateTime, inputClass, PageHeader, Status, Table, Td, textareaClass } from '@/components/platform/ui';
 import { RichContent } from '@/components/rich-content';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { parseCsv } from '@/lib/csv';
+import { Button } from '@/components/ui/button';
 
 type Q = { id: number; type: string; stem_html: string; mark: number; topic: string | null; status: string; difficulty?: string | null };
 type Rule = { topic?: string | null; difficulty?: string | null; type?: string | null; count: number; mark?: number | null; draw?: number; bank_ids?: number[]; min_each?: number | null };
 type Section = { id: number; title: string; instructions: string | null; blueprint: Rule[]; answer_any: number | null; questions: Q[] };
-type Criterion = { id?: number; text: string; allowed_scores: number[] | null; max_score: number };
+type Criterion = PracticalCriterion;
 type Sitting = { id: number; name: string | null; mode: string; status: string; venue: string | null; starts_at: string; ends_at: string; candidates: number; attempts: number; is_practice: boolean };
 type ExamData = {
     id: number; title: string; code: string | null; type: string; category: string; kind: string; parent_exam_id: number | null; exam_group_id?: number | null; status: string; instructions: string | null;
@@ -67,6 +68,7 @@ export default function ExamShow(props: {
     parent: { id: number; title: string } | null; group?: { id: number; title: string } | null; followUps: { id: number; title: string; kind: string; status: string }[];
     anomalies?: Anomaly[];
     banks?: Bank[]; problems?: string[]; questionReports?: ReportGroup[]; reportReasons?: Record<string, string>;
+    practical?: PracticalSetup | null;
 }) {
     const { exam } = props;
     const { flash } = usePage().props;
@@ -162,7 +164,7 @@ export default function ExamShow(props: {
                 </nav>
 
                 {tab === 'Overview' && <Overview {...props} />}
-                {tab === 'Paper' && (exam.is_panel ? <CriteriaEditor exam={exam} criteria={props.criteria} /> : <PaperEditor exam={exam} sections={props.sections} topics={props.topics} banks={props.banks ?? []} problems={props.problems ?? []} />)}
+                {tab === 'Paper' && (exam.is_panel ? <PracticalEditor exam={exam} criteria={props.criteria} practical={props.practical ?? null} /> : <PaperEditor exam={exam} sections={props.sections} topics={props.topics} banks={props.banks ?? []} problems={props.problems ?? []} />)}
                 {tab === 'Question reports' && <QuestionReportsPanel examId={exam.id} groups={props.questionReports ?? []} reasons={props.reportReasons ?? {}} />}
                 {tab === 'Question banks' && (exam.is_panel ? <p className="text-sm text-muted-foreground">This paper is scored by examiners with a checklist (Paper tab); it has no question banks.</p> : <BanksPanel exam={exam} banks={props.banks ?? []} sections={props.sections} />)}
                 {tab === 'Rules & proctoring' && <RulesEditor exam={exam} />}
@@ -511,92 +513,6 @@ function QuestionPicker({ exam, section, onDone }: { exam: ExamData; section: Se
     );
 }
 
-function CriteriaEditor({ exam, criteria }: { exam: ExamData; criteria: Criterion[] }) {
-    const [rows, setRows] = useState(criteria.map((c) => ({ id: c.id, text: c.text, allowed_scores: c.allowed_scores?.join(',') ?? '', max_score: c.max_score })));
-    const total = rows.reduce((n, r) => n + (r.allowed_scores ? Math.max(...r.allowed_scores.split(',').map(Number)) : Number(r.max_score || 0)), 0);
-    const [note, setNote] = useState<string | null>(null);
-
-    /** A checklist from a CSV (Step, Score values, Maximum) or a text file (one step per line, "| 0,1,2" for its scores). */
-    const readChecklist = async (file: File, replace: boolean) => {
-        const text = await file.text();
-        let parsed: { text: string; allowed_scores: string; max_score: number }[] = [];
-
-        if (/\.csv$/i.test(file.name)) {
-            const table = parseCsv(text);
-            const head = (table[0] ?? []).map((h) => h.toLowerCase().replace(/[^a-z]/g, ''));
-            const hasHead = head.some((h) => /step|criterion|item|text|task/.test(h));
-            const col = (re: RegExp, fallback: number) => {
-                const i = head.findIndex((h) => re.test(h));
-
-                return hasHead ? i : fallback;
-            };
-            const [cText, cScores, cMax] = [col(/step|criterion|item|text|task/, 0), col(/score|values|allowed/, 1), col(/max/, 2)];
-            parsed = table.slice(hasHead ? 1 : 0).map((r) => ({ text: r[cText] ?? '', allowed_scores: (cScores >= 0 ? r[cScores] ?? '' : '').replace(/\s+/g, ''), max_score: Number(cMax >= 0 ? r[cMax] || 1 : 1) }));
-        } else {
-            parsed = text.replace(/^\uFEFF/, '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('//')).map((l) => {
-                const [t, scores = ''] = l.split(/\s*[|\t]\s*/);
-
-                return { text: t.replace(/^\d{1,3}[.)]\s+/, ''), allowed_scores: scores.replace(/\s+/g, ''), max_score: 1 };
-            });
-        }
-
-        parsed = parsed.filter((r) => r.text);
-        setRows([...(replace ? [] : rows), ...parsed.map((r) => ({ id: undefined, text: r.text.slice(0, 500), allowed_scores: r.allowed_scores, max_score: r.max_score }))]);
-        setNote(`${parsed.length} steps read from ${file.name}. Check them, then Save criteria.`);
-    };
-
-    return (
-        <section className="surface p-6">
-            <p className="text-sm text-muted-foreground">
-                {exam.type === 'viva' || exam.type === 'research'
-                    ? 'Each examiner picks a score from 0 up to the maximum you set here. Add more lines to score separate areas (e.g. write-up, presentation, defence).'
-                    : 'Checklist items, as in the current portal: list the scores an examiner may pick (e.g. 0,0.5,1), or leave empty and set a maximum.'}{' '}
-                Maximum total: <strong>{total}</strong>
-            </p>
-            <div className="mt-4 grid gap-2">
-                {rows.map((r, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-2">
-                        <input className={`${inputClass} col-span-7`} value={r.text} disabled={!exam.can_edit} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} placeholder="Explains procedure and obtains consent" />
-                        <input className={`${inputClass} col-span-2 font-mono`} value={r.allowed_scores} disabled={!exam.can_edit} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, allowed_scores: e.target.value } : x)))} placeholder="0,0.5,1" />
-                        <input type="number" className={`${inputClass} col-span-2`} value={r.max_score} disabled={!exam.can_edit || !!r.allowed_scores} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, max_score: Number(e.target.value) } : x)))} />
-                        {exam.can_edit && (
-                            <Button variant="ghost" className="col-span-1" onClick={() => setRows(rows.filter((_, j) => j !== i))} aria-label="Remove">
-                                <Trash2 className="size-4" />
-                            </Button>
-                        )}
-                    </div>
-                ))}
-            </div>
-            {exam.can_edit && (
-                <div className="mt-4 rounded-xl border border-dashed border-border p-4">
-                    <p className="text-sm font-medium">Upload the checklist instead of typing it</p>
-                    <p className="mb-3 text-xs text-muted-foreground">A CSV with the columns Step, Score values, Maximum (<a className="text-brand underline" href="/templates/practical_checklist">template</a>), or a text file with one step per line and its scores after a bar: <span className="font-mono">Hand hygiene | 0,1,2</span></p>
-                    <div className="flex flex-wrap gap-2">
-                        <label className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-pointer`}>
-                            <Upload className="size-4" /> Add steps from a file
-                            <input type="file" className="sr-only" accept=".csv,.txt" onChange={(e) => (e.target.files?.[0] && void readChecklist(e.target.files[0], false), (e.target.value = ''))} />
-                        </label>
-                        {rows.length > 0 && (
-                            <label className={`${buttonVariants({ variant: 'ghost', size: 'sm' })} cursor-pointer`}>
-                                Replace the list from a file
-                                <input type="file" className="sr-only" accept=".csv,.txt" onChange={(e) => (e.target.files?.[0] && void readChecklist(e.target.files[0], true), (e.target.value = ''))} />
-                            </label>
-                        )}
-                    </div>
-                    {note && <p className="mt-2 text-sm text-status-good">{note}</p>}
-                </div>
-            )}
-            {exam.can_edit && (
-                <div className="mt-4 flex gap-2">
-                    <Button variant="outline" onClick={() => setRows([...rows, { id: undefined, text: '', allowed_scores: '', max_score: 1 }])}>
-                        <Plus className="size-4" /> Add criterion
-                    </Button>
-                    <Button onClick={() => router.put(`/exams/${exam.id}/criteria`, { criteria: rows }, { preserveScroll: true })}>Save criteria</Button>
-                </div>
-            )}
-        </section>
-    );
-}
 
 const settingLabels: Record<string, string> = {
     shuffle_questions: 'Shuffle question order per candidate', shuffle_options: 'Shuffle answer options', show_score: 'Show objective score right after submitting',

@@ -143,6 +143,10 @@ export function Arrangeable({ page, cards, className, toolbar, label = 'cards', 
     const bar = 'inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-[13px] font-medium transition-colors hover:border-brand hover:text-brand-ink';
     const tool = 'grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground';
 
+    if (cards.length === 0) {
+        return null;
+    }
+
     return (
         <div className="grid gap-3">
             <div className="flex flex-wrap items-center gap-2">

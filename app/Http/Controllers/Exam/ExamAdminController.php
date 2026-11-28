@@ -96,6 +96,7 @@ class ExamAdminController extends Controller
                 'questions' => $s->questions->map(fn ($q) => ['id' => $q->id, 'type' => $q->type, 'stem_html' => $q->stem_html, 'mark' => (float) ($q->pivot->mark ?? $q->mark), 'topic' => $q->topic, 'status' => $q->status]),
             ]),
             'criteria' => $exam->criteria,
+            'practical' => $exam->type === 'practical' ? ['settings' => (array) data_get($exam->settings, 'practical', []), 'templates' => \App\Support\Exams\PracticalTemplates::all()] : null,
             'examiners' => $exam->examiners->where('user_type', '!=', \App\Models\ExamPanelAccount::USER_TYPE)->values()->map(fn ($u) => $u->only(['id', 'name', 'email', 'pivot'])),
             'examinerAccounts' => $exam->isPanelMarked() ? \App\Models\ExamPanelAccount::where('exam_id', $exam->id)->whereNull('revoked_at')->orderBy('last_name')->get()
                 ->map(fn ($a) => ['id' => $a->id, 'first_name' => $a->first_name, 'last_name' => $a->last_name, 'username' => $a->username,
@@ -234,7 +235,8 @@ class ExamAdminController extends Controller
 
         $exam->fill($data);
         if (isset($settings['settings'])) {
-            $exam->settings = array_merge(ExamSettings::settings($settings['settings']), ['seb' => data_get($exam->settings, 'seb', [])]);
+            // the exam's own SEB keys and practical set-up are kept when the general settings are saved
+            $exam->settings = array_merge(ExamSettings::settings($settings['settings']), array_filter(['seb' => data_get($exam->settings, 'seb', []), 'practical' => data_get($exam->settings, 'practical')], fn ($v) => $v !== null));
         }
         if (isset($settings['seb'])) {
             $old = (array) data_get($exam->settings, 'seb', []);
@@ -360,33 +362,7 @@ class ExamAdminController extends Controller
     {
         $this->assertEditable($exam);
         abort_unless($exam->isPanelMarked(), 422);
-        $data = $request->validate([
-            'criteria' => ['present', 'array', 'max:200'],
-            'criteria.*.id' => ['nullable', 'integer'],
-            'criteria.*.text' => ['required', 'string', 'max:500'],
-            'criteria.*.allowed_scores' => ['nullable', 'string', 'max:100'], // "0,0.25,0.5" like the legacy portal
-            'criteria.*.max_score' => ['nullable', 'numeric', 'min:0', 'max:1000'],
-        ]);
-
-        DB::transaction(function () use ($exam, $data) {
-            $keep = [];
-            foreach ($data['criteria'] as $i => $c) {
-                $allowed = isset($c['allowed_scores']) && trim($c['allowed_scores']) !== ''
-                    ? array_values(array_unique(array_map(fn ($v) => (float) trim($v), explode(',', $c['allowed_scores']))))
-                    : null;
-                if ($allowed) {
-                    sort($allowed);
-                }
-                $max = $allowed ? max($allowed) : (float) ($c['max_score'] ?? 0);
-                abort_if($max <= 0, 422, "Criterion \"{$c['text']}\" needs allowed scores or a maximum.");
-                $row = MarkingCriterion::updateOrCreate(
-                    ['id' => $c['id'] ?? null, 'exam_id' => $exam->id],
-                    ['text' => $c['text'], 'allowed_scores' => $allowed, 'max_score' => $max, 'position' => $i]
-                );
-                $keep[] = $row->id;
-            }
-            $exam->criteria()->whereNotIn('id', $keep ?: [0])->delete();
-        });
+        app(\App\Services\Exams\PracticalSetup::class)->save($exam, $request->validate(\App\Services\Exams\PracticalSetup::rules()));
 
         return back()->with('success', 'Criteria saved.');
     }

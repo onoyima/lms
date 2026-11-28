@@ -127,12 +127,17 @@ class MarkingController extends Controller
         $mine = CriterionMark::where('exam_id', $exam->id)->where('examiner_id', $examinerId)->get()->groupBy('user_id');
         $all = CriterionMark::where('exam_id', $exam->id)->selectRaw('user_id, COUNT(DISTINCT examiner_id) examiners')->groupBy('user_id')->pluck('examiners', 'user_id');
 
+        $evidence = \App\Models\PracticalEvidence::where('exam_id', $exam->id)->orderBy('id')->get(['id', 'user_id', 'kind', 'file_name', 'file_size', 'note', 'created_at'])->groupBy('user_id');
+
         return Inertia::render('marking/panel', [
             'exam' => $exam->only(['id', 'title', 'type', 'total_mark', 'marking_policy']),
-            'criteria' => $exam->criteria()->get(['id', 'text', 'allowed_scores', 'max_score']),
+            'criteria' => $exam->criteria()->get(['id', 'station', 'text', 'kind', 'allowed_scores', 'max_score', 'expected', 'tolerance', 'unit', 'critical', 'guide']),
+            'stations' => (array) data_get($exam->settings, 'practical.stations', []),
+            'evidenceOn' => (bool) data_get($exam->settings, 'practical.evidence', false),
             'candidates' => $candidates->map(fn ($c) => [
                 'user_id' => $c->user_id, 'name' => $c->user?->name, 'identifier' => $c->user?->identifier,
-                'my_scores' => ($mine[$c->user_id] ?? collect())->mapWithKeys(fn ($m) => [$m->marking_criterion_id => ['score' => $m->score, 'comment' => $m->comment]]),
+                'evidence' => ($evidence[$c->user_id] ?? collect())->values(),
+                'my_scores' => ($mine[$c->user_id] ?? collect())->mapWithKeys(fn ($m) => [$m->marking_criterion_id => ['score' => $m->score, 'reading' => $m->reading, 'comment' => $m->comment]]),
                 'examiners' => (int) ($all[$c->user_id] ?? 0),
                 'combined' => $this->marker->panelScore($exam, $c->user_id),
             ])->values(),

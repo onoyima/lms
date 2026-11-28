@@ -1,5 +1,5 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { AlertTriangle, Camera, CheckCircle2, ChevronLeft, ChevronRight, Clock, Flag, Hand, LayoutGrid, Loader2, Send, Shield, Wifi, WifiOff, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle2, ChevronLeft, ChevronRight, Clock, Flag, Hand, LayoutGrid, Loader2, Maximize, Send, Shield, Wifi, WifiOff, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PreChecks, RoomScan } from '@/components/exam/pre-checks';
 import type { CheckKey } from '@/components/exam/pre-checks';
@@ -95,6 +95,15 @@ const TRIGGERS = ['tab_hidden', 'screen_left', 'fullscreen_exit', 'paste_blocked
 
 type DesktopBridge = { onEvent: (cb: (type: string, data?: Record<string, unknown>) => void) => () => void; examState: (s: 'open' | 'closed', opts?: { closeApps?: boolean }) => void };
 const desktop = typeof window !== 'undefined' ? (window as unknown as { examDesktop?: DesktopBridge }).examDesktop : undefined;
+
+/** The exam fills the screen wherever the browser allows it (the desktop app and Safe Exam Browser already lock the screen; most phones cannot). */
+const fullscreenWanted = () => typeof document !== 'undefined' && !!document.fullscreenEnabled && !desktop && !/SEB\//.test(navigator.userAgent);
+const enterFullscreen = async () => {
+    if (fullscreenWanted() && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => undefined);
+    }
+};
+
 
 /* ─── Pre-exam checks, consent, PIN (Target 80, 127-129, 175, 202-203) ───────── */
 function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stored: Snapshot | null; off: OffReport | null; onStarted: (token: string, offline: boolean) => void }) {
@@ -196,9 +205,7 @@ function SystemCheck({ candidate, exam, stored, off, onStarted }: Props & { stor
         setBusy(true);
         setError(null);
 
-        if (p.require_fullscreen) {
-            await document.documentElement.requestFullscreen?.().catch(() => undefined);
-        }
+        await enterFullscreen();
 
         let res: { ok: boolean; status: number; data: { token?: string; message?: string; reason?: string } };
 
@@ -387,6 +394,9 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
     const [pending, setPending] = useState(0);
     const [roomScan, setRoomScan] = useState(false);
     const [strike, setStrike] = useState<{ count: number; why: string } | null>(null);
+    // the exam always fills the screen where the browser can; leaving full screen covers the paper until the student returns
+    const [outOfFullscreen, setOutOfFullscreen] = useState(() => fullscreenWanted() && !document.fullscreenElement);
+    const paperTitle = useRef(typeof document !== 'undefined' ? document.title : '');
     const [messages, setMessages] = useState<Message[]>([]);
     const [blockedReason, setBlockedReason] = useState<string | null>(null);
     const [confirmSubmit, setConfirmSubmit] = useState(false);
@@ -402,7 +412,7 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
         localStorage.setItem(zoomKey, String(next));
     };
     const [showNavigator, setShowNavigator] = useState(false);
-    const [timerNotice, setTimerNotice] = useState<{ text: string; tone: 'half' | 'final' } | null>(null);
+    const [timerNotice, setTimerNotice] = useState<{ text: string; tone: 'half' | 'final' | 'last' } | null>(null);
     const [contrast, setContrast] = useState(Boolean(candidate.accommodations?.high_contrast));
     const [warningToast, setWarningToast] = useState<string | null>(null);
     // "Report this question": the question being reported, those already reported, and reports still to send
@@ -929,7 +939,9 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
            while the browser asks for the camera. */
         let away: string | null = null;
         let blurTimer = 0;
-        const quietUntil = Date.now() + 15000;
+        // a few quiet seconds at the start only when the browser may be asking for the camera
+        const usesMedia = !!(policy.webcam || policy.face_detection || policy.microphone || policy.screen_share || policy.live_video || policy.record_video || policy.record_screen || policy.gaze_tracking || (policy.identity_check && policy.identity_check !== 'none'));
+        const quietUntil = Date.now() + (usesMedia ? 8000 : 1500);
         const leave = (why: string, type: string) => {
             if (finished.current || timeUp.current || Date.now() < quietUntil || Date.now() < expectedBlur.current) {
                 return;
@@ -942,6 +954,7 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             }
 
             away = why;
+            document.title = '⚠ Return to your exam';
             record(type);
             strikesHere.current += 1;
             beatNow.current(); // tell the server now, so the limit applies at once
@@ -950,6 +963,7 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             window.clearTimeout(blurTimer);
 
             if (away && !document.hidden) {
+                document.title = paperTitle.current;
                 setStrike({ count: strikesHere.current, why: away });
                 away = null;
             }
@@ -969,13 +983,14 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             }
 
             window.clearTimeout(blurTimer);
-            blurTimer = window.setTimeout(() => !document.hasFocus() && leave('You switched to another window or app.', 'screen_left'), 1500);
+            blurTimer = window.setTimeout(() => !document.hasFocus() && leave('You switched to another window or app.', 'screen_left'), 250);
         };
         const onFocus = () => back();
         const onFullscreen = () => {
+            setOutOfFullscreen(fullscreenWanted() && !document.fullscreenElement && !finished.current);
+
             if (policy.require_fullscreen && !document.fullscreenElement && !finished.current) {
                 leave('You left full screen.', 'fullscreen_exit');
-                setWarningToast('Please return to full screen.');
             }
         };
         const block = (type: string) => (e: Event) => {
@@ -1621,9 +1636,9 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
     }, []);
     const remaining = state ? (state.status === 'in_progress' && !state.session_paused ? Math.max(0, (new Date(state.deadline_at).getTime() - (now + clockOffset)) / 1000) : state.remaining_seconds) : 0;
 
-    /* Time warnings: once at half time, then at 5 minutes and 1 minute left (kept across reloads) */
+    /* Time warnings: once at half time, then at 5 minutes and 2 minutes left (kept across reloads); the clock grows and blinks near the end */
     const totalSeconds = (exam.duration + candidate.extra_time) * 60;
-    const timerPhase: 'normal' | 'half' | 'final' | 'last' = !state ? 'normal' : remaining <= 60 ? 'last' : remaining <= 300 ? 'final' : remaining <= totalSeconds / 2 ? 'half' : 'normal';
+    const timerPhase: 'normal' | 'half' | 'final' | 'last' = !state ? 'normal' : remaining <= 120 ? 'last' : remaining <= 300 ? 'final' : remaining <= totalSeconds / 2 ? 'half' : 'normal';
     const noticesShown = useRef<Set<string>>(new Set());
     useEffect(() => {
         if (!state || state.status !== 'in_progress' || remaining <= 0) {
@@ -1636,7 +1651,7 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             noticesShown.current = new Set(JSON.parse(localStorage.getItem(key) ?? '[]') as string[]);
         }
 
-        const fire = (id: string, text: string, tone: 'half' | 'final') => {
+        const fire = (id: string, text: string, tone: 'half' | 'final' | 'last') => {
             if (noticesShown.current.has(id)) {
                 return;
             }
@@ -1646,10 +1661,10 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             setTimerNotice({ text, tone });
         };
 
-        if (remaining <= 60) {
-            fire('1m', 'One minute left. Your exam will be submitted automatically when time runs out.', 'final');
+        if (remaining <= 120) {
+            fire('2m', '2 minutes left. Your exam is submitted automatically when time runs out.', 'last');
         } else if (remaining <= 300) {
-            fire('5m', `About 5 minutes left. Check any unanswered questions.`, 'final');
+            fire('5m', `5 minutes left. Check any unanswered questions.`, 'final');
         } else if (remaining <= totalSeconds / 2) {
             fire('half', `Half of your time has gone. ${formatClock(remaining)} left.`, 'half');
         }
@@ -1746,10 +1761,10 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
     const flaggedCount = questions.filter((x) => answers[x.id]?.flagged).length;
     const unanswered = questions.filter((x) => !isAnswered(answers[x.id]?.response));
     const clockClass = {
-        normal: contrast ? 'bg-white text-black' : 'bg-[#0b0d10] text-white',
-        half: 'bg-[#b45309] text-white',
-        final: 'bg-[#b91c1c] text-white font-bold',
-        last: 'bg-[#b91c1c] text-white font-bold animate-pulse',
+        normal: `text-base px-3 ${contrast ? 'bg-white text-black' : 'bg-[#0b0d10] text-white'}`,
+        half: 'text-base px-3 bg-[#b45309] text-white font-semibold',
+        final: 'bg-[#b91c1c] text-white font-bold text-xl md:text-2xl px-4',
+        last: 'exam-blink bg-[#b91c1c] text-white font-extrabold text-2xl md:text-3xl px-4',
     }[timerPhase];
     const camOn = !!(policy.webcam || policy.face_detection || needsIdentity || policy.gaze_tracking || policy.live_video || policy.record_video);
     const questionGrid = (
@@ -1796,7 +1811,7 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                     {camOn && <video ref={attachVideo} muted playsInline className="h-9 w-12 rounded-md bg-black object-cover" aria-label="Your camera" />}
                     <button className="rounded-lg border border-current/20 px-2 py-1.5 text-xs" onClick={() => setContrast(!contrast)}>Contrast</button>
                     <button className="rounded-lg border border-current/20 p-1.5 lg:hidden" onClick={() => setShowNavigator(true)} aria-label="All questions"><LayoutGrid className="size-4" /></button>
-                    <span className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-base tabular-nums transition-colors ${clockClass}`} aria-live="polite" title="Time left">
+                    <span className={`flex items-center gap-1.5 rounded-xl py-1.5 font-mono tabular-nums transition-colors ${clockClass}`} aria-live="polite" title="Time left">
                         <Clock className="size-4" />
                         {formatClock(remaining)}
                     </span>
@@ -1823,15 +1838,16 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
             )}
 
             {timerNotice && (
-                <div role="alert" className={`flex shrink-0 items-center justify-between gap-3 px-4 py-2 text-sm font-medium text-white md:px-6 ${timerNotice.tone === 'half' ? 'bg-[#b45309]' : 'bg-[#b91c1c]'}`}>
-                    <span className="flex items-center gap-2"><Clock className="size-4" /> {timerNotice.text}</span>
-                    <button onClick={() => setTimerNotice(null)} aria-label="Dismiss"><X className="size-4" /></button>
+                <div role="alert" className={`flex shrink-0 items-center justify-center gap-3 px-4 text-white md:px-6 ${timerNotice.tone === 'half' ? 'bg-[#b45309] py-2.5 text-base font-semibold' : timerNotice.tone === 'final' ? 'bg-[#b91c1c] py-3 text-lg font-bold md:text-xl' : 'exam-blink bg-[#b91c1c] py-4 text-xl font-extrabold md:text-2xl'}`}>
+                    <Clock className={timerNotice.tone === 'half' ? 'size-5' : 'size-7'} />
+                    <span className="flex-1 text-center">{timerNotice.text}</span>
+                    <button onClick={() => setTimerNotice(null)} aria-label="Dismiss" className="rounded-lg p-1 hover:bg-white/15"><X className="size-5" /></button>
                 </div>
             )}
 
-            <div className="mx-auto grid min-h-0 w-full max-w-7xl flex-1 lg:grid-cols-[1fr_250px]">
+            <div className="grid min-h-0 w-full flex-1 lg:grid-cols-[minmax(0,1fr)_clamp(220px,18vw,300px)]">
                 <main className="flex min-h-0 flex-col">
-                    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8" style={{ fontSize: `${fontScale * 18}px` }}>
+                    <div className="exam-paper min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-8 lg:px-12" style={{ fontSize: `calc(${fontScale} * clamp(16px, 0.55vw + 11px, 22px))` }}>
                         {q.section.instructions && index === questions.findIndex((x) => x.section.id === q.section.id) && (
                             <p className="mb-4 rounded-xl bg-black/5 p-3 text-[0.85em] opacity-80">{q.section.instructions}</p>
                         )}
@@ -1854,12 +1870,12 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                             <QuestionInput q={q} value={answers[q.id]?.response ?? null} onChange={(r) => answer(q, r)} contrast={contrast} upload={uploadFile} />
                         </div>
                     </div>
-                    <div className={`flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-4 py-3 md:px-8 ${contrast ? 'border-white/30' : 'border-black/10 bg-white'}`}>
+                    <div className={`flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2.5 sm:gap-3 sm:px-4 md:px-8 ${contrast ? 'border-white/30' : 'border-black/10 bg-white'}`}>
                         <button disabled={index === 0} onClick={() => setIndex(index - 1)} className="flex items-center gap-1 rounded-xl border border-current/20 px-4 py-2 disabled:opacity-30">
-                            <ChevronLeft className="size-4" /> Previous
+                            <ChevronLeft className="size-4" /> <span className="hidden sm:inline">Previous</span><span className="sm:hidden">Back</span>
                         </button>
                         <button onClick={() => answer(q, answers[q.id]?.response ?? null, !answers[q.id]?.flagged)} className={`flex items-center gap-1 rounded-xl px-4 py-2 ${answers[q.id]?.flagged ? 'bg-[#d97706]/20' : 'border border-current/20'}`}>
-                            <Flag className="size-4" /> {answers[q.id]?.flagged ? 'Flagged' : 'Flag for review'}
+                            <Flag className="size-4" /> {answers[q.id]?.flagged ? 'Flagged' : <><span className="hidden sm:inline">Flag for review</span><span className="sm:hidden">Flag</span></>}
                         </button>
                         {index < questions.length - 1 ? (
                             <button onClick={() => setIndex(index + 1)} className={`flex items-center gap-1 rounded-xl px-5 py-2 ${contrast ? 'bg-white text-black' : 'bg-[#0b0d10] text-white'}`}>
@@ -1966,6 +1982,18 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                 </Modal>
             )}
 
+            {outOfFullscreen && !timeIsUp && !blockedReason && (
+                <div role="alertdialog" aria-modal="true" aria-label="Return to full screen" className="fixed inset-0 z-[60] grid place-items-center bg-[#0b0d10] p-6 text-white">
+                    <div className="grid max-w-md justify-items-center gap-4 text-center">
+                        <Maximize className="size-10" />
+                        <p className="text-2xl font-semibold">Your exam continues in full screen</p>
+                        <p className="opacity-75">The timer is still running. Your answers are saved.</p>
+                        <button autoFocus onClick={() => void enterFullscreen()} className="h-14 w-full rounded-2xl bg-brand text-lg font-semibold text-brand-foreground hover:brightness-110">
+                            Return to my exam
+                        </button>
+                    </div>
+                </div>
+            )}
             {strike && !blockedReason && (
                 <Modal>
                     <div className="flex items-center gap-3">
@@ -1982,7 +2010,7 @@ function Exam({ candidate, exam, token, uploader, store, snap, off, startedOffli
                                 ? 'At the last warning your exam is locked, and only an administrator or invigilator can unlock it.'
                                 : 'Every warning is reported to the exams office.'}
                     </p>
-                    <button className="mt-6 w-full rounded-xl bg-[#0b0d10] py-3 font-semibold text-white" onClick={() => (setStrike(null), policy.require_fullscreen && document.documentElement.requestFullscreen?.().catch(() => undefined))} autoFocus>
+                    <button className="mt-6 w-full rounded-xl bg-[#0b0d10] py-3 font-semibold text-white" onClick={() => (setStrike(null), void enterFullscreen())} autoFocus>
                         Return to my exam
                     </button>
                 </Modal>
@@ -2120,8 +2148,8 @@ function QuestionInput({ q, value, onChange, contrast, upload }: { q: PaperQuest
         const chosen = value?.options ?? [];
 
         return (
-            <div className="grid gap-3" role={multi ? 'group' : 'radiogroup'}>
-                {multi && <p className="text-[0.8em] opacity-60">Choose all that apply.</p>}
+            <div className={`grid gap-2.5 md:gap-3 ${q.options.every((o) => o.html.replace(/<[^>]+>/g, '').length < 90 && !/<(img|table|svg|math)/i.test(o.html)) && q.options.length >= 4 ? 'xl:grid-cols-2' : ''}`} role={multi ? 'group' : 'radiogroup'}>
+                {multi && <p className="text-[0.8em] opacity-60 xl:col-span-full">Choose all that apply.</p>}
                 {q.options.map((o) => {
                     const on = chosen.includes(o.id);
 
@@ -2131,7 +2159,7 @@ function QuestionInput({ q, value, onChange, contrast, upload }: { q: PaperQuest
                             role={multi ? 'checkbox' : 'radio'}
                             aria-checked={on}
                             onClick={() => onChange({ options: multi ? (on ? chosen.filter((x) => x !== o.id) : [...chosen, o.id]) : [o.id] })}
-                            className={`flex items-start gap-4 rounded-2xl border-2 p-4 text-left transition ${on ? 'border-brand bg-brand-soft' : contrast ? 'border-white/30' : 'border-black/10 hover:border-black/30'}`}
+                            className={`flex items-start gap-3 rounded-2xl border-2 px-4 py-3 text-left transition md:gap-4 ${on ? 'border-brand bg-brand-soft' : contrast ? 'border-white/30' : 'border-black/10 hover:border-black/30'}`}
                         >
                             <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-[0.8em] font-semibold ${on ? 'bg-brand text-brand-foreground' : contrast ? 'bg-white/20' : 'bg-black/5'}`}>{o.label}</span>
                             <RichContent html={o.html} className="flex-1 pt-0.5" />
@@ -2139,7 +2167,7 @@ function QuestionInput({ q, value, onChange, contrast, upload }: { q: PaperQuest
                     );
                 })}
                 {chosen.length > 0 && (
-                    <button className="w-fit text-[0.75em] underline opacity-50" onClick={() => onChange(null)}>
+                    <button className="w-fit text-[0.75em] underline opacity-50 xl:col-span-full" onClick={() => onChange(null)}>
                         Clear answer
                     </button>
                 )}

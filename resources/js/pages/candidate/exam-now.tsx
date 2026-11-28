@@ -53,6 +53,8 @@ export default function ExamNow({ exams }: { exams: Open[] }) {
                                         <span className="tabular-nums">Closes in {h > 0 ? `${h} h ` : ''}{m} min</span>
                                     </p>
                                     <Link href={`/my/exams/${e.candidate_id}`}
+                                        // the exam fills the screen: entering full screen needs this press (it lasts into the exam page)
+                                        onClick={() => document.fullscreenEnabled && !document.fullscreenElement && void document.documentElement.requestFullscreen?.().catch(() => undefined)}
                                         className="mx-auto inline-flex h-16 w-full max-w-sm items-center justify-center gap-2 rounded-2xl bg-brand text-xl font-semibold text-brand-foreground shadow-[0_16px_36px_-16px_var(--brand)] transition-transform hover:-translate-y-0.5 active:scale-[.98]">
                                         {e.under_way ? 'Continue my exam' : 'Start exam'} <ArrowRight className="size-5" />
                                     </Link>

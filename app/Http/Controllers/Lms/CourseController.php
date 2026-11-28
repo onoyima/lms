@@ -326,6 +326,7 @@ class CourseController extends Controller
             'settings.group' => ['nullable', 'boolean'], 'settings.anonymous' => ['nullable', 'boolean'], 'settings.peer_review' => ['nullable', 'boolean'],
             'settings.text' => ['nullable', 'boolean'], 'settings.file' => ['nullable', 'boolean'],
             'settings.file_types' => ['nullable', 'array'], 'settings.file_types.*' => ['string', 'alpha_num', 'max:8'],
+            'settings.kind' => ['nullable', 'in:objective,theory,mixed,practical'],
             'settings.max_mb' => ['nullable', 'integer', 'min:1', 'max:500'],
             'settings.rubric' => ['nullable', 'array', 'max:20'],
             'settings.rubric.*.criterion' => ['required', 'string', 'max:300'],

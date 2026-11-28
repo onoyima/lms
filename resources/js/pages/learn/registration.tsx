@@ -1,4 +1,4 @@
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import { Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -42,6 +42,8 @@ type Props = {
     } | null;
     catalogue: Course[];
     isStudent: boolean;
+    portal?: boolean;
+    registered?: { offering_id: number; code: string; title: string; units: number | null; category: string; status: string }[] | null;
     canManage: boolean;
     pending: {
         id: number;
@@ -59,6 +61,8 @@ export default function Registration({
     profile,
     catalogue,
     isStudent,
+    portal,
+    registered,
     canManage,
     pending,
 }: Props) {
@@ -133,6 +137,25 @@ export default function Registration({
                     }
                 />
                 <Flash />
+                {portal && isStudent && registered && (
+                    <section className="grid gap-4">
+                        <p className="surface p-5 text-sm text-muted-foreground">
+                            You register your courses on the institution portal. These are the courses you registered for there this semester; changes made on the portal appear here within the hour. Open a course to see its materials.
+                        </p>
+                        <Table head={['Course', 'Units', 'Type', '']}>
+                            {registered.map((c) => (
+                                <tr key={c.offering_id}>
+                                    <td className="p-3"><span className="font-mono text-sm text-brand">{c.code}</span> <span className="block">{c.title}</span></td>
+                                    <td className="p-3 tabular-nums">{c.units ?? '—'}</td>
+                                    <td className="p-3 capitalize">{c.category}</td>
+                                    <td className="p-3 text-right"><Link href={`/learn/courses/${c.offering_id}`} className="text-brand">Open course</Link></td>
+                                </tr>
+                            ))}
+                        </Table>
+                        {registered.length === 0 && <p className="text-sm text-muted-foreground">No courses registered for this semester on the portal yet.</p>}
+                    </section>
+                )}
+                {!(portal && isStudent) && (<>
                 <div className="surface flex flex-wrap items-center gap-4 p-5 text-sm">
                     <Status
                         value={
@@ -164,8 +187,9 @@ export default function Registration({
                         </span>
                     )}
                 </div>
+                </>)}
 
-                {isStudent && (
+                {isStudent && !portal && (
                     <>
                         <Table
                             head={[

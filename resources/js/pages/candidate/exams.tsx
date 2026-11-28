@@ -1,7 +1,8 @@
-import { Head, Link } from '@inertiajs/react';
-import { CalendarClock, Laptop, MapPin, MonitorSmartphone, Shield } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { CalendarClock, Laptop, MapPin, MonitorSmartphone, Shield, Upload, X } from 'lucide-react';
 import { useState } from 'react';
 import { Arrangeable } from '@/components/arrangeable';
+import { acceptFor, describeTypes } from '@/components/lms/file-types';
 import { formatDateTime, PageHeader, Status } from '@/components/platform/ui';
 
 type Row = { candidate_id: number; exam: string; type: string; category: string; starts_at: string; ends_at: string; duration: number; venue: string | null; mode: string; channels: string[]; eligible: boolean; eligibility_reason: string | null; practice: boolean; status: string | null; attempts_used: number; max_attempts: number; has_open_attempt: boolean; can_reattempt: boolean };
@@ -12,7 +13,61 @@ const channelLabel: Record<string, { label: string; icon: typeof Laptop }> = {
     seb: { label: 'Safe Exam Browser', icon: Shield },
 };
 
-export default function MyExams({ exams }: { exams: Row[] }) {
+type Practical = {
+    candidate_id: number; exam: string; type: string; starts_at: string; ends_at: string; venue: string | null; stations: number;
+    evidence: boolean; evidence_types: string[]; can_hand_in: boolean; handed_in: { id: number; file_name: string; file_size: number; created_at: string }[];
+};
+
+/** A practical, viva or defence: when and where, and handing in work when the practical asks for it. */
+function PracticalCard({ p }: { p: Practical }) {
+    const [busy, setBusy] = useState(false);
+
+    return (
+        <article className="surface flex h-full flex-col gap-3 p-6">
+            <div className="flex items-start justify-between gap-3">
+                <h3 className="font-medium">{p.exam}</h3>
+                <span className="rounded-full bg-foreground/[.06] px-2.5 py-0.5 text-xs font-medium capitalize">{p.type}</span>
+            </div>
+            <ul className="space-y-1.5 text-sm text-muted-foreground">
+                <li className="flex items-center gap-2"><CalendarClock className="size-4" /> {formatDateTime(p.starts_at)}</li>
+                <li className="flex items-center gap-2"><MapPin className="size-4" /> {p.venue ?? 'Venue to be announced'}</li>
+                {p.stations > 0 && <li>{p.stations} station{p.stations === 1 ? '' : 's'}; examiners mark you as you work.</li>}
+            </ul>
+            {p.evidence && (
+                <div className="mt-auto grid gap-2 rounded-xl bg-foreground/[.04] p-3 text-sm">
+                    <p className="font-medium">Hand in your work</p>
+                    <p className="text-xs text-muted-foreground">{describeTypes(p.evidence_types)}. Open from the start of the practical until two hours after.</p>
+                    {p.handed_in.map((f) => (
+                        <span key={f.id} className="flex items-center justify-between gap-2 rounded-lg bg-background px-2.5 py-1.5 text-xs">
+                            <a href={`/my/practicals/evidence/${f.id}`} target="_blank" rel="noreferrer" className="truncate text-brand">{f.file_name}</a>
+                            {p.can_hand_in && <button type="button" onClick={() => router.delete(`/my/practicals/evidence/${f.id}`, { preserveScroll: true })} className="text-muted-foreground hover:text-status-critical" aria-label={`Remove ${f.file_name}`}><X className="size-3.5" /></button>}
+                        </span>
+                    ))}
+                    {p.can_hand_in ? (
+                        <label className={`inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-brand-foreground ${busy ? 'opacity-60' : ''}`}>
+                            <Upload className="size-4" /> {busy ? 'Uploading…' : 'Add a file'}
+                            <input type="file" className="sr-only" accept={acceptFor(p.evidence_types)} disabled={busy}
+                                onChange={(e) => {
+                                    const f = e.target.files?.[0];
+
+                                    if (f) {
+                                        setBusy(true);
+                                        router.post(`/my/practicals/${p.candidate_id}/evidence`, { file: f }, { forceFormData: true, preserveScroll: true, onFinish: () => setBusy(false) });
+                                    }
+
+                                    e.target.value = '';
+                                }} />
+                        </label>
+                    ) : (
+                        <p className="text-xs text-muted-foreground">{new Date(p.starts_at) > new Date() ? 'Opens when your practical starts.' : 'Handing in has closed.'}</p>
+                    )}
+                </div>
+            )}
+        </article>
+    );
+}
+
+export default function MyExams({ exams, practicals = [] }: { exams: Row[]; practicals?: Practical[] }) {
     const [now] = useState(() => Date.now());
     const isOpen = (e: Row) => now >= new Date(e.starts_at).getTime() - 15 * 60000 && now <= new Date(e.ends_at).getTime();
     const finished = (e: Row) => ['submitted', 'auto_submitted', 'terminated'].includes(e.status ?? '') && !e.can_reattempt && !e.has_open_attempt;
@@ -24,7 +79,7 @@ export default function MyExams({ exams }: { exams: Row[] }) {
             <Head title="My exams" />
             <div className="flex flex-col gap-8 p-6 md:p-10">
                 <PageHeader title="My exams" lead="Exams open now are at the top. Open one a few minutes early if it has checks to pass." />
-                {exams.length === 0 && <p className="text-muted-foreground">No exams scheduled for you yet.</p>}
+                {exams.length === 0 && practicals.length === 0 && <p className="text-muted-foreground">No exams scheduled for you yet.</p>}
                 <Arrangeable page="my-exams" label="exams" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" cards={sorted.map((e) => {
                         const open = isOpen(e);
 
@@ -76,6 +131,14 @@ export default function MyExams({ exams }: { exams: Row[] }) {
                             </article>
                         ) };
                     })} />
+                {practicals.length > 0 && (
+                    <section className="grid gap-4">
+                        <h2 className="text-lg font-semibold">Practicals and vivas</h2>
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {practicals.map((p) => <PracticalCard key={p.candidate_id} p={p} />)}
+                        </div>
+                    </section>
+                )}
             </div>
         </>
     );

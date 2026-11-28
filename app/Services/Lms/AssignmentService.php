@@ -90,7 +90,8 @@ class AssignmentService
                 throw ValidationException::withMessages(['submission' => 'This assignment has already been marked.']);
             }
             $attempt = $previous ? ($previous->status === 'draft' ? $previous->attempt : $previous->attempt + 1) : 1;
-            if ($attempt > $s['max_attempts']) {
+            // corrections asked for by the lecturer always get a fresh attempt, whatever the attempt limit
+            if ($attempt > $s['max_attempts'] && $previous?->status !== 'corrections') {
                 $attempt = $previous->attempt; // resubmission replaces the last attempt until the deadline
                 if ($due && now()->greaterThan($due)) {
                     throw ValidationException::withMessages(['submission' => 'You have used all your attempts.']);
@@ -114,6 +115,30 @@ class AssignmentService
 
             return $sub;
         });
+    }
+
+    /**
+     * Send a submission back for corrections: the student sees the feedback straight away and may submit a
+     * corrected version (a new attempt, beyond the attempt limit) by the date given, even after the deadline.
+     */
+    public function requestCorrections(AssignmentSubmission $sub, User $by, string $feedback, ?CarbonInterface $until = null): AssignmentSubmission
+    {
+        $item = $sub->item;
+        $until ??= now()->addDays(7)->endOfDay();
+        DB::transaction(function () use ($sub, $by, $feedback, $until, $item) {
+            $sub->forceFill(['status' => 'corrections', 'feedback_html' => $feedback, 'released' => true, 'marked_by' => $by->id, 'marked_at' => now()])->save();
+            $students = $sub->course_group_id
+                ? DB::table('course_group_members')->where('course_group_id', $sub->course_group_id)->pluck('user_id')
+                : collect([$sub->user_id]);
+            foreach ($students as $uid) {
+                DeadlineExtension::updateOrCreate(['course_item_id' => $item->id, 'user_id' => $uid], ['due_at' => $until, 'reason' => 'Corrections requested', 'granted_by' => $by->id]);
+            }
+        });
+        $this->audit->record('assignment.corrections_requested', $sub, ['item' => $item->id, 'until' => $until->toIso8601String()]);
+        User::whereIn('id', $sub->course_group_id ? DB::table('course_group_members')->where('course_group_id', $sub->course_group_id)->pluck('user_id') : [$sub->user_id])->get()
+            ->each(fn ($u) => $u->notify(new \App\Notifications\LmsNotice('Corrections requested: '.$item->title, 'Your lecturer has asked for corrections. Resubmit by '.$until->format('D j M, H:i').'.', '/learn/items/'.$item->id)));
+
+        return $sub;
     }
 
     /** Late penalty: % per day (or flat), capped. */

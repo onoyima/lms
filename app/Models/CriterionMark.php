@@ -10,12 +10,13 @@ class CriterionMark extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['exam_id', 'marking_criterion_id', 'user_id', 'examiner_id', 'score', 'comment'];
+    protected $fillable = ['exam_id', 'marking_criterion_id', 'user_id', 'examiner_id', 'score', 'reading', 'comment'];
 
     protected function casts(): array
     {
         return [
             'score' => 'float',
+            'reading' => 'float',
         ];
     }
 

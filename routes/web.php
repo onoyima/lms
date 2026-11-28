@@ -562,6 +562,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('marking/{exam}/essays/suggest', [MarkingController::class, 'suggest'])->middleware('throttle:60,1,aisuggest')->name('marking.essays.suggest');
         Route::get('marking/{exam}/panel', [MarkingController::class, 'panel'])->name('marking.panel');
         Route::post('marking/{exam}/panel', [MarkingController::class, 'savePanel'])->name('marking.panel.store');
+        Route::post('marking/{exam}/evidence', [\App\Http\Controllers\Exam\PracticalEvidenceController::class, 'examinerUpload'])->middleware('throttle:60,1,pracev')->name('marking.evidence');
     });
 
     // ── Results & analytics (module: results; analytics module for item analysis) ──
@@ -612,6 +613,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware(['module:question_bank'])->prefix('my')->name('candidate.')->group(function () {
         Route::get('exams', [CandidateExamController::class, 'index'])->name('exams');
         Route::get('exams/now', [CandidateExamController::class, 'now'])->name('now');
+        Route::post('practicals/{candidate}/evidence', [\App\Http\Controllers\Exam\PracticalEvidenceController::class, 'candidateUpload'])->middleware('throttle:30,1,pracup')->name('practical.evidence');
+        Route::delete('practicals/evidence/{evidence}', [\App\Http\Controllers\Exam\PracticalEvidenceController::class, 'destroy'])->name('practical.evidence.destroy');
+        Route::get('practicals/evidence/{evidence}', [\App\Http\Controllers\Exam\PracticalEvidenceController::class, 'show'])->name('practical.evidence.show');
         Route::get('exams/{candidate}', [CandidateExamController::class, 'room'])->name('room');
         Route::post('exams/{candidate}/start', [CandidateExamController::class, 'start'])->middleware('throttle:exam-start')->name('start');
         Route::get('exams/{candidate}/seb', [CandidateExamController::class, 'sebConfig'])->name('seb')->middleware('module:secure_client');
@@ -689,6 +693,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('items/{item}/threads', [Lms\ItemController::class, 'storeThread'])->middleware('throttle:10,1,web268');
         Route::get('submissions/{submission}/file', [Lms\ItemController::class, 'submissionFile']);
         Route::post('submissions/{submission}/mark', [Lms\ItemController::class, 'mark']);
+        Route::post('submissions/{submission}/corrections', [Lms\ItemController::class, 'corrections']);
+        Route::put('items/{item}/practical', [Lms\ItemController::class, 'savePractical']);
         Route::post('submissions/{submission}/peer', [Lms\ItemController::class, 'peerReview']);
         Route::get('threads/{thread}', [Lms\ItemController::class, 'thread'])->name('thread');
         Route::post('threads/{thread}/posts', [Lms\ItemController::class, 'reply'])->middleware('throttle:30,1,web273');

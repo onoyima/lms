@@ -32,7 +32,18 @@ class RegistrationController extends Controller
         $window = $semester ? $this->registration->window($semester) : null;
         $catalogue = $semester ? $this->registration->catalogue($user, $semester) : collect();
 
+        // registration done on the institution's portal (directory bridge): students see what they registered there
+        $portal = (bool) data_get(tenant()?->settings, 'integrations.directory.enabled');
+        $registered = $portal && $user->user_type === 'student' && $semester
+            ? Enrolment::with('offering.course')->where('user_id', $user->id)->whereIn('status', ['active', 'pending', 'completed'])
+                ->whereHas('offering', fn ($q) => $q->where('semester_id', $semester->id))->get()
+                ->map(fn ($e) => ['offering_id' => $e->course_offering_id, 'code' => $e->offering->course->code, 'title' => $e->offering->course->title,
+                    'units' => $e->offering->course->credit_units, 'category' => $e->category, 'status' => $e->status])->sortBy('code')->values()
+            : null;
+
         return Inertia::render('learn/registration', [
+            'portal' => $portal,
+            'registered' => $registered,
             'semester' => $semester ? ['id' => $semester->id, 'label' => trim(($semester->academicSession?->name ?? '').' '.$semester->name)] : null,
             'semesters' => Semester::with('academicSession')->latest('id')->limit(12)->get()->map(fn ($s) => ['id' => $s->id, 'label' => trim(($s->academicSession?->name ?? '').' '.$s->name)]),
             'window' => $window ? $window->only(['opens_at', 'closes_at', 'late_closes_at', 'min_units', 'max_units', 'requires_approval']) + ['state' => $this->registration->windowState($window)] : ['state' => 'none'],
@@ -48,6 +59,8 @@ class RegistrationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        abort_if((bool) data_get(tenant()?->settings, 'integrations.directory.enabled') && $request->user()->user_type === 'student', 422,
+            'Course registration is done on the institution portal; your courses come from there.');
         $semester = $this->semester($request);
         abort_unless($semester, 404);
         $data = $request->validate(['courses' => ['present', 'array', 'max:20'], 'courses.*' => ['integer']]);

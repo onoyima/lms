@@ -71,7 +71,9 @@ class CourseContentService
                     'file_name' => Str::limit($file->getClientOriginalName(), 200, ''), 'file_mime' => $file->getMimeType(), 'file_size' => $file->getSize()]);
             }
             if ($item->type === 'quiz' && ! $item->exam_id) {
-                $item->exam_id = Exam::create(['title' => $item->title, 'type' => 'cbt', 'category' => 'quiz', 'status' => 'draft', 'course_id' => $offering->course_id,
+                // a course test (CA) runs on the exam engine: objective, theory (written on screen), both, or a practical marked by the lecturer
+                $type = ['objective' => 'cbt', 'theory' => 'essay', 'mixed' => 'mixed', 'practical' => 'practical'][$data['settings']['kind'] ?? 'objective'] ?? 'cbt';
+                $item->exam_id = Exam::create(['title' => $item->title, 'type' => $type, 'category' => 'quiz', 'status' => 'draft', 'course_id' => $offering->course_id,
                     'semester_id' => $offering->semester_id, 'duration_minutes' => (int) ($data['settings']['duration'] ?? 30), 'max_attempts' => (int) ($data['settings']['attempts'] ?? 1),
                     'total_mark' => (float) ($data['settings']['max_score'] ?? 20), 'created_by' => $by->id,
                     'settings' => ['shuffle_questions' => true, 'shuffle_options' => true, 'show_score' => true, 'require_check_in' => false],
@@ -185,6 +187,11 @@ class CourseContentService
     {
         $exam = Exam::findOrFail($item->exam_id);
         abort_unless($exam->category === 'quiz', 403, 'Central examinations are published by the exams office.');
+        if ($exam->type === 'practical') {
+            $this->publishPractical($item, $exam, $by);
+
+            return;
+        }
         if (! DB::table('exam_section_questions')->join('exam_sections', 'exam_sections.id', '=', 'exam_section_questions.exam_section_id')->where('exam_sections.exam_id', $exam->id)->exists()
             && ! $exam->sections()->whereNotNull('blueprint')->exists()) {
             throw ValidationException::withMessages(['quiz' => 'Add questions to the quiz first.']);
@@ -192,6 +199,29 @@ class CourseContentService
         $exam->update(['status' => 'scheduled', 'approved_at' => now(), 'approved_by' => $by->id]);
         ExamSession::where('exam_id', $exam->id)->update(['starts_at' => $item->release_at ?? now()->subMinute(), 'ends_at' => $item->due_at ?? now()->addYear()]);
         $this->audit->record('lms.quiz.published', $item, ['exam' => $exam->id], $by->id);
+    }
+
+    /**
+     * A practical test in a course: every registered student becomes a candidate, and the course's
+     * lecturers become its examiners, so they mark it on the score sheet. The score feeds the gradebook.
+     */
+    private function publishPractical(CourseItem $item, Exam $exam, User $by): void
+    {
+        if (! $exam->criteria()->exists()) {
+            throw ValidationException::withMessages(['quiz' => 'Set up the stations and what to mark first.']);
+        }
+        DB::transaction(function () use ($item, $exam, $by) {
+            $exam->update(['status' => 'scheduled', 'approved_at' => now(), 'approved_by' => $by->id]);
+            $session = ExamSession::firstOrCreate(['exam_id' => $exam->id, 'name' => 'Course practical'], [
+                'mode' => 'hall', 'starts_at' => $item->release_at ?? now(), 'ends_at' => $item->due_at ?? now()->addDays(14), 'late_entry_minutes' => 0, 'status' => 'open',
+            ]);
+            foreach (DB::table('enrolments')->where('course_offering_id', $item->course_offering_id)->where('status', 'active')->pluck('user_id') as $uid) {
+                ExamCandidate::firstOrCreate(['exam_session_id' => $session->id, 'user_id' => $uid]);
+            }
+            $staff = DB::table('course_offering_staff')->where('course_offering_id', $item->course_offering_id)->pluck('user_id')->push($by->id)->unique();
+            $exam->examiners()->syncWithoutDetaching($staff->mapWithKeys(fn ($id) => [$id => ['role' => 'examiner']])->all());
+        });
+        $this->audit->record('lms.practical.published', $item, ['exam' => $exam->id], $by->id);
     }
 
     public function announce(array $data, User $by): Announcement

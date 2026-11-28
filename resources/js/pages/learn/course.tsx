@@ -25,6 +25,7 @@ import {
     Reviews,
 } from '@/components/lms/course-feedback';
 import type { Assessment, Feedback } from '@/components/lms/course-feedback';
+import { describeTypes, FileTypePicker } from '@/components/lms/file-types';
 import {
     fileSize,
     KIND_ICON,
@@ -322,7 +323,7 @@ export const ITEM_TYPES = [
     ['link', 'Web link'],
     ['live', 'Live class link'],
     ['assignment', 'Assignment'],
-    ['quiz', 'Quiz / test'],
+    ['quiz', 'Test / CA (objective, theory or practical)'],
     ['forum', 'Discussion forum'],
 ] as const;
 
@@ -1491,6 +1492,39 @@ function InsertPicture({
     );
 }
 
+/** How students hand in an assignment: typed answer, file, which kinds of file, size and attempts. */
+function SubmissionRules({ settings, set }: { settings: Settings; set: (k: string, v: unknown) => void }) {
+    const st = settings as Record<string, unknown>;
+    const types = (st.file_types as string[] | undefined) ?? ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    const file = st.file !== false;
+
+    return (
+        <fieldset className="grid gap-3 rounded-xl border border-border bg-background/60 p-3 text-sm">
+            <legend className="px-1 text-xs font-medium">How students hand it in</legend>
+            <div className="flex flex-wrap gap-4 text-xs">
+                <label className="flex items-center gap-2"><input type="checkbox" checked={st.text !== false} onChange={(e) => set('text', e.target.checked)} /> Typed answer</label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={file} onChange={(e) => (set('file', e.target.checked), e.target.checked && !st.file_types && set('file_types', types))} /> File upload</label>
+            </div>
+            {file && (
+                <>
+                    <div className="grid gap-1.5 text-xs">
+                        <span>Accepted files: <b>{describeTypes(types)}</b></span>
+                        <FileTypePicker value={types} onChange={(v) => set('file_types', v)} />
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-xs">
+                        <label className="grid gap-1">Largest file (MB)
+                            <input type="number" min={1} max={500} className={`${inputClass} !w-28`} defaultValue={20} onChange={(e) => set('max_mb', Number(e.target.value))} />
+                        </label>
+                        <label className="grid gap-1">Attempts allowed
+                            <input type="number" min={1} max={20} className={`${inputClass} !w-28`} defaultValue={1} onChange={(e) => set('max_attempts', Number(e.target.value))} />
+                        </label>
+                    </div>
+                </>
+            )}
+        </fieldset>
+    );
+}
+
 function AddItem({
     offeringId,
     sectionId,
@@ -1536,9 +1570,11 @@ function AddItem({
                 form.transform(
                     (d) =>
                         Object.fromEntries(
-                            Object.entries(d).filter(
-                                ([, v]) => v !== '' && v !== null,
-                            ),
+                            Object.entries({
+                                ...d,
+                                // what the lecturer sees ticked is what is saved
+                                settings: d.type === 'assignment' ? { file_types: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'], ...d.settings } : d.settings,
+                            }).filter(([, v]) => v !== '' && v !== null),
                         ) as typeof d,
                 );
                 form.post(`/learn/courses/${offeringId}/items`, {
@@ -1718,6 +1754,30 @@ function AddItem({
                         Anonymous marking
                     </label>
                 </div>
+            )}
+            {t === 'assignment' && (
+                <SubmissionRules
+                    settings={form.data.settings}
+                    set={setSetting}
+                />
+            )}
+            {t === 'quiz' && (
+                <fieldset className="grid gap-2 text-sm">
+                    <legend className="mb-1 text-xs font-medium">What kind of test</legend>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        {([
+                            ['objective', 'Objective (CBT)', 'Multiple choice, true/false, matching… marked automatically'],
+                            ['theory', 'Theory', 'Written answers typed on screen, you mark them'],
+                            ['mixed', 'Objective + theory', 'Both in one test'],
+                            ['practical', 'Practical', 'Stations you mark on a score sheet (lab, workshop, clinical, code)'],
+                        ] as const).map(([k, label, hint]) => (
+                            <label key={k} className={`grid cursor-pointer gap-0.5 rounded-xl border p-3 text-xs ${((form.data.settings as Record<string, unknown>).kind ?? 'objective') === k ? 'border-brand bg-brand-soft' : 'border-border'}`}>
+                                <span className="flex items-center gap-2 text-sm font-medium"><input type="radio" name="quiz-kind" checked={((form.data.settings as Record<string, unknown>).kind ?? 'objective') === k} onChange={() => setSetting('kind', k)} /> {label}</span>
+                                <span className="text-muted-foreground">{hint}</span>
+                            </label>
+                        ))}
+                    </div>
+                </fieldset>
             )}
             {t === 'quiz' && (
                 <div className="grid gap-3 text-sm md:grid-cols-3">

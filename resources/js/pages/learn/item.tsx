@@ -16,6 +16,9 @@ import {
     Users,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { PracticalEditor } from '@/components/exam/practical-editor';
+import type { PracticalCriterion, PracticalSetup } from '@/components/exam/practical-editor';
+import { acceptFor, describeTypes } from '@/components/lms/file-types';
 import {
     fileSize,
     isMaterial,
@@ -28,6 +31,7 @@ import {
     MaterialViewer,
     ZoomablePictures,
 } from '@/components/lms/material-viewer';
+import { PdfViewer } from '@/components/lms/pdf-viewer';
 import {
     Flash,
     formatDateTime,
@@ -184,6 +188,16 @@ type Props = {
         pinned: boolean;
         locked: boolean;
     }>;
+    // a practical test in the course (marked by the lecturer on a score sheet)
+    practical?: {
+        exam_id: number;
+        status: string;
+        starts_at: string | null;
+        ends_at: string | null;
+        stations: number;
+        my_result: { final_score: number; max_score: number } | null;
+        setup: { criteria: PracticalCriterion[]; practical: PracticalSetup } | null;
+    };
     // quiz
     quiz?: {
         status: string | null;
@@ -376,7 +390,7 @@ export default function ItemPage(props: Props) {
                     ) : (
                         <AssignmentStudent {...props} />
                     ))}
-                {item.type === 'quiz' && <Quiz {...props} />}
+                {item.type === 'quiz' && (props.practical ? <PracticalTest {...props} /> : <Quiz {...props} />)}
                 {item.type === 'forum' && <Forum {...props} />}
 
                 {nav && (nav.prev || nav.next) && (
@@ -882,12 +896,21 @@ function AssignmentStudent({ item, submissions, due, group, peer }: Props) {
     const [bigProgress, setBigProgress] = useState<number | null>(null);
     const [bigError, setBigError] = useState<string | null>(null);
     const s = item.settings;
-    const closed = item.cutoff_at && new Date(item.cutoff_at) < new Date();
+    // an extension (or corrections asked for) keeps the form open past the cut-off
+    const closed = item.cutoff_at && new Date(item.cutoff_at) < new Date() && !(due && new Date(due) > new Date());
+    const corrections = latest?.status === 'corrections';
 
     return (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
             <div className="grid content-start gap-4">
-                {latest?.score !== null && latest?.score !== undefined && (
+                {corrections && (
+                    <div role="status" className="surface border-status-warning/50 bg-status-warning/10 p-6">
+                        <p className="font-semibold text-status-warning">Corrections requested</p>
+                        <p className="mt-1 text-sm">Make the changes below and submit again{due ? ` by ${formatDateTime(due)}` : ''}.</p>
+                        {latest.feedback_html && <RichContent html={latest.feedback_html} className="mt-3 rounded-xl bg-background p-4 text-sm" />}
+                    </div>
+                )}
+                {!corrections && latest?.score !== null && latest?.score !== undefined && (
                     <div className="surface border-brand/40 p-6">
                         <p className="eyebrow">Your mark</p>
                         <p className="mt-2 text-3xl font-semibold">
@@ -969,9 +992,11 @@ function AssignmentStudent({ item, submissions, due, group, peer }: Props) {
                         }}
                     >
                         <p className="eyebrow">
-                            {latest
-                                ? 'Submit again (replaces your previous file until the deadline)'
-                                : 'Your submission'}
+                            {corrections
+                                ? 'Your corrected work'
+                                : latest
+                                  ? 'Submit again (replaces your previous file until the deadline)'
+                                  : 'Your submission'}
                         </p>
                         {s.text !== false && (
                             <textarea
@@ -988,9 +1013,10 @@ function AssignmentStudent({ item, submissions, due, group, peer }: Props) {
                                 <Upload className="size-4" />{' '}
                                 {form.data.file
                                     ? form.data.file.name
-                                    : `Attach a file (${(s.file_types ?? []).slice(0, 8).join(', ')}… up to ${s.max_mb} MB)`}
+                                    : `Attach a file: ${describeTypes(s.file_types)}, up to ${s.max_mb} MB`}
                                 <input
                                     type="file"
+                                    accept={acceptFor(s.file_types)}
                                     className="hidden"
                                     onChange={(e) =>
                                         form.setData(
@@ -1446,6 +1472,8 @@ function MarkDialog({
     onClose: () => void;
 }) {
     const rubric = item.settings.rubric ?? [];
+    const [correcting, setCorrecting] = useState(false);
+    const fix = useForm<{ feedback_html: string; until: string }>({ feedback_html: sub.feedback_html ?? '', until: '' });
     const form = useForm<{
         score: string;
         rubric: number[];
@@ -1499,6 +1527,7 @@ function MarkDialog({
                         <Download className="size-4" /> {sub.file_name}
                     </a>
                 )}
+                {sub.file_name && <SubmissionPreview id={sub.id} name={sub.file_name} />}
                 {rubric.length ? (
                     <div className="mt-6 grid gap-4">
                         {rubric.map((c, i) => (
@@ -1575,14 +1604,100 @@ function MarkDialog({
                         {Object.values(form.errors).join(' ')}
                     </p>
                 )}
-                <div className="mt-6 flex gap-2">
-                    <Button disabled={form.processing}>Save mark</Button>
-                    <Button type="button" variant="ghost" onClick={onClose}>
-                        Cancel
-                    </Button>
-                </div>
+                {correcting ? (
+                    <div className="mt-6 grid gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 p-4 text-sm">
+                        <p className="font-medium">Send back for corrections</p>
+                        <label className="grid gap-1">What needs correcting
+                            <textarea className={`${textareaClass} min-h-28`} value={fix.data.feedback_html} onChange={(e) => fix.setData('feedback_html', e.target.value)} required />
+                        </label>
+                        <label className="grid gap-1">Resubmit by (leave empty for 7 days)
+                            <input type="datetime-local" className={`${inputClass} !w-64`} value={fix.data.until} onChange={(e) => fix.setData('until', e.target.value)} />
+                        </label>
+                        {Object.values(fix.errors).length > 0 && <p className="text-status-critical">{Object.values(fix.errors).join(' ')}</p>}
+                        <div className="flex gap-2">
+                            <Button type="button" disabled={fix.processing || !fix.data.feedback_html.trim()}
+                                onClick={() => fix.post(`/learn/submissions/${sub.id}/corrections`, { preserveScroll: true, onSuccess: onClose })}>
+                                Send back to the student
+                            </Button>
+                            <Button type="button" variant="ghost" onClick={() => setCorrecting(false)}>Back to marking</Button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="mt-6 flex flex-wrap gap-2">
+                        <Button disabled={form.processing}>Save mark</Button>
+                        <Button type="button" variant="outline" onClick={() => setCorrecting(true)}>Ask for corrections</Button>
+                        <Button type="button" variant="ghost" onClick={onClose}>
+                            Cancel
+                        </Button>
+                    </div>
+                )}
             </form>
         </div>
+    );
+}
+
+/** The student's file on screen while marking: PDFs page by page, pictures, audio and video; other files download. */
+function SubmissionPreview({ id, name }: { id: number; name: string }) {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    const url = `/learn/submissions/${id}/file?inline=1`;
+
+    if (ext === 'pdf') {
+        return <div className="mt-3 overflow-hidden rounded-xl border border-border"><PdfViewer url={url} title={name} /></div>;
+    }
+
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+        return <img src={url} alt={name} className="mt-3 max-h-[60vh] w-full rounded-xl border border-border object-contain" />;
+    }
+
+    if (['mp3', 'wav', 'm4a', 'ogg'].includes(ext)) {
+        return <audio src={url} controls className="mt-3 w-full" />;
+    }
+
+    if (['mp4', 'webm', 'mov'].includes(ext)) {
+        return <video src={url} controls className="mt-3 max-h-[60vh] w-full rounded-xl bg-black" />;
+    }
+
+    return null;
+}
+
+/** A practical test (CA): lecturers set up its stations and mark it on the score sheet; students see when, and their mark. */
+function PracticalTest({ item, practical, teacher, canGrade }: Props) {
+    if (!practical) {
+        return null;
+    }
+
+    if (!teacher) {
+        return (
+            <section className="surface grid gap-3 p-6">
+                <p className="eyebrow">Practical test</p>
+                <p>
+                    {practical.starts_at ? `From ${formatDateTime(practical.starts_at)}` : 'Date to be announced'}
+                    {practical.ends_at ? ` to ${formatDateTime(practical.ends_at)}` : ''}.
+                    {practical.stations > 0 && ` ${practical.stations} station${practical.stations === 1 ? '' : 's'}.`} Your lecturer marks you as you work.
+                </p>
+                {practical.my_result && <p className="text-lg">Your mark: <strong>{practical.my_result.final_score}</strong> / {practical.my_result.max_score}</p>}
+                <Link href="/my/exams" className="text-sm text-brand">Hand in work (if asked) from My exams</Link>
+            </section>
+        );
+    }
+
+    return (
+        <section className="grid gap-4">
+            <div className="surface flex flex-wrap items-center justify-between gap-3 p-5">
+                <div>
+                    <p className="eyebrow">Practical test</p>
+                    <p className="text-sm text-muted-foreground">{practical.status === 'draft' ? 'Set up the stations and what to mark, then publish. Every registered student is added; you and the course lecturers mark on the score sheet.' : 'Published. Mark each student on the score sheet; marks go to the gradebook.'}</p>
+                </div>
+                <div className="flex gap-2">
+                    {practical.status === 'draft' && canGrade && <Button onClick={() => router.post(`/learn/items/${item.id}/quiz/publish`, {}, { preserveScroll: true })}>Publish</Button>}
+                    {practical.status !== 'draft' && <Button asChild><Link href={`/marking/${practical.exam_id}/panel`}>Open the score sheet</Link></Button>}
+                </div>
+            </div>
+            {practical.setup && (
+                <PracticalEditor exam={{ id: practical.exam_id, type: 'practical', can_edit: practical.status === 'draft' && canGrade }}
+                    criteria={practical.setup.criteria} practical={practical.setup.practical} saveUrl={`/learn/items/${item.id}/practical`} />
+            )}
+        </section>
     );
 }
 

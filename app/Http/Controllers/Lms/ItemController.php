@@ -71,6 +71,13 @@ class ItemController extends Controller
                 ->through(fn ($t) => ['id' => $t->id, 'title' => $t->title, 'author' => $t->user?->name, 'posts' => $t->posts_count, 'last_post_at' => $t->last_post_at, 'pinned' => $t->pinned, 'locked' => $t->locked]);
         } elseif ($item->type === 'quiz' && $item->exam_id) {
             $exam = $item->exam;
+            if ($exam?->type === 'practical') {
+                // a practical test: when and where for students; set-up and the score sheet for lecturers
+                $result = $exam->results()->where('user_id', $user->id)->where('status', 'published')->first(['final_score', 'max_score']);
+                $data['practical'] = ['exam_id' => $exam->id, 'status' => $exam->status, 'starts_at' => $item->release_at, 'ends_at' => $item->due_at,
+                    'my_result' => $result, 'stations' => count((array) data_get($exam->settings, 'practical.stations', [])),
+                    'setup' => $teacher ? ['criteria' => $exam->criteria()->get(), 'practical' => ['settings' => (array) data_get($exam->settings, 'practical', []), 'templates' => \App\Support\Exams\PracticalTemplates::all()]] : null];
+            }
             $data['quiz'] = ['status' => $exam?->status, 'duration' => $exam?->duration_minutes, 'attempts' => $exam?->max_attempts, 'questions' => $exam ? DB::table('exam_section_questions')
                 ->join('exam_sections', 'exam_sections.id', '=', 'exam_section_questions.exam_section_id')->where('exam_sections.exam_id', $exam->id)->count() : 0,
                 'my_result' => $teacher ? null : DB::table('results')->where('exam_id', $item->exam_id)->where('user_id', $user->id)->first(['final_score', 'max_score', 'status'])];
@@ -189,7 +196,7 @@ class ItemController extends Controller
         return back()->with('success', 'Submitted '.$sub->submitted_at->format('j M Y, H:i:s').($sub->file_hash ? ' · receipt '.substr($sub->file_hash, 0, 12) : '').($sub->is_late ? ' (late)' : '').'.');
     }
 
-    public function submissionFile(Request $request, AssignmentSubmission $submission): StreamedResponse
+    public function submissionFile(Request $request, AssignmentSubmission $submission): StreamedResponse|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $user = $request->user();
         $item = $submission->item;
@@ -197,6 +204,14 @@ class ItemController extends Controller
         abort_unless($mine || $this->access->teaches($user, $item->offering), 403);
         abort_unless($submission->file_path && Storage::disk('local')->exists($submission->file_path), 404);
         $name = $mine || ! AssignmentService::settings($item)['anonymous'] ? $submission->file_name : $submission->anon_code.'.'.pathinfo($submission->file_name, PATHINFO_EXTENSION);
+        // marking on screen: PDFs, pictures, audio and video open in the page instead of downloading
+        $types = ['pdf' => 'application/pdf', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp',
+            'mp3' => 'audio/mpeg', 'wav' => 'audio/wav', 'm4a' => 'audio/mp4', 'ogg' => 'audio/ogg', 'mp4' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime'];
+        $ext = strtolower(pathinfo((string) $submission->file_name, PATHINFO_EXTENSION));
+        if ($request->boolean('inline') && isset($types[$ext])) {
+            return response()->file(Storage::disk('local')->path($submission->file_path), ['Content-Type' => $types[$ext], 'X-Content-Type-Options' => 'nosniff',
+                'Content-Disposition' => 'inline; filename="'.addcslashes($name, '"\\').'"', 'Cache-Control' => 'private, max-age=300']);
+        }
 
         return Storage::disk('local')->download($submission->file_path, $name, ['X-Content-Type-Options' => 'nosniff']);
     }
@@ -208,6 +223,17 @@ class ItemController extends Controller
         $this->assignments->mark($submission, $request->user(), isset($data['score']) ? (float) $data['score'] : null, $data['rubric'] ?? null, $data['feedback_html'] ?? null);
 
         return back()->with('success', 'Mark saved.');
+    }
+
+    /** Send a submission back for corrections, with what to fix and a date to resubmit by. */
+    public function corrections(Request $request, AssignmentSubmission $submission): RedirectResponse
+    {
+        abort_unless($this->access->canGrade($request->user(), $submission->item->offering), 403);
+        $data = $request->validate(['feedback_html' => ['required', 'string', 'max:100000'], 'until' => ['nullable', 'date', 'after:now']]);
+        $this->assignments->requestCorrections($submission, $request->user(), app(\App\Services\Questions\RichTextSanitizer::class)->clean($data['feedback_html']),
+            isset($data['until']) ? \Illuminate\Support\Carbon::parse($data['until']) : null);
+
+        return back()->with('success', 'Sent back for corrections. The student has been told.');
     }
 
     public function release(Request $request, CourseItem $item): RedirectResponse
@@ -286,6 +312,18 @@ class ItemController extends Controller
         $this->content->publishQuiz($item, $request->user());
 
         return back()->with('success', 'Quiz published.');
+    }
+
+    /** A lecturer sets up the stations and marking of a practical test in their course (before it is published). */
+    public function savePractical(Request $request, CourseItem $item): RedirectResponse
+    {
+        abort_unless($item->type === 'quiz' && $this->access->canGrade($request->user(), $item->offering), 403);
+        $exam = $item->exam;
+        abort_unless($exam && $exam->type === 'practical', 404);
+        abort_unless($exam->status === 'draft', 422, 'This practical is published, so its marking is fixed.');
+        app(\App\Services\Exams\PracticalSetup::class)->save($exam, $request->validate(\App\Services\Exams\PracticalSetup::rules()));
+
+        return back()->with('success', 'Practical saved.');
     }
 
     /** Lecturers build their own quizzes from the question bank (their course's questions, or any approved ones). */
