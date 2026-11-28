@@ -65,6 +65,38 @@ class SystemHealthController extends Controller
         return ['pending' => $pending, 'unwritable' => $unwritable];
     }
 
+    /**
+     * Server settings that make every page slow when they are wrong (Windows/XAMPP especially).
+     * Each check says what to change; nothing here reads or shows secrets.
+     *
+     * @return list<array{key: string, label: string, ok: bool, fix: string}>
+     */
+    public static function speed(): array
+    {
+        $default = (string) config('database.default');
+        $host = (string) config("database.connections.$default.host");
+        $opcache = function_exists('opcache_get_status') && (bool) (@opcache_get_status(false)['opcache_enabled'] ?? false);
+
+        return [
+            ['key' => 'opcache', 'label' => 'PHP keeps compiled code in memory (OPcache)', 'ok' => $opcache,
+                'fix' => 'In php.ini (XAMPP: C:\\xampp\\php\\php.ini) set zend_extension=opcache, opcache.enable=1 and opcache.memory_consumption=256, then restart Apache.'],
+            ['key' => 'xdebug', 'label' => 'No debugger slowing PHP down (Xdebug off)', 'ok' => ! extension_loaded('xdebug'),
+                'fix' => 'In php.ini put a ; in front of the zend_extension=xdebug line, then restart Apache.'],
+            ['key' => 'cache_folder', 'label' => 'The server can write to bootstrap/cache', 'ok' => is_writable(base_path('bootstrap/cache')),
+                'fix' => 'Give the web server write access to bootstrap\\cache and storage (Windows: folder Properties > Security > the account Apache runs as > Full control).'],
+            ['key' => 'config', 'label' => 'Settings are cached', 'ok' => app()->configurationIsCached(),
+                'fix' => 'Run php artisan optimize after every update (and php artisan optimize:clear before changing .env).'],
+            ['key' => 'routes', 'label' => 'Page addresses are cached', 'ok' => app()->routesAreCached(),
+                'fix' => 'Run php artisan optimize after every update.'],
+            ['key' => 'db_host', 'label' => 'Database address does not stall on Windows', 'ok' => ! (PHP_OS_FAMILY === 'Windows' && $host === 'localhost'),
+                'fix' => 'In .env set DB_HOST=127.0.0.1 instead of localhost (on Windows "localhost" can wait about a second on every connection).'],
+            ['key' => 'mail_queue', 'label' => 'E-mails are sent in the background', 'ok' => ! (config('queue.default') === 'sync' && in_array(config('mail.default'), ['smtp', 'sendmail'], true)),
+                'fix' => 'In .env set QUEUE_CONNECTION=database and keep php artisan queue:work running (Windows: Task Scheduler at start-up). Otherwise each click that sends an e-mail waits for the mail server.'],
+            ['key' => 'debug', 'label' => 'Debug mode is off', 'ok' => ! config('app.debug'),
+                'fix' => 'In .env set APP_DEBUG=false on the live server.'],
+        ];
+    }
+
     public function platform(Request $request): Response
     {
         $range = (string) $request->query('range', '1h');
@@ -76,6 +108,7 @@ class SystemHealthController extends Controller
             'drills' => DB::table('dr_drills')->orderByDesc('id')->limit(12)->get()->map(fn ($d) => array_merge((array) $d, ['steps' => json_decode($d->steps ?? '[]', true) ?: []])),
             'webhook' => (bool) config('platform.alert_webhook'),
             'setup' => self::setup(),
+            'speed' => self::speed(),
         ]);
     }
 
@@ -111,6 +144,7 @@ class SystemHealthController extends Controller
             'kinds' => ['switch', 'access_point', 'router', 'server', 'internet', 'printer', 'other'],
             'ports' => NetworkMonitor::PORTS,
             'tab' => $request->query('tab', 'performance'),
+            'speed' => self::speed(),
             'computers' => DB::table('devices')->where('tenant_id', tenant_id())->where('status', 'approved')
                 ->selectRaw('venue_id, COUNT(*) as total, SUM(last_seen_at > ?) as online', [now()->subMinutes(5)])->groupBy('venue_id')->get(),
         ]);

@@ -15,6 +15,7 @@ import {
     PlayCircle,
     Plus,
     Search,
+    Users,
     Video,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -606,6 +607,12 @@ export default function Course({
                                     className={link}
                                 >
                                     <BarChart3 className="size-4" /> Gradebook
+                                </Link>
+                                <Link
+                                    href={`/learn/courses/${offering.id}/progress`}
+                                    className={link}
+                                >
+                                    <Users className="size-4" /> Who studied what
                                 </Link>
                                 <Link
                                     href={`/learn/courses/${offering.id}/attendance`}

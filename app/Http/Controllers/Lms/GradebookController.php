@@ -78,6 +78,75 @@ class GradebookController extends Controller
         return back();
     }
 
+    /**
+     * Marks for one column from a file (CSV or Excel) or pasted text: a matric number (or e-mail)
+     * and a mark on each line, in any order of columns. Every line is checked first; nothing is saved
+     * when a line is wrong, and the reply lists those lines so the lecturer can fix them.
+     */
+    public function upload(Request $request, GradeItem $gradeItem): RedirectResponse
+    {
+        $offering = CourseOffering::findOrFail($gradeItem->course_offering_id);
+        abort_unless($this->access->canGrade($request->user(), $offering), 403);
+        $request->validate(['file' => ['nullable', 'file', 'max:10240', 'mimes:csv,txt,xlsx'], 'text' => ['nullable', 'string', 'max:500000']]);
+        $table = $request->file('file')
+            ? (strtolower($request->file('file')->getClientOriginalExtension()) === 'xlsx'
+                ? \App\Services\Exams\StudentListImport::xlsxRows($request->file('file')->getRealPath())
+                : \App\Services\Exams\StudentListImport::csvRows(\App\Services\Questions\Import\DocumentConverter::toUtf8((string) file_get_contents($request->file('file')->getRealPath()))))
+            : \App\Services\Exams\StudentListImport::csvRows((string) $request->input('text'));
+        abort_if(! $table, 422, 'Nothing to read: upload a file or paste the marks.');
+
+        $students = DB::table('enrolments')->join('users', 'users.id', '=', 'enrolments.user_id')->where('course_offering_id', $offering->id)
+            ->whereIn('enrolments.status', ['active', 'completed'])->get(['users.id', 'users.identifier', 'users.email']);
+        $byKey = [];
+        foreach ($students as $st) {
+            foreach ([$st->identifier, $st->email] as $k) {
+                if ($k) {
+                    $byKey[mb_strtolower(trim($k))] = $st->id;
+                }
+            }
+        }
+        $marks = [];
+        $problems = [];
+        foreach ($table as $n => $row) {
+            $cells = array_values(array_filter(array_map(fn ($c) => trim((string) $c), $row), fn ($c) => $c !== ''));
+            if (! $cells) {
+                continue;
+            }
+            $who = null;
+            $score = null;
+            foreach ($cells as $c) {
+                $who ??= $byKey[mb_strtolower($c)] ?? null;
+                if ($score === null && preg_match('/^\d+(\.\d+)?$/', $c) && ! isset($byKey[mb_strtolower($c)])) {
+                    $score = (float) $c;
+                }
+            }
+            $isHeading = $n === 0 && $who === null && $score === null;
+            if ($isHeading) {
+                continue;
+            }
+            if ($who === null) {
+                $problems[] = 'Line '.($n + 1).': no student in this course with "'.mb_substr($cells[0], 0, 40).'"';
+            } elseif ($score === null) {
+                $problems[] = 'Line '.($n + 1).': no mark';
+            } elseif ($score > $gradeItem->max_score) {
+                $problems[] = 'Line '.($n + 1).": $score is more than {$gradeItem->max_score}";
+            } else {
+                $marks[$who] = $score;
+            }
+        }
+        if ($problems) {
+            return back()->with('error', 'Nothing was saved. Fix these lines and upload again: '.implode('; ', array_slice($problems, 0, 15)).(count($problems) > 15 ? ' …and '.(count($problems) - 15).' more.' : '.'));
+        }
+        abort_if(! $marks, 422, 'No marks found.');
+        DB::transaction(function () use ($marks, $gradeItem, $request) {
+            foreach ($marks as $uid => $score) {
+                $this->gradebook->setManual($gradeItem, (int) $uid, $score, $request->user());
+            }
+        });
+
+        return back()->with('success', count($marks).' mark(s) saved to "'.$gradeItem->title.'".');
+    }
+
     /** approve: HOD/Dean (not the course's own teacher — separation of duties); release: course coordinator/lecturer after approval. */
     public function transition(Request $request, CourseOffering $offering): RedirectResponse
     {

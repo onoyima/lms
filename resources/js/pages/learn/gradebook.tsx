@@ -1,5 +1,5 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { ArrowLeft, Download } from 'lucide-react';
+import { ArrowLeft, Download, Upload } from 'lucide-react';
 import { useState } from 'react';
 import {
     Flash,
@@ -325,7 +325,12 @@ export default function Gradebook({
                     )}
                 </div>
 
+                {canGrade && items.some((i) => i.source === 'manual') && <UploadMarks items={items.filter((i) => i.source === 'manual')} />}
+
                 <div className="surface overflow-x-auto">
+                    <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                        Type a mark and press Enter to save it and move to the next student.
+                    </p>
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-border text-left">
@@ -355,7 +360,7 @@ export default function Gradebook({
                             </tr>
                         </thead>
                         <tbody>
-                            {rows.map((r) => (
+                            {rows.map((r, rowIndex) => (
                                 <tr
                                     key={r.id}
                                     className="border-b border-border/60"
@@ -387,6 +392,22 @@ export default function Gradebook({
                                                             e.target.value,
                                                         )
                                                     }
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            const next = document.querySelector<HTMLInputElement>(`[data-col="${gi.id}"][data-row="${rowIndex + 1}"]`);
+
+                                                            if (next) {
+                                                                next.focus();
+                                                                next.select();
+                                                            } else {
+                                                                e.currentTarget.blur();
+                                                            }
+                                                        }
+                                                    }}
+                                                    data-col={gi.id}
+                                                    data-row={rowIndex}
+                                                    aria-label={`${gi.title}, ${r.name}`}
                                                     inputMode="decimal"
                                                     className={`h-9 w-20 rounded-lg border bg-transparent px-2 tabular-nums ${r.entries[gi.id]?.overridden ? 'border-status-warning' : 'border-transparent hover:border-border'}`}
                                                     title={
@@ -456,5 +477,55 @@ export default function Gradebook({
                 </div>
             </div>
         </>
+    );
+}
+
+/** Marks for one column from a CSV or Excel file, or pasted: a matric number and a mark on each line. */
+function UploadMarks({ items }: { items: { id: number; title: string; max: number }[] }) {
+    const form = useForm<{ column: number; file: File | null; text: string }>({ column: items[0].id, file: null, text: '' });
+    const [open, setOpen] = useState(false);
+    const col = items.find((i) => i.id === Number(form.data.column)) ?? items[0];
+
+    return (
+        <div className="surface grid gap-3 p-5 text-sm">
+            <button type="button" className="flex w-fit items-center gap-2 font-medium" onClick={() => setOpen(!open)} aria-expanded={open}>
+                <Upload className="size-4" /> Upload or paste marks for a column
+            </button>
+            {open && (
+                <form
+                    className="grid gap-3"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        form.post(`/learn/grade-items/${col.id}/upload`, { forceFormData: true, preserveScroll: true, onSuccess: () => form.reset('file', 'text') });
+                    }}
+                >
+                    <p className="text-muted-foreground">
+                        One student per line: the matric number (or e-mail) and the mark, e.g. <code>VUG/22/0012, 14</code>. A heading row is fine. Every line is checked
+                        first; if one is wrong, nothing is saved and you are told which line to fix.
+                    </p>
+                    <div className="flex flex-wrap items-end gap-3">
+                        <label className="grid gap-1">
+                            <span className="text-muted-foreground">Column</span>
+                            <select className={inputClass} value={form.data.column} onChange={(e) => form.setData('column', Number(e.target.value))}>
+                                {items.map((i) => (
+                                    <option key={i.id} value={i.id}>{i.title} (out of {i.max})</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="grid gap-1">
+                            <span className="text-muted-foreground">File (CSV or Excel)</span>
+                            <input type="file" accept=".csv,.txt,.xlsx" className="text-sm" onChange={(e) => form.setData('file', e.target.files?.[0] ?? null)} />
+                        </label>
+                    </div>
+                    <label className="grid gap-1">
+                        <span className="text-muted-foreground">…or paste</span>
+                        <textarea rows={5} className={`${inputClass} h-auto py-2 font-mono`} value={form.data.text} onChange={(e) => form.setData('text', e.target.value)} placeholder={'VUG/22/0012, 14\nVUG/22/0013, 17'} />
+                    </label>
+                    <Button size="sm" className="w-fit" disabled={form.processing || (!form.data.file && !form.data.text.trim())}>
+                        Save marks to {col.title}
+                    </Button>
+                </form>
+            )}
+        </div>
     );
 }

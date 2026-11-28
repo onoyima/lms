@@ -131,7 +131,8 @@ class DashboardController extends Controller
             'panels' => $panels,
             'layout' => ['hidden' => array_values((array) data_get($user->preferences, 'dashboard.hidden', [])), 'order' => array_values((array) data_get($user->preferences, 'dashboard.order', []))],
             'semester' => $semester ? DB::table('academic_sessions')->where('id', $semester->academic_session_id)->value('name').' '.$semester->name : null,
-            'moduleCards' => collect($modules->all())->map(fn ($m, $key) => ['key' => $key, 'name' => $m['name'], 'description' => $m['description'], 'enabled' => in_array($key, $enabled, true)])->values(),
+            // what the institution subscribes to is for the people who run the institution, not for every user
+            'moduleCards' => ! $user->canAny(['billing.manage', 'institution.manage']) ? [] : collect($modules->all())->map(fn ($m, $key) => ['key' => $key, 'name' => $m['name'], 'description' => $m['description'], 'enabled' => in_array($key, $enabled, true)])->values(),
         ]);
     }
 

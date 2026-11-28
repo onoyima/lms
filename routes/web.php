@@ -671,6 +671,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('courses/{offering}/gradebook/transition', [Lms\GradebookController::class, 'transition']);
         Route::get('courses/{offering}/gradebook/export', [Lms\GradebookController::class, 'export']);
         Route::post('grade-items/{gradeItem}/entry', [Lms\GradebookController::class, 'entry']);
+        Route::post('grade-items/{gradeItem}/upload', [Lms\GradebookController::class, 'upload'])->middleware('throttle:30,1,gradeup');
+        Route::get('courses/{offering}/progress', [Lms\ProgressController::class, 'show'])->name('progress');
+        Route::get('courses/{offering}/progress/export', [Lms\ProgressController::class, 'export']);
         Route::get('courses/{offering}/attendance', [Lms\CommunityController::class, 'attendance'])->name('attendance');
         Route::post('courses/{offering}/meetings', [Lms\CommunityController::class, 'storeMeeting']);
         Route::post('meetings/{meeting}/records', [Lms\CommunityController::class, 'mark']);

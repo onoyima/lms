@@ -51,7 +51,10 @@ class HandleInertiaRequests extends Middleware
                 'examinerExam' => fn () => $request->user()?->user_type === \App\Models\ExamPanelAccount::USER_TYPE
                     ? \App\Models\ExamPanelAccount::with('exam:id,title')->where('user_id', $request->user()->id)->first()?->exam?->only(['id', 'title']) : null,
                 // staff with a seat on an exam (staff promotion exams): "My exams" in their menu
-                'sitsExams' => fn () => $request->user()?->user_type === 'staff' && tenant() && \App\Models\ExamCandidate::where('user_id', $request->user()->id)->exists(),
+                // only seats on staff exams (promotion and the like): a lecturer never gets the student "My results"
+                'sitsExams' => fn () => $request->user()?->user_type === 'staff' && tenant() && \Illuminate\Support\Facades\DB::table('exam_candidates as c')
+                    ->join('exam_sessions as s', 's.id', '=', 'c.exam_session_id')->join('exams as e', 'e.id', '=', 's.exam_id')
+                    ->where('c.user_id', $request->user()->id)->where('e.category', 'promotion')->exists(),
                 'examBoard' => fn () => $request->user() && ! $request->user()->isPlatformAdmin() && tenant() && \App\Support\Exams\ExamAccess::hasAny($request->user()),
             ],
             // the institution in view; the public landing page belongs to the platform itself

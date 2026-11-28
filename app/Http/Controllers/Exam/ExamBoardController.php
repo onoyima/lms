@@ -29,9 +29,15 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * score board, grade distribution, rescaled scores and download. The exams office sees every
  * exam; examiners and course lecturers see the exams assigned to them (ExamAccess).
  */
-class ExamBoardController extends Controller
+class ExamBoardController extends Controller implements \Illuminate\Routing\Controllers\HasMiddleware
 {
     public function __construct(private AuditLogger $audit) {}
+
+    /** Only the exams office and staff with an exam assigned to them; students never open the board. */
+    public static function middleware(): array
+    {
+        return [new \Illuminate\Routing\Controllers\Middleware(fn ($request, $next) => \App\Support\Exams\ExamAccess::hasAny($request->user()) ? $next($request) : abort(403))];
+    }
 
     public function index(Request $request): Response
     {

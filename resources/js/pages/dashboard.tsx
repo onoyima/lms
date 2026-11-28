@@ -232,7 +232,7 @@ function StandardDashboard({ moduleCards, panels, semester, layout: saved = { hi
     const kpiPrefs = useArrangement('dashboard-figures', KPIS.map((x) => x.key));
     const shownKpi = (k: string) => !kpiPrefs.state.hidden.includes(k) && !saved.hidden.includes(`kpi:${k}`);
     const toggleKpi = (k: string) => kpiPrefs.save({ ...kpiPrefs.state, hidden: shownKpi(k) ? [...kpiPrefs.state.hidden, k] : kpiPrefs.state.hidden.filter((x) => x !== k) });
-    const hasPanel = (k: string) => (k === 'modules' ? true : k === 'kpis' ? !!i : k === 'student_due' ? panels.student?.due != null : k === 'student_exams' ? panels.student?.exams != null : k === 'upcoming' ? !!panels.upcoming && !panels.day : !!panels[k as keyof Panels]);
+    const hasPanel = (k: string) => (k === 'modules' ? moduleCards.some((m) => m.enabled) : k === 'kpis' ? !!i : k === 'student_due' ? panels.student?.due != null : k === 'student_exams' ? panels.student?.exams != null : k === 'upcoming' ? !!panels.upcoming && !panels.day : !!panels[k as keyof Panels]);
     const available = ['day', 'glance', 'decisions', 'exams', 'student_exams', 'student_due', 'teaching', 'oversight', 'casework', 'upcoming', 'kpis', 'modules'].filter(hasPanel);
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';

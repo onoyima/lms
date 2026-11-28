@@ -1,11 +1,13 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     BookOpen,
     CalendarClock,
     ClipboardList,
     KeyRound,
+    Search,
     Users,
 } from 'lucide-react';
+import { useState } from 'react';
 import { Arrangeable } from '@/components/arrangeable';
 import {
     Flash,
@@ -21,8 +23,9 @@ type Teaching = {
     title: string;
     semester: string;
     students: number;
-    role: string;
+    role: string | null;
     to_mark: number;
+    lecturers?: string[];
 };
 type Enrolled = {
     id: number;
@@ -43,15 +46,119 @@ type Upcoming = {
     submitted: boolean;
 };
 
-export default function Courses({
-    teaching,
-    enrolled,
-    upcoming,
-}: {
+type Props = {
     teaching: Teaching[];
     enrolled: Enrolled[];
     upcoming: Upcoming[];
-}) {
+    staff?: boolean;
+    oversees?: boolean;
+    filters?: { q: string; semester: number | null };
+    semesters?: { id: number; label: string; is_current: boolean }[];
+};
+
+export default function Courses(props: Props) {
+    return props.staff ? <StaffCourses {...props} /> : <StudentCourses {...props} />;
+}
+
+const ROLE_LABEL: Record<string, string> = { coordinator: 'Coordinator', lecturer: 'Lecturer', assistant: 'Assistant', oversight: 'All courses' };
+
+/**
+ * Staff: the courses assigned to them, each opening to the full course tools (materials, quizzes,
+ * assignments, marking, gradebook, progress). Administrators and oversight roles see every course,
+ * with search and a semester filter, and can manage any of them.
+ */
+function StaffCourses({ teaching, oversees, filters, semesters = [] }: Props) {
+    const [q, setQ] = useState(filters?.q ?? '');
+    const go = (next: { q?: string; semester?: number | null }) =>
+        router.get('/learn/courses', { q: next.q ?? q, semester: next.semester ?? filters?.semester ?? undefined }, { preserveState: true, replace: true });
+
+    return (
+        <>
+            <Head title="Courses" />
+            <div className="flex flex-col gap-8 p-6 md:p-10">
+                <PageHeader
+                    title={oversees ? 'Every course,' : 'Your courses,'}
+                    accent="ready to teach."
+                    lead={oversees
+                        ? 'Open any course to add materials, set quizzes and assignments, mark work, enter grades and see who has studied what.'
+                        : 'Open a course to add materials, set quizzes and assignments, mark work, enter grades and see who has studied what.'}
+                    actions={
+                        <Link href="/learn/announcements" className="rounded-xl border border-border px-4 py-2 text-sm">
+                            Announcements
+                        </Link>
+                    }
+                />
+                <Flash />
+
+                {oversees && (
+                    <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => {
+                        e.preventDefault(); go({ q });
+                    }}>
+                        <label className="grid min-w-64 flex-1 gap-1 text-sm">
+                            <span className="text-muted-foreground">Find a course</span>
+                            <span className="relative">
+                                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                                <input className={`${inputClass} pl-9`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Code or title, e.g. CHM 101" />
+                            </span>
+                        </label>
+                        {semesters.length > 0 && (
+                            <label className="grid gap-1 text-sm">
+                                <span className="text-muted-foreground">Semester</span>
+                                <select className={inputClass} value={filters?.semester ?? ''} onChange={(e) => go({ semester: Number(e.target.value) })}>
+                                    {semesters.map((s) => (
+                                        <option key={s.id} value={s.id}>{s.label}{s.is_current ? ' (current)' : ''}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
+                        <button className="h-10 rounded-xl bg-brand px-4 text-sm font-medium text-brand-foreground">Search</button>
+                    </form>
+                )}
+
+                {teaching.length === 0 ? (
+                    <div className="surface grid gap-2 p-8 text-sm">
+                        <p className="font-medium">{oversees ? 'No courses match.' : 'No course is assigned to you yet.'}</p>
+                        <p className="text-muted-foreground">
+                            {oversees
+                                ? 'Try another code or semester.'
+                                : 'Courses appear here once your department assigns you to them, either on the portal (brought in every hour) or under Academic structure. Ask your head of department if one is missing.'}
+                        </p>
+                    </div>
+                ) : (
+                    <Arrangeable page="courses-teaching" label="courses" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" cards={teaching.map((c) => ({ key: String(c.id), title: `${c.code} ${c.title}`, node: (
+                        <div className="surface flex h-full flex-col gap-3 p-6">
+                            <Link href={`/learn/courses/${c.id}`} className="group grid gap-1">
+                                <span className="flex items-start justify-between gap-2">
+                                    <span className="font-mono text-sm text-brand">{c.code}</span>
+                                    {c.role && <span className="text-xs text-muted-foreground">{ROLE_LABEL[c.role] ?? c.role}</span>}
+                                </span>
+                                <span className="font-medium group-hover:text-brand">{c.title}</span>
+                                <span className="text-xs text-muted-foreground">
+                                    {c.semester}
+                                    {c.lecturers && c.lecturers.length > 0 ? ` · ${c.lecturers.join(', ')}` : ''}
+                                </span>
+                            </Link>
+                            <div className="flex gap-4 text-sm text-muted-foreground">
+                                <span className="flex items-center gap-1"><Users className="size-4" /> {c.students} students</span>
+                                {c.to_mark > 0 && (
+                                    <span className="flex items-center gap-1 text-status-warning"><ClipboardList className="size-4" /> {c.to_mark} to mark</span>
+                                )}
+                            </div>
+                            <nav className="mt-auto flex flex-wrap gap-x-3 gap-y-1 border-t pt-3 text-xs" aria-label={`${c.code} tools`}>
+                                <Link href={`/learn/courses/${c.id}`} className="text-brand hover:underline">Materials & activities</Link>
+                                <Link href={`/learn/courses/${c.id}/gradebook`} className="text-brand hover:underline">Gradebook</Link>
+                                <Link href={`/learn/courses/${c.id}/progress`} className="text-brand hover:underline">Who studied what</Link>
+                                <Link href={`/learn/courses/${c.id}/attendance`} className="text-brand hover:underline">Attendance</Link>
+                            </nav>
+                        </div>
+                    ) }))} />
+                )}
+            </div>
+        </>
+    );
+}
+
+function StudentCourses({ teaching, enrolled, upcoming }: Props) {
     const checkIn = useForm({ code: '' });
     const active = enrolled.filter((e) => e.status === 'active');
     const past = enrolled.filter((e) => e.status !== 'active');

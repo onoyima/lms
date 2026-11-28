@@ -1,6 +1,8 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { SpeedChecks } from '@/components/admin/speed-checks';
+import type { SpeedCheck } from '@/components/admin/speed-checks';
 import { PerformanceCharts } from '@/components/metric-chart';
 import type { SeriesPoint } from '@/components/metric-chart';
 import { Field, Flash, formatDateTime, inputClass, PageHeader, Stat, Status, Table, Td } from '@/components/platform/ui';
@@ -8,6 +10,7 @@ import { Button } from '@/components/ui/button';
 
 type Device = { id: number; name: string; kind: string; host: string; port: number; venue_id: number | null; status: string; latency_ms: number | null; last_checked_at: string | null; last_up_at: string | null; history: (number | null)[] };
 type Props = {
+    speed?: SpeedCheck[];
     range: string; series: SeriesPoint[]; current: Record<string, number | string>; devices: Device[]; venues: { id: number; name: string; campus: string | null }[];
     kinds: string[]; ports: number[]; tab: string; computers: { venue_id: number | null; total: number; online: number }[];
 };
@@ -38,6 +41,7 @@ export default function SystemHealth(p: Props) {
             <div className="flex flex-col gap-6 p-6 md:p-10">
                 <PageHeader title="System health" lead="Watch the service during exams, and the network equipment each hall depends on. Figures are for the whole service and contain no one's records." />
                 <Flash />
+                <SpeedChecks checks={p.speed} />
                 <div className="flex gap-2">
                     <Button variant={tab === 'performance' ? 'default' : 'outline'} onClick={() => setTab('performance')}>Exam-day performance</Button>
                     <Button variant={tab === 'network' ? 'default' : 'outline'} onClick={() => setTab('network')}>Exam-hall network {down > 0 && <span className="ml-1 rounded-full bg-status-critical px-1.5 text-xs text-white">{down}</span>}</Button>

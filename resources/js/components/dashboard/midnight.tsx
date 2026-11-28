@@ -553,7 +553,7 @@ export default function MidnightDashboard({ moduleCards, panels, semester }: { m
         ) });
     }
 
-    {
+    if (moduleCards.some((m) => m.enabled)) {
         main.push({ key: 'modules', title: 'Your subscription', node: (
             <Section title="Your subscription">
                 <ul className="flex flex-wrap gap-1.5">

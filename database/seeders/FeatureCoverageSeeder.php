@@ -382,6 +382,7 @@ class FeatureCoverageSeeder extends Seeder
         $forum = CourseItem::where('course_offering_id', $o->id)->where('type', 'forum')->first();
         if ($notes) {
             $this->once('item_completions', ['course_item_id' => $notes->id, 'user_id' => $this->student->id], ['completed_at' => now()->subDay()]);
+            $this->once('item_views', ['course_item_id' => $notes->id, 'user_id' => $this->student->id], ['views' => 3, 'downloads' => 1, 'first_viewed_at' => now()->subDays(2), 'last_viewed_at' => now()->subDay()]);
             $this->once('course_item_revisions', ['course_item_id' => $notes->id, 'version' => 1], ['snapshot' => json_encode(['title' => $notes->title, 'body_html' => $notes->body_html]), 'edited_by' => $this->lecturer->id, 'created_at' => now()->subDays(3)]);
         }
         if ($assignment) {

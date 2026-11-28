@@ -96,6 +96,19 @@ class CourseContentService
         DB::table('item_completions')->insertOrIgnore(['course_item_id' => $item->id, 'user_id' => $user->id, 'completed_at' => now()]);
     }
 
+    /** A student opened (or downloaded) a material: counted for the lecturer's progress page. */
+    public function viewed(CourseItem $item, User $user, bool $download = false): void
+    {
+        $row = DB::table('item_views')->where('course_item_id', $item->id)->where('user_id', $user->id);
+        if ((clone $row)->exists()) {
+            (clone $row)->update(['views' => DB::raw('views + '.($download ? 0 : 1)), 'downloads' => DB::raw('downloads + '.($download ? 1 : 0)), 'last_viewed_at' => now()]);
+
+            return;
+        }
+        DB::table('item_views')->insertOrIgnore(['course_item_id' => $item->id, 'user_id' => $user->id, 'views' => $download ? 0 : 1,
+            'downloads' => $download ? 1 : 0, 'first_viewed_at' => now(), 'last_viewed_at' => now()]);
+    }
+
     /** Percent of required, released items this student has completed (LMS 38, 49). */
     public function progress(CourseOffering $offering, User $user): array
     {

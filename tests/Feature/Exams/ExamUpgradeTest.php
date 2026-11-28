@@ -295,7 +295,7 @@ class ExamUpgradeTest extends TestCase
         $theirSitting = $this->sitting($theirs);
         $lecturer = $this->lecturer();
 
-        $this->actingAs($lecturer)->get('/exam-board?show=all')->assertOk()->assertInertia(fn ($p) => $p->where('exams.data', []));
+        $this->actingAs($lecturer)->get('/exam-board?show=all')->assertForbidden(); // no exam of theirs yet: the board stays closed
         $this->actingAs($lecturer)->get("/exam-board/{$mine->id}")->assertForbidden();
 
         $mine->examiners()->attach($lecturer->id, ['role' => 'examiner']);

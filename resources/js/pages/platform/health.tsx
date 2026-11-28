@@ -1,4 +1,6 @@
 import { Head, router } from '@inertiajs/react';
+import { SpeedChecks } from '@/components/admin/speed-checks';
+import type { SpeedCheck } from '@/components/admin/speed-checks';
 import { PerformanceCharts } from '@/components/metric-chart';
 import type { SeriesPoint } from '@/components/metric-chart';
 import { Flash, formatDateTime, PageHeader, Stat, Status, Table, Td } from '@/components/platform/ui';
@@ -11,7 +13,7 @@ type Props = { range: string; series: SeriesPoint[]; current: Record<string, num
 const dur = (s: number | null) => (s === null ? '—' : s < 120 ? `${s} s` : s < 7200 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`);
 
 /** Service health for the platform operator: live figures, alerts and recovery drills (LMS 140, 143, 243, 245; Target 186). */
-export default function Health({ range, series, current, alerts, drills, webhook, setup }: Props & { setup?: { pending: string[]; unwritable: string[] } }) {
+export default function Health({ range, series, current, alerts, drills, webhook, setup, speed }: Props & { setup?: { pending: string[]; unwritable: string[] }; speed?: SpeedCheck[] }) {
     const open = alerts.filter((a) => !a.resolved_at);
 
     return (
@@ -21,6 +23,7 @@ export default function Health({ range, series, current, alerts, drills, webhook
                 <PageHeader title="System health" lead={`Recorded every minute by the scheduler. Alerts go to every platform administrator${webhook ? ' and the alert webhook' : ''}.`}
                     actions={['1h', '24h', '7d'].map((r) => <Button key={r} size="sm" variant={range === r ? 'default' : 'outline'} onClick={() => router.get('/platform/health', { range: r }, { preserveScroll: true })}>{r === '1h' ? 'Last hour' : r === '24h' ? '24 hours' : '7 days'}</Button>)} />
                 <Flash />
+                <SpeedChecks checks={speed} />
                 {setup && (setup.pending.length > 0 || setup.unwritable.length > 0) && (
                     <div className="grid gap-2 rounded-xl border border-status-critical/40 bg-status-critical/8 p-5 text-sm" role="alert">
                         <p className="font-semibold">The server needs attention after the last update</p>

@@ -28,27 +28,43 @@ class CourseController extends Controller
     public function index(Request $request): Response
     {
         $user = $request->user();
-        $teaching = CourseOffering::with('course', 'semester')
-            ->whereIn('id', DB::table('course_offering_staff')->where('user_id', $user->id)->pluck('course_offering_id'))
-            ->withCount(['enrolments as students' => fn ($q) => $q->where('status', 'active')])
-            ->orderByDesc('semester_id')->get()
-            ->map(fn ($o) => ['id' => $o->id, 'code' => $o->course->code, 'title' => $o->course->title, 'semester' => $o->semesterLabel(), 'students' => $o->students,
-                'role' => $this->access->role($user, $o), 'to_mark' => DB::table('assignment_submissions')->join('course_items', 'course_items.id', '=', 'assignment_submissions.course_item_id')
-                    ->where('course_items.course_offering_id', $o->id)->where('assignment_submissions.status', 'submitted')->count()]);
+        $staff = $user->user_type !== 'student';
+        $oversees = $staff && $this->access->oversees($user);
+        $mineIds = DB::table('course_offering_staff')->where('user_id', $user->id)->pluck('course_offering_id');
+        $semesters = DB::table('semesters as s')->join('academic_sessions as a', 'a.id', '=', 's.academic_session_id')
+            ->orderByDesc('s.id')->limit(12)->get(['s.id', 'a.name as session', 's.name', 's.is_current'])
+            ->map(fn ($r) => ['id' => $r->id, 'label' => $r->session.' '.$r->name, 'is_current' => (bool) $r->is_current]);
+        $semester = $oversees ? ($request->integer('semester') ?: ($semesters->firstWhere('is_current', true)['id'] ?? null)) : null;
+        $q = trim($request->string('q')->toString());
 
-        $enrolled = Enrolment::with('offering.course', 'offering.semester', 'offering.staff:id,name')->where('user_id', $user->id)->whereIn('status', ['active', 'completed'])
+        // lecturers: the courses assigned to them; administrators and oversight roles: every course, with search
+        $teaching = CourseOffering::with('course', 'semester')
+            ->when(! $oversees, fn ($w) => $w->whereIn('id', $mineIds))
+            ->when($oversees && $semester, fn ($w) => $w->where('semester_id', $semester))
+            ->when($oversees && $q !== '', fn ($w) => $w->whereHas('course', fn ($c) => $c->where('code', 'like', '%'.addcslashes($q, '%_').'%')->orWhere('title', 'like', '%'.addcslashes($q, '%_').'%')))
+            ->withCount(['enrolments as students' => fn ($w) => $w->where('status', 'active')])
+            ->orderByDesc('semester_id')->limit($oversees ? 300 : 500)->get()
+            ->sortBy(fn ($o) => [$mineIds->contains($o->id) ? 0 : 1, $o->course->code])->values()
+            ->map(fn ($o) => ['id' => $o->id, 'code' => $o->course->code, 'title' => $o->course->title, 'semester' => $o->semesterLabel(), 'students' => $o->students,
+                'role' => $this->access->role($user, $o) ?? ($oversees ? 'oversight' : null), 'to_mark' => DB::table('assignment_submissions')->join('course_items', 'course_items.id', '=', 'assignment_submissions.course_item_id')
+                    ->where('course_items.course_offering_id', $o->id)->where('assignment_submissions.status', 'submitted')->count(),
+                'lecturers' => DB::table('course_offering_staff as cs')->join('users as u', 'u.id', '=', 'cs.user_id')->where('cs.course_offering_id', $o->id)->pluck('u.name')]);
+
+        // staff never get the student view: no registered courses, no "what is due" list
+        $enrolled = $staff ? collect() : Enrolment::with('offering.course', 'offering.semester', 'offering.staff:id,name')->where('user_id', $user->id)->whereIn('status', ['active', 'completed'])
             ->orderByDesc('id')->get()->map(fn ($e) => ['id' => $e->offering->id, 'code' => $e->offering->course->code, 'title' => $e->offering->course->title,
                 'lecturers' => $e->offering->staff->sortBy(fn ($s) => $s->pivot->role === 'coordinator' ? 0 : 1)->pluck('name')->values(),
                 'semester' => $e->offering->semesterLabel(), 'status' => $e->status, 'category' => $e->category, 'progress' => $this->content->progress($e->offering, $user)]);
 
         $offeringIds = $enrolled->where('status', 'active')->pluck('id');
-        $upcoming = CourseItem::with('offering.course')->whereIn('course_offering_id', $offeringIds)
+        $upcoming = $staff ? collect() : CourseItem::with('offering.course')->whereIn('course_offering_id', $offeringIds)
             ->whereIn('type', app(\App\Services\Modules\ModuleRegistry::class)->isEnabled(tenant(), 'question_bank') ? ['assignment', 'quiz'] : ['assignment'])
             ->where('visible', true)->whereNotNull('due_at')->where('due_at', '>=', now()->subDay())->orderBy('due_at')->limit(12)->get()
             ->map(fn ($i) => ['id' => $i->id, 'title' => $i->title, 'type' => $i->type, 'course' => $i->offering->course->code, 'due_at' => $i->due_at,
                 'submitted' => $i->type === 'assignment' && DB::table('assignment_submissions')->where('course_item_id', $i->id)->where('user_id', $user->id)->where('status', '!=', 'draft')->exists()]);
 
-        return Inertia::render('learn/courses', ['teaching' => $teaching, 'enrolled' => $enrolled, 'upcoming' => $upcoming]);
+        return Inertia::render('learn/courses', ['teaching' => $teaching, 'enrolled' => $enrolled, 'upcoming' => $upcoming,
+            'staff' => $staff, 'oversees' => $oversees, 'filters' => ['q' => $q, 'semester' => $semester], 'semesters' => $oversees ? $semesters : []]);
     }
 
     public function show(Request $request, CourseOffering $offering): Response
@@ -257,6 +273,7 @@ class CourseController extends Controller
         $range = (string) $request->header('Range');
         if ($request->boolean('download') && ($range === '' || str_starts_with($range, 'bytes=0-')) && ! $this->access->teaches($request->user(), $item->offering)) {
             $this->content->complete($item, $request->user());
+            $this->content->viewed($item, $request->user(), true);
         }
         $inline = ! $request->boolean('download') && in_array($item->file_mime, self::INLINE, true);
         $response = response()->file(Storage::disk('local')->path($item->file_path), [
